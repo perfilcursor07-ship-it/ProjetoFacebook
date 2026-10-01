@@ -24,46 +24,57 @@ const TEMAS_PADRAO = Object.freeze([
   Object.freeze({
     rotulo: 'Política e fé',
     consultas: Object.freeze(['política evangélicos', 'bancada evangélica']),
+    nichos: Object.freeze(['politica-fe', 'politica']),
   }),
   Object.freeze({
     rotulo: 'Denominações',
     consultas: Object.freeze(['Assembleia de Deus decisão', 'denominação evangélica pastor']),
+    nichos: Object.freeze(['igreja']),
   }),
   Object.freeze({
     rotulo: 'Pastores e líderes',
     consultas: Object.freeze(['pastor declaração polêmica', 'líder evangélico notícia']),
+    nichos: Object.freeze(['pastores']),
   }),
   Object.freeze({
     rotulo: 'Música gospel',
     consultas: Object.freeze(['cantor gospel notícia', 'música gospel polêmica']),
+    nichos: Object.freeze(['gospel']),
   }),
   Object.freeze({
     rotulo: 'Escatologia e profecia',
     consultas: Object.freeze(['escatologia profecia pastor', 'arrebatamento Israel evangélicos']),
+    nichos: Object.freeze(['igreja', 'israel']),
   }),
   Object.freeze({
     rotulo: 'Testemunhos e conversão',
     consultas: Object.freeze(['testemunho cristão superação', 'cura conversão evangélico']),
+    nichos: Object.freeze(['igreja']),
   }),
   Object.freeze({
     rotulo: 'Família e comportamento',
     consultas: Object.freeze(['família cristã pastor', 'comportamento igreja evangélica']),
+    nichos: Object.freeze(['igreja']),
   }),
   Object.freeze({
     rotulo: 'Missões e perseguição',
     consultas: Object.freeze(['cristãos perseguidos missão', 'missionário evangélico notícia']),
+    nichos: Object.freeze(['israel']),
   }),
   Object.freeze({
     rotulo: 'Fé, ciência e saúde',
     consultas: Object.freeze(['fé ciência estudo oração', 'saúde mental igreja evangélica']),
+    nichos: Object.freeze(['igreja']),
   }),
   Object.freeze({
     rotulo: 'Israel e mundo cristão',
     consultas: Object.freeze(['Israel evangélicos profecia', 'cristãos mundo religião']),
+    nichos: Object.freeze(['israel']),
   }),
   Object.freeze({
     rotulo: 'Polêmicas nas redes',
     consultas: Object.freeze(['pastor viralizou redes sociais', 'polêmica gospel internet']),
+    nichos: Object.freeze(['pastores', 'gospel']),
   }),
 ]);
 
@@ -148,6 +159,119 @@ function distribuirPorTema(agrupados, rotulos, limite) {
   return escolhidos;
 }
 
+function normalizarTexto(valor) {
+  return String(valor || '')
+    .toLocaleLowerCase('pt-BR')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+/**
+ * Palavra do nicho como prefixo: "pastor" também pega "pastores" e "pastora".
+ * Sem regex montada na hora — as palavras vêm de configuração e não precisam
+ * virar padrão.
+ */
+function citaPalavra(textoNormalizado, palavra) {
+  let desde = 0;
+  for (;;) {
+    const achou = textoNormalizado.indexOf(palavra, desde);
+    if (achou < 0) return false;
+    if (achou === 0 || textoNormalizado[achou - 1] === ' ') return true;
+    desde = achou + 1;
+  }
+}
+
+/** Palavras curtas e genéricas demais para indicar tema. */
+const PALAVRAS_VAZIAS = new Set([
+  'noticia', 'noticias', 'polemica', 'sobre', 'contra', 'para', 'como',
+  'decisao', 'declaracao', 'mundo', 'nova', 'novo',
+]);
+
+/**
+ * Termos que identificam cada tema, tirados das próprias consultas dele.
+ *
+ * O peso é 1/(nº de temas que usam o termo): "evangelico" aparece em quase
+ * todos e quase não informa; "escatologia" aparece num só e decide sozinho.
+ * Sem isso, 86% das pautas caíam em "Política e fé" só porque o nicho dela é
+ * o mais abrangente.
+ */
+function termosPorTema(temas) {
+  const porTema = temas.map((tema) => ({
+    tema,
+    termos: new Set(
+      tema.consultas
+        .flatMap((consulta) => normalizarTexto(consulta).split(/\s+/))
+        .filter((palavra) => palavra.length >= 4 && !PALAVRAS_VAZIAS.has(palavra))
+    ),
+  }));
+
+  const emQuantosTemas = new Map();
+  for (const { termos } of porTema) {
+    for (const termo of termos) {
+      emQuantosTemas.set(termo, (emQuantosTemas.get(termo) || 0) + 1);
+    }
+  }
+
+  return porTema.map(({ tema, termos }) => ({
+    tema,
+    termos: [...termos].map((termo) => ({ termo, peso: 1 / emQuantosTemas.get(termo) })),
+  }));
+}
+
+/**
+ * Pautas lidas direto no RSS dos portais — sem passar pelo Google.
+ *
+ * É o que mantém o radar de pé quando o Google News bloqueia o IP do servidor:
+ * antes disso, um bloqueio zerava a tela porque Google News era a única fonte
+ * viva (Brave e Serper ficam desligadas por padrão).
+ */
+async function pautasDosPortais(temas, horas) {
+  const portais = require('../services/portaisNichoService');
+
+  const temasComNicho = temas.filter((t) => (t.nichos || []).length);
+  const nichosPedidos = [...new Set(temasComNicho.flatMap((t) => t.nichos))];
+  if (!nichosPedidos.length) return [];
+
+  const { itens } = await portais.buscarNosPortais({ nichos: nichosPedidos, horas });
+  const perfis = termosPorTema(temasComNicho);
+
+  const pautas = [];
+  for (const item of itens) {
+    // Portal geral (CNN, g1, Metrópoles) publica de tudo: o assunto precisa
+    // estar no título. Portal do nicho pode casar pelo resumo também.
+    const texto = normalizarTexto(
+      item.especializado ? `${item.titulo} ${item.resumo}` : item.titulo
+    );
+
+    let melhor = null;
+    for (const { tema, termos } of perfis) {
+      let nota = 0;
+      for (const { termo, peso } of termos) {
+        if (citaPalavra(texto, termo)) nota += peso;
+      }
+      if (nota > 0 && (!melhor || nota > melhor.nota)) melhor = { tema, nota };
+    }
+    // Nenhum termo do tema no texto: é notícia geral do portal, não pauta daqui.
+    if (!melhor) continue;
+
+    pautas.push({
+      titulo: item.titulo,
+      link: item.link,
+      resumo: item.resumo,
+      data: item.data || null,
+      dataTimestamp: Number(item.dataTimestamp) || 0,
+      veiculo: item.veiculo,
+      imagem: item.imagem || null,
+      fonte: 'Portal do nicho',
+      tipoFonte: 'noticia',
+      recente: true,
+      emAlta: false,
+      tema: melhor.tema.rotulo,
+    });
+  }
+  return pautas;
+}
+
 /**
  * Radar por tema, reaproveitando os coletores já existentes no projeto.
  * Cada coletor é tolerante a falha: chave de API vencida não derruba o radar.
@@ -176,12 +300,24 @@ async function radarPorTemas(
     });
   });
 
-  const resultados = await Promise.allSettled(tarefas.map((t) => t.promessa));
+  // Os portais entram sempre, não só quando o Google falha: são links diretos,
+  // com foto e veículo, e já têm cache próprio de 10 min.
+  const promessaPortais = pautasDosPortais(alvo, horas).catch((err) => {
+    console.warn('[radar] portais:', err.message);
+    return [];
+  });
+
+  const [resultados, itensDePortais] = await Promise.all([
+    Promise.allSettled(tarefas.map((t) => t.promessa)),
+    promessaPortais,
+  ]);
+
   const bruto = [];
   resultados.forEach((r, i) => {
     if (r.status !== 'fulfilled' || !Array.isArray(r.value)) return;
     for (const item of r.value) bruto.push({ ...item, tema: tarefas[i].tema });
   });
+  for (const item of itensDePortais) bruto.push(item);
 
   const filtrados = nr.deduplicarTopicos(
     bruto.filter((i) => nr.itemEhRecente(i, { horas }) || i.emAlta)
@@ -770,4 +906,5 @@ router.get('/furos/gerar/:jobId', (req, res) => {
 module.exports = router;
 module.exports.TEMAS_PADRAO = TEMAS_PADRAO;
 module.exports.radarPorTemas = radarPorTemas;
+module.exports.pautasDosPortais = pautasDosPortais;
 module.exports.LIMITE_TOPICOS = LIMITE_TOPICOS;

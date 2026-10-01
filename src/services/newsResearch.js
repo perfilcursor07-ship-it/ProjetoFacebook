@@ -6,6 +6,51 @@ const { env } = require('../config/env');
 
 const googleNews = require('./googleNewsLimiter');
 
+/**
+ * Proxy SÓ para o Google News (GOOGLE_NEWS_PROXY no .env).
+ *
+ * Existe porque o Google recusa IP de datacenter: DigitalOcean, AWS e afins
+ * entram na lista e o servidor leva 503 mesmo numa requisição isolada.
+ *
+ * Por que aqui e não uma VPN no servidor: a VPN troca a rota de TUDO que sai
+ * da máquina — os outros sites do CloudPanel, as APIs do Facebook/Instagram
+ * (que estranham mudança de IP), atualizações e o próprio acesso SSH. Aqui o
+ * desvio vale só para estas chamadas; o resto do servidor continua intacto.
+ *
+ * Formatos aceitos: http://user:senha@host:porta  |  socks5://host:porta
+ */
+const PROXY_GOOGLE_NEWS = String(process.env.GOOGLE_NEWS_PROXY || '').trim();
+
+function criarAgenteProxy() {
+  if (!PROXY_GOOGLE_NEWS) return null;
+  try {
+    if (/^socks/i.test(PROXY_GOOGLE_NEWS)) {
+      const mod = require('socks-proxy-agent');
+      const Agente = mod.SocksProxyAgent || mod;
+      return new Agente(PROXY_GOOGLE_NEWS);
+    }
+    const mod = require('https-proxy-agent');
+    const Agente = mod.HttpsProxyAgent || mod;
+    return new Agente(PROXY_GOOGLE_NEWS);
+  } catch (err) {
+    console.error(`[google-news] proxy inválido em GOOGLE_NEWS_PROXY: ${err.message}`);
+    return null;
+  }
+}
+
+const AGENTE_PROXY = criarAgenteProxy();
+if (AGENTE_PROXY) {
+  // Sem o host no log: a URL do proxy costuma trazer usuário e senha.
+  console.info('[google-news] usando proxy dedicado para as consultas ao Google');
+}
+
+/** Acrescenta o proxy às opções do axios, quando houver. */
+function comProxy(opcoes) {
+  if (!AGENTE_PROXY) return opcoes;
+  // `proxy: false` impede o axios de tentar o proxy dele por cima do agente.
+  return { ...opcoes, httpsAgent: AGENTE_PROXY, httpAgent: AGENTE_PROXY, proxy: false };
+}
+
 const USER_AGENT = 'Mozilla/5.0 (compatible; ViralizeAI/1.0)';
 const MS_DIA = 24 * 60 * 60 * 1000;
 const GOOGLE_PYTHON_CACHE = new Map();
@@ -356,6 +401,11 @@ function executarGooglePython(binario, payload) {
     const child = spawn(binario, [script], {
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
+      // urllib lê estas variáveis sozinho, então o fallback sai pelo mesmo
+      // proxy das chamadas em Node em vez de denunciar o IP do servidor.
+      env: PROXY_GOOGLE_NEWS
+        ? { ...process.env, HTTPS_PROXY: PROXY_GOOGLE_NEWS, HTTP_PROXY: PROXY_GOOGLE_NEWS }
+        : process.env,
     });
     let stdout = '';
     let stderr = '';
@@ -523,10 +573,13 @@ async function buscarGoogleNewsRss(
   const url = `https://news.google.com/rss/search?q=${q}&hl=${hl}&gl=${gl}&ceid=${ceid}`;
   try {
     const { data } = await googleNews.executar(() =>
-      axios.get(url, {
-        headers: { 'User-Agent': USER_AGENT, Accept: 'application/rss+xml, text/xml' },
-        timeout: 15000,
-      })
+      axios.get(
+        url,
+        comProxy({
+          headers: { 'User-Agent': USER_AGENT, Accept: 'application/rss+xml, text/xml' },
+          timeout: 15000,
+        })
+      )
     );
     const itens = extrairItensRss(String(data || '')).map((item) => ({
       ...item,
@@ -577,10 +630,13 @@ async function buscarGoogleNewsEmAlta(termo) {
   const url = `https://news.google.com/rss/search?q=${q}&hl=pt-BR&gl=BR&ceid=BR:pt-419`;
   try {
     const { data } = await googleNews.executar(() =>
-      axios.get(url, {
-        headers: { 'User-Agent': USER_AGENT },
-        timeout: 15000,
-      })
+      axios.get(
+        url,
+        comProxy({
+          headers: { 'User-Agent': USER_AGENT },
+          timeout: 15000,
+        })
+      )
     );
     const itens = extrairItensRss(String(data || ''))
       .slice(0, 8)

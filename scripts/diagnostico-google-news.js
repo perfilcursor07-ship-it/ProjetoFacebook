@@ -33,9 +33,23 @@ async function main() {
   linha('intervalo entre inícios', `${estado.intervaloMs}ms`);
   linha('estado agora', estado.pausado ? `EM PAUSA até ${estado.ate}` : 'liberado');
 
+  const proxy = String(process.env.GOOGLE_NEWS_PROXY || '').trim();
+  linha('proxy do Google News', proxy ? `ativo (${proxy.replace(/\/\/[^@]*@/, '//***@')})` : 'nenhum');
+
   console.log('\nFontes alternativas (o que sobra se o Google cair):');
   linha('Brave News', env.braveSearchApiKey ? 'ATIVA' : 'desligada (SEARCH_ENABLE_BRAVE)');
   linha('Serper', env.serperApiKey ? 'ATIVA' : 'desligada (SEARCH_ENABLE_SERPER)');
+
+  // Portais lidos direto no RSS: não dependem do Google nem de chave de API.
+  let pautasDePortais = -1;
+  try {
+    const rota = require('../src/routes/materiaChatExtras');
+    const pautas = await rota.pautasDosPortais(rota.TEMAS_PADRAO, 48);
+    pautasDePortais = pautas.length;
+    linha('Portais (RSS direto)', `${pautasDePortais} pauta(s) nas últimas 48h`);
+  } catch (err) {
+    linha('Portais (RSS direto)', `falhou: ${err.message}`);
+  }
 
   const semAlternativa = !env.braveSearchApiKey && !env.serperApiKey;
 
@@ -87,14 +101,19 @@ async function main() {
     console.log('  O que fazer, em ordem:');
     console.log('   1. Esperar. Bloqueio de IP do Google costuma soltar em algumas horas.');
     console.log('      O limitador já segura as consultas e testa com uma sonda sozinha.');
-    if (semAlternativa) {
-      console.log('   2. URGENTE: ligar uma fonte alternativa — hoje o radar não tem nenhuma.');
-      console.log('      No .env do servidor: SEARCH_ENABLE_BRAVE=1 (valide o saldo da chave).');
+    if (pautasDePortais > 0) {
+      console.log(
+        `   2. O radar NAO fica vazio: os portais seguem entregando ${pautasDePortais} pauta(s)`
+      );
+      console.log('      por RSS direto, com link e foto, sem passar pelo Google.');
     } else {
-      console.log('   2. As fontes alternativas estão ativas e seguram o radar enquanto isso.');
+      console.log('   2. Ligar o Brave: SEARCH_ENABLE_BRAVE=1 no .env (valide o saldo).');
     }
-    console.log('   3. Se repetir sempre, o IP do datacenter é o problema: só um proxy');
-    console.log('      residencial ou uma API paga de notícias resolve de forma estável.');
+    console.log('   3. Para voltar a usar o Google: proxy SO para estas chamadas,');
+    console.log('      no .env do servidor (nao precisa de VPN):');
+    console.log('        GOOGLE_NEWS_PROXY=http://usuario:senha@host:porta');
+    console.log('      NAO instale VPN na maquina: ela trocaria a rota de TODOS os');
+    console.log('      sites do CloudPanel e das APIs do Facebook/Instagram.');
   } else if (!status) {
     console.log('  Não houve resposta: pode ser rede, DNS ou firewall do servidor.');
     console.log(`  Erro: ${erroRede}`);
@@ -102,9 +121,13 @@ async function main() {
     console.log(`  HTTP ${status} — resposta inesperada; veja o corpo acima.`);
   }
 
-  if (semAlternativa) {
-    console.log('\n  ATENÇÃO: Brave e Serper estão desligadas. O Google News é a única');
-    console.log('  fonte do radar, então um bloqueio dele zera a tela de "Em alta".');
+  if (semAlternativa && pautasDePortais > 0) {
+    console.log(
+      `\n  Brave e Serper estao desligadas, mas os portais entregam ${pautasDePortais}`
+    );
+    console.log('  pauta(s) por RSS direto: o radar nao depende so do Google.');
+  } else if (semAlternativa) {
+    console.log('\n  ATENCAO: nenhuma fonte respondeu (Brave, Serper e portais).');
   }
 
   console.log('');
