@@ -556,7 +556,9 @@ async function buscarGoogleNewsRss(
     // mesmo news.google.com. Era essa cascata que alimentava os 503.
     if (googleNews.ehBloqueio(err)) {
       avisarUmaVez('rss-bloqueio', `Google News RSS: ${err.message}`);
-      return guardarCacheRss(chaveCache, []);
+      // Sem cachear: a recusa é do circuito, não deste termo. Gravar vazio aqui
+      // deixaria o radar cego por 2 min depois de o Google já ter voltado.
+      return [];
     }
     avisarUmaVez(`rss-${err.message}`, `Google News RSS: ${err.message}`);
     return guardarCacheRss(
@@ -594,11 +596,13 @@ async function buscarGoogleNewsEmAlta(termo) {
       }));
     return guardarCacheRss(chaveCache, itens);
   } catch (err) {
+    const doCircuito = googleNews.ehBloqueio(err);
     avisarUmaVez(
-      googleNews.ehBloqueio(err) ? 'alta-bloqueio' : `alta-${err.message}`,
+      doCircuito ? 'alta-bloqueio' : `alta-${err.message}`,
       `Google News em alta: ${err.message}`
     );
-    return guardarCacheRss(chaveCache, []);
+    // Idem: recusa do circuito não vira cache negativo deste termo.
+    return doCircuito ? [] : guardarCacheRss(chaveCache, []);
   }
 }
 

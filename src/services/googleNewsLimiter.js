@@ -12,8 +12,8 @@
  * respiro entre os inícios e uma pausa geral ao primeiro sinal de limite.
  *
  * Ajustável no .env:
- *   GOOGLE_NEWS_PARALELO      chamadas simultâneas (padrão 3)
- *   GOOGLE_NEWS_INTERVALO_MS  respiro entre inícios (padrão 250)
+ *   GOOGLE_NEWS_PARALELO      chamadas simultâneas (padrão 4)
+ *   GOOGLE_NEWS_INTERVALO_MS  respiro entre inícios (padrão 150)
  *   GOOGLE_NEWS_PAUSA_MIN     1ª pausa após bloqueio, em minutos (padrão 5)
  *   GOOGLE_NEWS_PAUSA_MAX_MIN teto da pausa, que dobra a cada bloqueio (padrão 30)
  */
@@ -43,6 +43,9 @@ let ultimoInicio = 0;
 let pausadoAte = 0;
 let motivoDaPausa = '';
 let bloqueiosSeguidos = 0;
+/** Pausa venceu, mas ainda falta confirmar que o Google voltou. */
+let aguardandoSonda = false;
+let sondaEmVoo = false;
 
 function hora(ms) {
   return new Intl.DateTimeFormat('pt-BR', {
@@ -67,9 +70,22 @@ function erroDePausa() {
   return err;
 }
 
+/**
+ * Enquanto a sonda não responde, o resto da rajada espera a próxima rodada em
+ * vez de bater no Google junto com ela.
+ */
+function erroDeSondagem() {
+  const err = new Error(
+    'O Google News está sendo testado depois de um bloqueio. Tente de novo em instantes.'
+  );
+  err.status = 503;
+  err.code = 'GOOGLE_NEWS_EM_SONDAGEM';
+  return err;
+}
+
 /** O erro indica limite por IP? (503/429 ou página de tráfego incomum) */
 function tipoDeBloqueio(err) {
-  if (err?.code === 'GOOGLE_NEWS_EM_PAUSA') return null;
+  if (err?.code === 'GOOGLE_NEWS_EM_PAUSA' || err?.code === 'GOOGLE_NEWS_EM_SONDAGEM') return null;
   const status = Number(err?.response?.status || err?.status || 0);
   const texto = String(err?.message || err || '').toLowerCase();
   if (status === 429 || /\bstatus code 429\b/.test(texto) || texto.includes('too many requests')) {
@@ -90,6 +106,7 @@ function registrarFalha(err) {
   if (!tipo) return false;
   const agora = Date.now();
   if (emPausa(agora)) return true;
+  aguardandoSonda = false;
   bloqueiosSeguidos += 1;
   const duracao = Math.min(PAUSA_MAX_MS, PAUSA_MS * 2 ** (bloqueiosSeguidos - 1));
   pausadoAte = agora + duracao;
@@ -107,9 +124,11 @@ function registrarFalha(err) {
   return true;
 }
 
-/** Uma resposta boa zera a contagem: a próxima pausa volta ao tempo inicial. */
+/** Uma resposta boa fecha o circuito: a próxima pausa volta ao tempo inicial. */
 function registrarSucesso() {
   bloqueiosSeguidos = 0;
+  pausadoAte = 0;
+  aguardandoSonda = false;
 }
 
 function liberarVaga() {
@@ -130,34 +149,66 @@ function pegarVaga() {
 }
 
 /**
+ * Decide se esta chamada pode falar com o Google: 'normal' quando o circuito
+ * está fechado, 'sonda' para a única chamada que testa a volta depois de uma
+ * pausa. As demais são recusadas sem gerar tráfego.
+ */
+function pedirPassagem() {
+  const agora = Date.now();
+  if (pausadoAte > agora) throw erroDePausa();
+
+  // A pausa venceu. Liberar as 48 de uma vez só renovaria o bloqueio: primeiro
+  // uma sonda confirma que o Google voltou a responder.
+  if (pausadoAte !== 0) aguardandoSonda = true;
+
+  if (aguardandoSonda) {
+    if (sondaEmVoo) throw erroDeSondagem();
+    sondaEmVoo = true;
+    return 'sonda';
+  }
+  return 'normal';
+}
+
+/**
  * Roda `tarefa` respeitando o teto de simultâneas, o respiro entre inícios e a
- * pausa por bloqueio. Lança GOOGLE_NEWS_EM_PAUSA, sem chamar o Google, enquanto
- * durar a pausa — inclusive para quem já estava na fila quando ela começou.
+ * pausa por bloqueio. Lança GOOGLE_NEWS_EM_PAUSA (ou EM_SONDAGEM), sem chamar o
+ * Google, enquanto durar o bloqueio — inclusive para quem já estava na fila.
  */
 async function executar(tarefa) {
-  if (emPausa()) throw erroDePausa();
+  const papel = pedirPassagem();
   await pegarVaga();
   try {
-    if (emPausa()) throw erroDePausa();
+    // A sonda atravessa a pausa de propósito: é ela que vai derrubá-la.
+    if (papel !== 'sonda' && emPausa()) throw erroDePausa();
     const falta = ultimoInicio + INTERVALO_MS - Date.now();
     if (falta > 0) await new Promise((resolve) => setTimeout(resolve, falta));
-    if (emPausa()) throw erroDePausa();
+    if (papel !== 'sonda' && emPausa()) throw erroDePausa();
     ultimoInicio = Date.now();
 
     const resultado = await tarefa();
+    if (papel === 'sonda') {
+      console.info('[google-news] sonda respondeu: consultas liberadas de novo');
+    }
     registrarSucesso();
     return resultado;
   } catch (err) {
     registrarFalha(err);
     throw err;
   } finally {
+    // Falha que não é bloqueio (timeout, DNS) não prova que o Google voltou:
+    // soltar a marca deixa a próxima chamada sondar de novo.
+    if (papel === 'sonda') sondaEmVoo = false;
     liberarVaga();
   }
 }
 
 /** A falha veio de limite do Google (ou da pausa)? Quem chama usa para não insistir. */
 function ehBloqueio(err) {
-  return err?.code === 'GOOGLE_NEWS_EM_PAUSA' || tipoDeBloqueio(err) !== null;
+  return (
+    err?.code === 'GOOGLE_NEWS_EM_PAUSA' ||
+    err?.code === 'GOOGLE_NEWS_EM_SONDAGEM' ||
+    tipoDeBloqueio(err) !== null
+  );
 }
 
 function estado() {
@@ -166,6 +217,7 @@ function estado() {
     pausado,
     ate: pausado ? new Date(pausadoAte).toISOString() : null,
     motivo: pausado ? motivoDaPausa : null,
+    testando: !pausado && aguardandoSonda,
     ativos,
     naFila: espera.length,
     limiteParalelo: LIMITE_PARALELO,
@@ -181,11 +233,14 @@ function reiniciar() {
   pausadoAte = 0;
   motivoDaPausa = '';
   bloqueiosSeguidos = 0;
+  aguardandoSonda = false;
+  sondaEmVoo = false;
 }
 
 module.exports = {
   executar,
   ehBloqueio,
+  erroDeSondagem,
   registrarFalha,
   registrarSucesso,
   tipoDeBloqueio,

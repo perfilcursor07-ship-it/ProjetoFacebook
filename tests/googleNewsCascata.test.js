@@ -89,23 +89,72 @@ test('durante a pausa a rajada inteira não gera nenhuma requisição', async ()
   }
 });
 
+const RSS_OK = `<?xml version="1.0"?><rss version="2.0"><channel>
+  <item><title>Pauta de teste - Portal</title><link>https://exemplo.com/a</link>
+  <pubDate>${new Date().toUTCString()}</pubDate><description>Resumo</description></item>
+</channel></rss>`;
+
 test('em alta: o mesmo termo repetido só consulta o Google uma vez (cache)', async () => {
   limiter.reiniciar();
-  const espiao = instrumentar();
+  const axiosOriginal = axios.get;
+  let chamadas = 0;
+  // Resposta boa: aqui o que precisa ser provado é o cache, não a pausa.
+  axios.get = async (url) => {
+    if (!String(url).includes('google.com')) return axiosOriginal(url);
+    chamadas += 1;
+    return { status: 200, data: RSS_OK };
+  };
+
   try {
     const nr = require('../src/services/newsResearch');
     const termo = `cache-alta-${Date.now()}`;
 
-    await nr.buscarGoogleNewsEmAlta(termo);
-    const depoisDaPrimeira = espiao.contagem.axios;
-    assert.equal(depoisDaPrimeira, 1);
+    const primeira = await nr.buscarGoogleNewsEmAlta(termo);
+    assert.equal(chamadas, 1);
+    assert.ok(primeira.length >= 1, 'a primeira chamada deve trazer resultado');
 
     // O radar pede o mesmo termo por vários coletores e a cada "Atualizar".
+    const segunda = await nr.buscarGoogleNewsEmAlta(termo);
     await nr.buscarGoogleNewsEmAlta(termo);
-    await nr.buscarGoogleNewsEmAlta(termo);
-    assert.equal(espiao.contagem.axios, depoisDaPrimeira, 'repetições saem do cache');
+    assert.equal(chamadas, 1, 'repetições devem sair do cache');
+    assert.deepEqual(segunda, primeira, 'o cache devolve o mesmo conteúdo');
+    assert.equal(limiter.emPausa(), false);
   } finally {
-    espiao.restaurar();
+    axios.get = axiosOriginal;
+    limiter.reiniciar();
+  }
+});
+
+test('recusa do circuito não vira cache negativo do termo', async () => {
+  limiter.reiniciar();
+  const axiosOriginal = axios.get;
+  let chamadas = 0;
+  let responderOk = false;
+  axios.get = async (url) => {
+    if (!String(url).includes('google.com')) return axiosOriginal(url);
+    chamadas += 1;
+    if (responderOk) return { status: 200, data: RSS_OK };
+    throw Object.assign(new Error('Request failed with status code 503'), {
+      response: { status: 503 },
+    });
+  };
+
+  try {
+    const nr = require('../src/services/newsResearch');
+    const termo = `sem-poluir-${Date.now()}`;
+
+    assert.deepEqual(await nr.buscarGoogleNewsEmAlta(termo), []);
+    assert.equal(limiter.emPausa(), true);
+
+    // Google voltou e a pausa saiu: o termo recusado não pode estar preso no
+    // cache vazio, senão o radar seguiria cego mesmo com tudo funcionando.
+    responderOk = true;
+    limiter.reiniciar();
+    const depois = await nr.buscarGoogleNewsEmAlta(termo);
+    assert.ok(depois.length >= 1, 'deve consultar de novo, sem cache negativo');
+    assert.equal(chamadas, 2);
+  } finally {
+    axios.get = axiosOriginal;
     limiter.reiniciar();
   }
 });

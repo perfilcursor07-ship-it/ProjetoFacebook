@@ -111,3 +111,92 @@ test('ehBloqueio reconhece tanto a pausa quanto o 503 cru', () => {
   assert.equal(limiter.ehBloqueio(limiter.erroDePausa()), true);
   limiter.reiniciar();
 });
+
+/** Avança o relógio para a pausa parecer vencida, sem esperar os 5 min. */
+function comRelogioAdiantado(minutos, fn) {
+  const real = Date.now;
+  Date.now = () => real() + minutos * 60_000;
+  try {
+    return fn();
+  } finally {
+    Date.now = real;
+  }
+}
+
+test('pausa vencida libera UMA sonda, não a rajada inteira', async () => {
+  limiter.reiniciar();
+  limiter.registrarFalha(
+    Object.assign(new Error('503'), { response: { status: 503 } })
+  );
+  assert.equal(limiter.emPausa(), true);
+
+  await comRelogioAdiantado(10, async () => {
+    assert.equal(limiter.emPausa(), false, 'a pausa deve ter vencido');
+
+    let chamadasAoGoogle = 0;
+    let recusadas = 0;
+    // A sonda segura o Google por um instante, então as outras 47 chegam
+    // enquanto ela está em voo — que é o caso real da rajada.
+    const tarefas = Array.from({ length: 48 }, () =>
+      limiter
+        .executar(async () => {
+          chamadasAoGoogle += 1;
+          await new Promise((r) => setTimeout(r, 20));
+          return 'ok';
+        })
+        .catch((err) => {
+          recusadas += 1;
+          return err.code;
+        })
+    );
+
+    const saida = await Promise.all(tarefas);
+    assert.equal(chamadasAoGoogle, 1, 'só a sonda deve falar com o Google');
+    assert.equal(recusadas, 47);
+    assert.equal(
+      saida.filter((s) => s === 'GOOGLE_NEWS_EM_SONDAGEM').length,
+      47,
+      'as demais devem ser recusadas como sondagem em andamento'
+    );
+    // A sonda passou: o circuito fecha e o radar volta ao normal.
+    assert.equal(limiter.estado().testando, false);
+    assert.equal(limiter.estado().pausado, false);
+  });
+  limiter.reiniciar();
+});
+
+test('sonda que falha repausa e não deixa o resto da rajada escapar', async () => {
+  limiter.reiniciar();
+  limiter.registrarFalha(
+    Object.assign(new Error('503'), { response: { status: 503 } })
+  );
+
+  await comRelogioAdiantado(10, async () => {
+    let chamadasAoGoogle = 0;
+    const tarefas = Array.from({ length: 48 }, () =>
+      limiter
+        .executar(async () => {
+          chamadasAoGoogle += 1;
+          await new Promise((r) => setTimeout(r, 20));
+          throw Object.assign(new Error('Request failed with status code 503'), {
+            response: { status: 503 },
+          });
+        })
+        .catch((err) => err.code || 'erro')
+    );
+
+    await Promise.all(tarefas);
+    assert.equal(chamadasAoGoogle, 1, 'uma sonda por ciclo, mesmo falhando');
+    assert.equal(limiter.emPausa(), true, 'a sonda falhou: volta para a pausa');
+  });
+  limiter.reiniciar();
+});
+
+test('a sondagem não conta como bloqueio novo, mas é bloqueio para quem chama', () => {
+  limiter.reiniciar();
+  const erro = limiter.erroDeSondagem();
+  assert.equal(limiter.tipoDeBloqueio(erro), null, 'não deve escalar a pausa');
+  assert.equal(limiter.ehBloqueio(erro), true, 'deve impedir a cascata do Python');
+  assert.equal(limiter.registrarFalha(erro), false);
+  limiter.reiniciar();
+});
