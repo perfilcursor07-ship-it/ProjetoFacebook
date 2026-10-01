@@ -941,9 +941,13 @@
         ? `${topicos.length} assunto(s) em alta ${janela} (${data.totalAnalisado || 0} analisados). Marque um ou mais para criar no chat ou salvar direto como rascunho.`
         : Number(data.totalOcultado) > 0
           ? `As pautas encontradas ${janela} já viraram matéria nesta conta. Busque outro tema ou atualize mais tarde para ver novidades.`
-          : `Não achei nada em alta ${janela} nesses temas. Tente de novo em alguns minutos ou busque outro tema abaixo.`;
+          : data.googleEmPausa
+            // "Tente de novo em alguns minutos" era mentira durante a pausa: o
+            // aviso logo abaixo diz a hora em que as consultas voltam.
+            ? `Não consegui consultar o Google News agora.`
+            : `Não achei nada em alta ${janela} nesses temas. Tente de novo em alguns minutos ou busque outro tema abaixo.`;
     corpo.appendChild(p);
-    if (paginaFacebook && avisosPagina.length) {
+    if (avisosPagina.length) {
       const aviso = document.createElement('p');
       aviso.className = 'mia-x-result-note is-warning';
       aviso.textContent = avisosPagina.slice(0, 2).join(' ');

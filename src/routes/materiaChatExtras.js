@@ -349,6 +349,20 @@ router.post('/em-alta', async (req, res, next) => {
         sinalGoogleNews: Boolean(t.sinalTrends || t.emAlta),
       }));
 
+    // Zero pauta por bloqueio do Google é diferente de "nada em alta hoje".
+    // Sem este aviso a tela dizia "tente de novo em alguns minutos" enquanto o
+    // servidor seguia em pausa por meia hora.
+    const pausaGoogle = require('../services/googleNewsLimiter').estado();
+    const avisos = [];
+    if (pausaGoogle.pausado) {
+      avisos.push(
+        `O Google News limitou este servidor (${pausaGoogle.motivo}) e as consultas estão em pausa até ${new Intl.DateTimeFormat(
+          'pt-BR',
+          { timeZone: 'America/Araguaina', hour: '2-digit', minute: '2-digit' }
+        ).format(new Date(pausaGoogle.ate))}. Os resultados abaixo podem estar incompletos.`
+      );
+    }
+
     return res.json({
       ok: true,
       origem: 'em-alta',
@@ -356,6 +370,8 @@ router.post('/em-alta', async (req, res, next) => {
       temas: temas.map((t) => t.rotulo),
       padrao: usandoPadrao,
       limite: LIMITE_TOPICOS,
+      avisos,
+      googleEmPausa: pausaGoogle.pausado,
       totalAnalisado: Number(resultado.totalAnalisado) || 0,
       totalOcultado: Number(resultado.totalOcultado) || 0,
       tendenciasGoogle: (Array.isArray(tendenciasGoogle) ? tendenciasGoogle : []).map((item) => ({

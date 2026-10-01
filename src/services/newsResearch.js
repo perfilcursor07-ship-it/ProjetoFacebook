@@ -4,9 +4,52 @@ const { spawn } = require('child_process');
 const { apurarTopico, decodificarHtml } = require('./articleSource');
 const { env } = require('../config/env');
 
+const googleNews = require('./googleNewsLimiter');
+
 const USER_AGENT = 'Mozilla/5.0 (compatible; ViralizeAI/1.0)';
 const MS_DIA = 24 * 60 * 60 * 1000;
 const GOOGLE_PYTHON_CACHE = new Map();
+
+/**
+ * O radar repete as mesmas consultas a cada atualização e vários coletores
+ * pedem o mesmo termo. Sem cache, cada rajada ia inteira para o Google.
+ */
+const GOOGLE_RSS_CACHE = new Map();
+const RSS_CACHE_OK_MS = 5 * 60_000;
+/** Resultado vazio pode ser transitório: guarda por menos tempo. */
+const RSS_CACHE_VAZIO_MS = 2 * 60_000;
+
+function lerCacheRss(chave) {
+  const registro = GOOGLE_RSS_CACHE.get(chave);
+  if (registro && registro.expira > Date.now()) return registro.itens;
+  if (registro) GOOGLE_RSS_CACHE.delete(chave);
+  return null;
+}
+
+function guardarCacheRss(chave, itens) {
+  const lista = Array.isArray(itens) ? itens : [];
+  GOOGLE_RSS_CACHE.set(chave, {
+    itens: lista,
+    expira: Date.now() + (lista.length ? RSS_CACHE_OK_MS : RSS_CACHE_VAZIO_MS),
+  });
+  if (GOOGLE_RSS_CACHE.size > 500) {
+    GOOGLE_RSS_CACHE.delete(GOOGLE_RSS_CACHE.keys().next().value);
+  }
+  return lista;
+}
+
+/**
+ * Uma rajada de 48 consultas gerava 48 linhas idênticas no log. Aqui só a
+ * primeira de cada minuto aparece.
+ */
+const ULTIMO_AVISO = new Map();
+
+function avisarUmaVez(chave, mensagem, janelaMs = 60_000) {
+  const agora = Date.now();
+  if (ULTIMO_AVISO.get(chave) > agora - janelaMs) return;
+  ULTIMO_AVISO.set(chave, agora);
+  console.warn(mensagem);
+}
 
 function limparResumo(texto, max = 400, titulo = '') {
   let t = decodificarHtml(texto || '')
@@ -405,6 +448,13 @@ async function buscarGoogleNewsPython(
   const cached = GOOGLE_PYTHON_CACHE.get(chave);
   if (cached && cached.expira > Date.now()) return cached.itens;
 
+  // O script abre news.google.com e www.google.com. Durante a pausa, nem vale
+  // abrir o processo: só renovaria o bloqueio.
+  if (googleNews.emPausa()) {
+    avisarUmaVez('python-pausa', `Google Python: ${googleNews.erroDePausa().message}`);
+    return [];
+  }
+
   const candidatos = [
     String(env.pythonPath || '').trim(),
     process.platform === 'win32' ? 'python' : 'python3',
@@ -415,12 +465,14 @@ async function buscarGoogleNewsPython(
   for (const binario of candidatos) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      const encontrados = await executarGooglePython(binario, {
-        query: String(termo || '').trim(),
-        days: dias,
-        limit: Math.min(40, Math.max(1, Number(limit) || 20)),
-        includeWeb: Boolean(incluirWebGeral),
-      });
+      const encontrados = await googleNews.executar(() =>
+        executarGooglePython(binario, {
+          query: String(termo || '').trim(),
+          days: dias,
+          limit: Math.min(40, Math.max(1, Number(limit) || 20)),
+          includeWeb: Boolean(incluirWebGeral),
+        })
+      );
       const itens = encontrados.map((item) => ({
         id: slugId(item.titulo, item.link),
         titulo: limparTitulo(item.titulo),
@@ -442,7 +494,10 @@ async function buscarGoogleNewsPython(
       if (!/ENOENT|not found|não foi possível encontrar/i.test(String(err.message || ''))) break;
     }
   }
-  console.warn('Google Python:', ultimoErro?.message || 'Python indisponível');
+  avisarUmaVez(
+    `python-${ultimoErro?.message || 'indisponivel'}`,
+    `Google Python: ${ultimoErro?.message || 'Python indisponível'}`
+  );
   GOOGLE_PYTHON_CACHE.set(chave, { itens: [], expira: Date.now() + 2 * 60_000 });
   return [];
 }
@@ -458,13 +513,21 @@ async function buscarGoogleNewsRss(
     incluirWebGeral = false,
   } = {}
 ) {
+  const chaveCache = `rss|${String(termo || '').trim().toLowerCase()}|${when}|${hl}|${gl}|${ceid}|${
+    resolverDiretas ? 1 : 0
+  }|${incluirWebGeral ? 1 : 0}`;
+  const emCache = lerCacheRss(chaveCache);
+  if (emCache) return emCache;
+
   const q = encodeURIComponent(`${termo}${when ? ` when:${when}` : ''}`);
   const url = `https://news.google.com/rss/search?q=${q}&hl=${hl}&gl=${gl}&ceid=${ceid}`;
   try {
-    const { data } = await axios.get(url, {
-      headers: { 'User-Agent': USER_AGENT, Accept: 'application/rss+xml, text/xml' },
-      timeout: 15000,
-    });
+    const { data } = await googleNews.executar(() =>
+      axios.get(url, {
+        headers: { 'User-Agent': USER_AGENT, Accept: 'application/rss+xml, text/xml' },
+        timeout: 15000,
+      })
+    );
     const itens = extrairItensRss(String(data || '')).map((item) => ({
       ...item,
       id: slugId(item.titulo, item.link),
@@ -476,30 +539,48 @@ async function buscarGoogleNewsRss(
       emAlta: false,
     }));
     if (itens.length) {
-      if (!resolverDiretas) return itens;
+      if (!resolverDiretas) return guardarCacheRss(chaveCache, itens);
       const diretos = await buscarGoogleNewsPython(termo, {
         when,
         limit: 20,
         incluirWebGeral,
       });
-      return diretos.length ? diretos : itens;
+      return guardarCacheRss(chaveCache, diretos.length ? diretos : itens);
     }
-    return buscarGoogleNewsPython(termo, { when, incluirWebGeral });
+    return guardarCacheRss(
+      chaveCache,
+      await buscarGoogleNewsPython(termo, { when, incluirWebGeral })
+    );
   } catch (err) {
-    console.warn('Google News RSS:', err.message);
-    return buscarGoogleNewsPython(termo, { when, incluirWebGeral });
+    // Bloqueio por limite: o fallback em Python abre outro processo e bate no
+    // mesmo news.google.com. Era essa cascata que alimentava os 503.
+    if (googleNews.ehBloqueio(err)) {
+      avisarUmaVez('rss-bloqueio', `Google News RSS: ${err.message}`);
+      return guardarCacheRss(chaveCache, []);
+    }
+    avisarUmaVez(`rss-${err.message}`, `Google News RSS: ${err.message}`);
+    return guardarCacheRss(
+      chaveCache,
+      await buscarGoogleNewsPython(termo, { when, incluirWebGeral })
+    );
   }
 }
 
 async function buscarGoogleNewsEmAlta(termo) {
+  const chaveCache = `alta|${String(termo || '').trim().toLowerCase()}`;
+  const emCache = lerCacheRss(chaveCache);
+  if (emCache) return emCache;
+
   const q = encodeURIComponent(`${termo} when:1d`);
   const url = `https://news.google.com/rss/search?q=${q}&hl=pt-BR&gl=BR&ceid=BR:pt-419`;
   try {
-    const { data } = await axios.get(url, {
-      headers: { 'User-Agent': USER_AGENT },
-      timeout: 15000,
-    });
-    return extrairItensRss(String(data || ''))
+    const { data } = await googleNews.executar(() =>
+      axios.get(url, {
+        headers: { 'User-Agent': USER_AGENT },
+        timeout: 15000,
+      })
+    );
+    const itens = extrairItensRss(String(data || ''))
       .slice(0, 8)
       .map((item) => ({
         ...item,
@@ -511,9 +592,13 @@ async function buscarGoogleNewsEmAlta(termo) {
         recente: true,
         emAlta: true,
       }));
+    return guardarCacheRss(chaveCache, itens);
   } catch (err) {
-    console.warn('Google News em alta:', err.message);
-    return [];
+    avisarUmaVez(
+      googleNews.ehBloqueio(err) ? 'alta-bloqueio' : `alta-${err.message}`,
+      `Google News em alta: ${err.message}`
+    );
+    return guardarCacheRss(chaveCache, []);
   }
 }
 

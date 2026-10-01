@@ -1,0 +1,198 @@
+/**
+ * Ritmo das chamadas ao Google News.
+ *
+ * O radar monta uma rajada: 12 temas x 2 consultas x 2 coletores = até 48
+ * requisições disparadas de uma vez em `Promise.allSettled`. O Google responde
+ * HTTP 503 a essa rajada e, pior, cada falha do RSS caía no fallback em Python
+ * — que abre outro processo e bate no Google de novo. A tempestade causava o
+ * 503 e o 503 alimentava a tempestade.
+ *
+ * Diferente do YouTube, aqui não serializamos: uma chamada a cada 5s deixaria o
+ * radar levando minutos. O que resolve é um teto de chamadas simultâneas, um
+ * respiro entre os inícios e uma pausa geral ao primeiro sinal de limite.
+ *
+ * Ajustável no .env:
+ *   GOOGLE_NEWS_PARALELO      chamadas simultâneas (padrão 3)
+ *   GOOGLE_NEWS_INTERVALO_MS  respiro entre inícios (padrão 250)
+ *   GOOGLE_NEWS_PAUSA_MIN     1ª pausa após bloqueio, em minutos (padrão 5)
+ *   GOOGLE_NEWS_PAUSA_MAX_MIN teto da pausa, que dobra a cada bloqueio (padrão 30)
+ */
+
+// Dentro do `node --test` não há por que esperar entre chamadas simuladas.
+//
+// O intervalo é global, então ele é o piso de latência do radar: 48 consultas
+// a 150ms levam ~7s no cache frio (contra ~2s na rajada que tomava 503). As
+// repetições saem do cache, então esse custo só aparece na primeira rodada.
+// Ambos os valores são ajustáveis porque a tolerância real do Google não é
+// documentada — se o 503 voltar, aumente o intervalo.
+const INTERVALO_PADRAO_MS = process.env.NODE_TEST_CONTEXT ? 0 : 150;
+const LIMITE_PARALELO = Math.max(1, Number(process.env.GOOGLE_NEWS_PARALELO) || 4);
+const INTERVALO_MS = Math.max(
+  0,
+  Number(process.env.GOOGLE_NEWS_INTERVALO_MS ?? INTERVALO_PADRAO_MS) || 0
+);
+const PAUSA_MS = Math.max(1, Number(process.env.GOOGLE_NEWS_PAUSA_MIN) || 5) * 60_000;
+const PAUSA_MAX_MS = Math.max(
+  PAUSA_MS,
+  (Number(process.env.GOOGLE_NEWS_PAUSA_MAX_MIN) || 30) * 60_000
+);
+
+let ativos = 0;
+let espera = [];
+let ultimoInicio = 0;
+let pausadoAte = 0;
+let motivoDaPausa = '';
+let bloqueiosSeguidos = 0;
+
+function hora(ms) {
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Araguaina',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(ms));
+}
+
+function emPausa(agora = Date.now()) {
+  return pausadoAte > agora;
+}
+
+function erroDePausa() {
+  const err = new Error(
+    `O Google News limitou este servidor (${motivoDaPausa}). As consultas estão em pausa até ${hora(
+      pausadoAte
+    )} para o bloqueio passar.`
+  );
+  err.status = 503;
+  err.code = 'GOOGLE_NEWS_EM_PAUSA';
+  return err;
+}
+
+/** O erro indica limite por IP? (503/429 ou página de tráfego incomum) */
+function tipoDeBloqueio(err) {
+  if (err?.code === 'GOOGLE_NEWS_EM_PAUSA') return null;
+  const status = Number(err?.response?.status || err?.status || 0);
+  const texto = String(err?.message || err || '').toLowerCase();
+  if (status === 429 || /\bstatus code 429\b/.test(texto) || texto.includes('too many requests')) {
+    return '429';
+  }
+  // 503 é a resposta que o Google News dá quando está recusando o IP.
+  if (status === 503 || /\bstatus code 503\b/.test(texto)) return '503';
+  if (texto.includes('unusual traffic') || texto.includes('/sorry/')) return 'antibot';
+  return null;
+}
+
+/**
+ * Avisa o limitador de uma falha. Devolve true quando ela iniciou (ou
+ * confirmou) a pausa.
+ */
+function registrarFalha(err) {
+  const tipo = tipoDeBloqueio(err);
+  if (!tipo) return false;
+  const agora = Date.now();
+  if (emPausa(agora)) return true;
+  bloqueiosSeguidos += 1;
+  const duracao = Math.min(PAUSA_MAX_MS, PAUSA_MS * 2 ** (bloqueiosSeguidos - 1));
+  pausadoAte = agora + duracao;
+  motivoDaPausa =
+    tipo === '429'
+      ? 'HTTP 429, requisições demais'
+      : tipo === '503'
+        ? 'HTTP 503, requisições demais'
+        : 'tráfego incomum';
+  console.warn(
+    `[google-news] bloqueio (${motivoDaPausa}): consultas em pausa por ${Math.round(
+      duracao / 60_000
+    )} min, até ${hora(pausadoAte)}`
+  );
+  return true;
+}
+
+/** Uma resposta boa zera a contagem: a próxima pausa volta ao tempo inicial. */
+function registrarSucesso() {
+  bloqueiosSeguidos = 0;
+}
+
+function liberarVaga() {
+  ativos -= 1;
+  const proximo = espera.shift();
+  if (proximo) {
+    ativos += 1;
+    proximo();
+  }
+}
+
+function pegarVaga() {
+  if (ativos < LIMITE_PARALELO) {
+    ativos += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => espera.push(resolve));
+}
+
+/**
+ * Roda `tarefa` respeitando o teto de simultâneas, o respiro entre inícios e a
+ * pausa por bloqueio. Lança GOOGLE_NEWS_EM_PAUSA, sem chamar o Google, enquanto
+ * durar a pausa — inclusive para quem já estava na fila quando ela começou.
+ */
+async function executar(tarefa) {
+  if (emPausa()) throw erroDePausa();
+  await pegarVaga();
+  try {
+    if (emPausa()) throw erroDePausa();
+    const falta = ultimoInicio + INTERVALO_MS - Date.now();
+    if (falta > 0) await new Promise((resolve) => setTimeout(resolve, falta));
+    if (emPausa()) throw erroDePausa();
+    ultimoInicio = Date.now();
+
+    const resultado = await tarefa();
+    registrarSucesso();
+    return resultado;
+  } catch (err) {
+    registrarFalha(err);
+    throw err;
+  } finally {
+    liberarVaga();
+  }
+}
+
+/** A falha veio de limite do Google (ou da pausa)? Quem chama usa para não insistir. */
+function ehBloqueio(err) {
+  return err?.code === 'GOOGLE_NEWS_EM_PAUSA' || tipoDeBloqueio(err) !== null;
+}
+
+function estado() {
+  const pausado = emPausa();
+  return {
+    pausado,
+    ate: pausado ? new Date(pausadoAte).toISOString() : null,
+    motivo: pausado ? motivoDaPausa : null,
+    ativos,
+    naFila: espera.length,
+    limiteParalelo: LIMITE_PARALELO,
+    intervaloMs: INTERVALO_MS,
+  };
+}
+
+/** Só para testes. */
+function reiniciar() {
+  ativos = 0;
+  espera = [];
+  ultimoInicio = 0;
+  pausadoAte = 0;
+  motivoDaPausa = '';
+  bloqueiosSeguidos = 0;
+}
+
+module.exports = {
+  executar,
+  ehBloqueio,
+  registrarFalha,
+  registrarSucesso,
+  tipoDeBloqueio,
+  emPausa,
+  erroDePausa,
+  estado,
+  reiniciar,
+  LIMITE_PARALELO,
+  INTERVALO_MS,
+};
