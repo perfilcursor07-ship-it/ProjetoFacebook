@@ -55,6 +55,13 @@ const PORTAIS = Object.freeze([
   { id: 'comoouvirao', nome: 'Como Ouvirão', tipo: 'rss', url: 'https://comoouvirao.com.br/feed/', especializado: true, nichos: ['igreja'] },
   { id: 'hinologia', nome: 'Hinologia Cristã', tipo: 'rss', url: 'http://www.hinologia.org/feed/', especializado: true, nichos: ['gospel', 'igreja'] },
   { id: 'mariosergio', nome: 'Mario Sérgio História', tipo: 'rss', url: 'https://mariosergiohistoria.blogspot.com/feeds/posts/default?alt=rss', especializado: true, nichos: ['igreja', 'pastores'] },
+  { id: 'novotempo', nome: 'Novo Tempo', tipo: 'rss', url: 'https://www.novotempo.com/feed/', especializado: true, nichos: ['igreja', 'pastores'] },
+  { id: 'universal', nome: 'Universal.org', tipo: 'rss', url: 'https://www.universal.org/noticias/feed/', especializado: true, nichos: ['igreja', 'pastores'] },
+  // Portais católicos
+  { id: 'cancaonova', nome: 'Canção Nova', tipo: 'rss', url: 'https://noticias.cancaonova.com/feed/', especializado: true, nichos: ['catolicos', 'igreja'] },
+  { id: 'vaticannews', nome: 'Vatican News', tipo: 'rss', url: 'https://www.vaticannews.va/pt.rss.xml', especializado: true, nichos: ['catolicos', 'israel'] },
+  { id: 'cnbb', nome: 'CNBB', tipo: 'rss', url: 'https://www.cnbb.org.br/feed/', especializado: true, nichos: ['catolicos', 'igreja'] },
+  { id: 'gaudiumpress', nome: 'Gaudium Press', tipo: 'rss', url: 'https://gaudiumpress.org/feed/', especializado: true, nichos: ['catolicos'] },
   // Portais gerais brasileiros: a notícia precisa citar o nicho no título
   { id: 'g1', nome: 'g1', tipo: 'rss', url: 'https://g1.globo.com/rss/g1/', nichos: ['politica', 'policia'] },
   { id: 'g1tocantins', nome: 'g1 Tocantins', tipo: 'rss', url: 'https://g1.globo.com/rss/g1/to/tocantins/', nichos: ['politica', 'policia'] },
@@ -63,6 +70,16 @@ const PORTAIS = Object.freeze([
   { id: 'brasilparalelo', nome: 'Brasil Paralelo', tipo: 'rss', url: 'https://www.brasilparalelo.com.br/noticias/rss.xml', nichos: ['politica', 'politica-fe'] },
   { id: 'istoe', nome: 'IstoÉ', tipo: 'rss', url: 'https://istoe.com.br/feed/', nichos: ['politica', 'policia'] },
   { id: 'sonoticiaboa', nome: 'Só Notícia Boa', tipo: 'rss', url: 'https://www.sonoticiaboa.com.br/feed/', nichos: ['igreja', 'pastores', 'catolicos'] },
+  { id: 'folha', nome: 'Folha de S.Paulo', tipo: 'rss', url: 'https://feeds.folha.uol.com.br/emcimadahora/rss091.xml', nichos: ['politica', 'policia'] },
+  { id: 'bbcbrasil', nome: 'BBC News Brasil', tipo: 'rss', url: 'https://feeds.bbci.co.uk/portuguese/rss.xml', nichos: ['politica', 'policia', 'israel'] },
+  { id: 'veja', nome: 'Veja', tipo: 'rss', url: 'https://veja.abril.com.br/feed/', nichos: ['politica', 'policia'] },
+  { id: 'oantagonista', nome: 'O Antagonista', tipo: 'rss', url: 'https://www.oantagonista.com.br/feed/', nichos: ['politica', 'politica-fe'] },
+  { id: 'jovempan', nome: 'Jovem Pan', tipo: 'rss', url: 'https://jovempan.com.br/feed', nichos: ['politica', 'policia'] },
+  { id: 'agenciabrasil', nome: 'Agência Brasil', tipo: 'rss', url: 'https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml', nichos: ['politica'] },
+  { id: 'sbtnews', nome: 'SBT News', tipo: 'rss', url: 'https://sbtnews.sbt.com.br/rss.xml', nichos: ['politica', 'policia'] },
+  { id: 'diariodopoder', nome: 'Diário do Poder', tipo: 'rss', url: 'https://diariodopoder.com.br/feed', nichos: ['politica', 'politica-fe'] },
+  { id: 'cartacapital', nome: 'Carta Capital', tipo: 'rss', url: 'https://www.cartacapital.com.br/feed/', nichos: ['politica'] },
+  { id: 'conjur', nome: 'Consultor Jurídico', tipo: 'rss', url: 'https://www.conjur.com.br/rss.xml', nichos: ['policia', 'politica'] },
   // Portais cristãos internacionais
   { id: 'christiandaily', nome: 'Christian Daily', tipo: 'rss', url: 'https://www.christiandaily.com/rss.xml', especializado: true, internacional: true, nichos: ['israel', 'igreja', 'pastores', 'politica-fe'] },
   { id: 'christianpost', nome: 'The Christian Post', tipo: 'rss', url: 'https://www.christianpost.com/rss', especializado: true, internacional: true, nichos: ['israel', 'igreja', 'pastores', 'politica-fe'] },
@@ -256,7 +273,7 @@ async function buscarNosPortais({ nichos = [], horas = 24 } = {}) {
   const itens = [];
   const status = [];
   for (const { portal, itens: lista, erro, ms } of leituras) {
-    const recentes = lista.filter((item) => !item.dataTimestamp || item.dataTimestamp >= limite);
+    const recentes = lista.filter((item) => item.dataTimestamp && item.dataTimestamp >= limite);
     status.push({ id: portal.id, nome: portal.nome, itens: recentes.length, erro, ms });
     for (const item of recentes) {
       itens.push({ ...item, portal: portal.id, portalNichos: portal.nichos, especializado: Boolean(portal.especializado), internacional: Boolean(portal.internacional) });

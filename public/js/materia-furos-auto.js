@@ -18,6 +18,8 @@
     pagina: $('furos-auto-pagina'),
     limite: $('furos-auto-limite'),
     foto: $('furos-auto-foto'),
+    modoImagem: $('furos-auto-modo-imagem'),
+    fotoLinha: $('furos-auto-foto-linha'),
     salvar: $('furos-auto-salvar'),
     escanear: $('furos-auto-escanear'),
     resumo: $('furos-auto-resumo'),
@@ -101,6 +103,14 @@
     mostrarCamposAgenda();
   }
 
+  // No modo "foto original" a IA nem é chamada, então a rede de segurança
+  // de "se a imagem da IA falhar" não tem o que fazer: some do formulário.
+  function aplicarModoImagem() {
+    if (!el.fotoLinha) return;
+    el.fotoLinha.hidden = el.modoImagem?.value === 'original';
+  }
+
+  el.modoImagem?.addEventListener('change', aplicarModoImagem);
   el.agendaModo?.addEventListener('change', mostrarCamposAgenda);
   el.agendaSoHorario?.addEventListener('change', mostrarCamposAgenda);
   el.agendaDias?.addEventListener('click', (e) => {
@@ -250,6 +260,10 @@
         el.limite.value = String(config.limite_dia);
       }
       el.foto.checked = config.foto_original_se_falhar !== false;
+      if (el.modoImagem) {
+        el.modoImagem.value = config.modo_imagem === 'original' ? 'original' : 'ia';
+        aplicarModoImagem();
+      }
       preencherAgenda(config.agenda);
       if (config.facebook_page_id) el.pagina.value = String(config.facebook_page_id);
       // Outro navegador/computador: traz as palavras-chave que o piloto usa.
@@ -383,6 +397,7 @@
           limite_dia: Number(el.limite.value) || 40,
           facebook_page_id: el.pagina.value || null,
           foto_original_se_falhar: el.foto.checked,
+          modo_imagem: el.modoImagem?.value === 'original' ? 'original' : 'ia',
           agenda: lerAgendaDoForm(),
           modelo: document.getElementById('chat-ai-model')?.dataset.modelo || null,
         }),

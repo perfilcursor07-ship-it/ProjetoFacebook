@@ -497,7 +497,14 @@
                   </span>
                   <span class="mia-furos-agenda-ajuda" id="furos-agenda-ajuda"></span>
                 </fieldset>
-                <label class="mia-furos-auto-check">
+                <label class="mia-furos-auto-modo">
+                  <span>Imagem das publicações</span>
+                  <select id="furos-auto-modo-imagem">
+                    <option value="ia" selected>Gerar com IA</option>
+                    <option value="original">Usar a foto da matéria original</option>
+                  </select>
+                </label>
+                <label class="mia-furos-auto-check" id="furos-auto-foto-linha">
                   <input type="checkbox" id="furos-auto-foto" checked />
                   <span>Se a imagem da IA falhar 2 vezes, publicar com a arte da foto original</span>
                 </label>

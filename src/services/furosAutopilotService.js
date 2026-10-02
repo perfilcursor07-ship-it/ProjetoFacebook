@@ -197,6 +197,7 @@ function formatarConfig(row) {
     facebook_page_id: row?.facebook_page_id || null,
     modelo: row?.modelo || null,
     foto_original_se_falhar: row ? Boolean(row.foto_original_se_falhar) : true,
+    modo_imagem: row?.modo_imagem === 'original' ? 'original' : 'ia',
     ultimo_scan_at: row?.ultimo_scan_at || null,
     proxima_postagem_at: row?.proxima_postagem_at || null,
     ultimo_erro: row?.ultimo_erro || null,
@@ -300,6 +301,7 @@ async function salvarConfig(userId, entrada = {}) {
     facebook_page_id: page?.id || null,
     modelo: corta(entrada.modelo, 120),
     foto_original_se_falhar: entrada.foto_original_se_falhar !== false,
+    modo_imagem: entrada.modo_imagem === 'original' ? 'original' : 'ia',
     ultimo_erro: null,
   };
   // Ao ligar: varre já e publica a primeira assim que ficar pronta.
@@ -488,6 +490,7 @@ async function enfileirarEscolhidas(userId, entrada = {}) {
     facebook_page_id: page.id,
     ...(modelo ? { modelo } : {}),
     foto_original_se_falhar: entrada.foto_original_se_falhar !== false,
+    ...(entrada.modo_imagem ? { modo_imagem: entrada.modo_imagem === 'original' ? 'original' : 'ia' } : {}),
     // A primeira sai assim que ficar pronta (sem esperar um intervalo inteiro).
     proxima_postagem_at: proxima && proxima > new Date() ? proxima : new Date(),
   };
@@ -936,6 +939,25 @@ async function avancarEscrita(row) {
 async function gerarImagem(item, row) {
   const pauta = parseJson(item.pauta, {});
   const tentativa = (Number(item.tentativas) || 0) + 1;
+
+  // Modo "foto original": publica com a arte da matéria de origem e não
+  // chama a IA. É a escolha para a pauta em que imagem gerada não cabe.
+  if (row?.modo_imagem === 'original') {
+    const matter = await require('../models/AiMatters').findById(item.matter_id);
+    if (matter?.imagem_path || matter?.imagem_url) {
+      await atualizarSeAinda(item.id, 'gerando_imagem', {
+        status: 'pronta', imagem_ia: false, tentativas: tentativa, erro: null,
+      });
+    } else {
+      await atualizarSeAinda(item.id, 'gerando_imagem', {
+        status: 'erro',
+        tentativas: tentativa,
+        erro: 'Sem foto na matéria original e o modo escolhido não gera imagem com IA. Não publicada.',
+      });
+    }
+    return;
+  }
+
   try {
     await require('./materiaPorChat').aplicarCapaChatgpt({
       userId: Number(item.user_id),
@@ -1007,13 +1029,14 @@ async function ocuparVagasDeImagem() {
     if (!item) return;
     const cfg = await db(CONFIG).where({ user_id: item.user_id }).first();
     item.foto_original_se_falhar = cfg ? cfg.foto_original_se_falhar : true;
+    item.modo_imagem = cfg?.modo_imagem === 'original' ? 'original' : 'ia';
     // Reserva atômica: outra volta do tick pode ter pego o mesmo item.
     const reservado = await db(ITENS)
       .where({ id: item.id, status: 'aguardando_imagem' })
       .update({ status: 'gerando_imagem', updated_at: db.fn.now() });
     if (!reservado) continue;
     imagensAtivas += 1;
-    gerarImagem(item, { foto_original_se_falhar: item.foto_original_se_falhar })
+    gerarImagem(item, { foto_original_se_falhar: item.foto_original_se_falhar, modo_imagem: item.modo_imagem })
       .catch((err) => console.warn('[furos-auto] imagem:', err.message))
       .finally(() => {
         imagensAtivas -= 1;
