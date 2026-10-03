@@ -130,6 +130,11 @@ app.listen(env.port, async () => {
         console.error('[biblioteca tick]', err.message);
       }
       try {
+        await require('./services/dotsService').tick();
+      } catch (err) {
+        console.error('[dots tick]', err.message);
+      }
+      try {
         const agendaService = require('./services/bibliotecaAgendaService');
         await agendaService.tickAgendaPre();
       } catch (err) {

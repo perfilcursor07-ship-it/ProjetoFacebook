@@ -31,7 +31,7 @@
           : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
     }`;
     el.geral.textContent = estado.geral ? 'Retomar a IA' : 'Parar toda a IA';
-    el.geral.className = `rounded-lg px-3.5 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+    el.geral.className = `d-btn disabled:cursor-not-allowed disabled:opacity-50 ${
       estado.geral ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400' : 'bg-rose-500 text-white hover:bg-rose-400'
     }`;
     el.geral.disabled = salvando;
@@ -41,16 +41,14 @@
     for (const modelo of estado.catalogo) {
       const parado = estado.geral || pausados.has(modelo.id);
       const card = document.createElement('div');
-      card.className = `flex items-center justify-between gap-3 rounded-lg border p-3 ${
-        parado ? 'border-rose-500/35 bg-rose-500/5' : 'border-slate-800 bg-slate-950/40'
-      }`;
+      card.className = `claude-model-card ${parado ? 'is-danger' : ''}`;
       const info = document.createElement('div');
       info.className = 'min-w-0';
       const nome = document.createElement('p');
-      nome.className = 'text-sm font-semibold text-white';
+      nome.className = 'claude-model-title';
       nome.textContent = modelo.nome;
       const detalhe = document.createElement('p');
-      detalhe.className = 'mt-0.5 truncate text-[11px] text-slate-500';
+      detalhe.className = 'claude-model-meta';
       detalhe.textContent = `${modelo.id} · ${modelo.uso}`;
       info.append(nome, detalhe);
 

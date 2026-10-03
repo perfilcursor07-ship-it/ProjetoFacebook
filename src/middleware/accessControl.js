@@ -27,7 +27,11 @@ async function loadCurrentUser(req, res, next) {
       nome: user.nome,
       email: user.email,
       nivel_acesso: user.nivel_acesso || 'usuario',
+      // O menu usa isto para esconder módulo sem permissão.
+      modulos_materia: user.modulos_materia ?? null,
     };
+    // O menu de toda página lê daqui para esconder módulo sem permissão.
+    res.locals.modulosPermitidos = require('../services/modulosMateriaService').permitidos(user);
     return next();
   } catch (err) {
     return next(err);

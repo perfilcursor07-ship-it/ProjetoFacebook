@@ -928,7 +928,7 @@ async function showLotePage(req, res, next) {
   try {
     return res.render('conteudo-lote', {
       title: 'Gerando matérias',
-      currentPath: '/conteudo',
+      currentPath: '/materias-ia',
     });
   } catch (err) {
     return next(err);

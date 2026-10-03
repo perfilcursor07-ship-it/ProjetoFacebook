@@ -10,7 +10,9 @@ function resolveIgCookiesPath() {
   const configured = String(env.ytDlp?.igCookiesFile || '').trim();
   if (configured) return configured;
   if (fs.existsSync(DEFAULT_IG_COOKIES)) return DEFAULT_IG_COOKIES;
-  return '';
+  // Salvo pela tela /cookies: evita depender de variável no .env e de subir
+  // arquivo no servidor cada vez que a sessão expira.
+  return require('./cookieStore').caminhoSalvoPelaTela('instagram');
 }
 
 /**

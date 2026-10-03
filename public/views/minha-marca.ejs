@@ -1,22 +1,23 @@
 <%- include('partials/app-start') %>
+  <link rel="stylesheet" href="/css/dots.css?v=20261003e" />
 <%
   const activeTab = typeof tab !== 'undefined' && tab === 'video' ? 'video' : 'imagem';
   const videoModeloAtual = profile.marca_video_modelo || defaultVideoBrandModel;
   const videoCorDestaque = profile.marca_video_cor_destaque || '#facc15';
 %>
 
-  <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8">
-    <div class="flex flex-wrap items-start justify-between gap-4">
+  <main class="dots-pagina brand-page mx-auto max-w-8xl px-4 py-6 sm:px-6 sm:py-10">
+    <header class="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <p class="text-xs font-semibold uppercase tracking-wider text-emerald-400">Identidade visual</p>
-        <h1 class="mt-1 text-2xl font-semibold text-white">Minha marca</h1>
-        <p class="mt-2 max-w-2xl text-sm text-slate-400">
+        <p class="dots-etiqueta">Identidade visual</p>
+        <h1 class="dots-titulo mt-1">Minha marca</h1>
+        <p class="dots-sub">
           Marca de <strong class="font-medium text-slate-300">imagem</strong> (artes das matérias) e marca de
           <strong class="font-medium text-slate-300">vídeo</strong> (Reels / tela dividida) — podem ser diferentes.
         </p>
       </div>
-      <a href="/conteudo" class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-emerald-500 hover:text-emerald-300">Voltar para criar conteúdo</a>
-    </div>
+      <a href="/materia-manual" class="d-btn d-btn--neutro">Voltar para criar matéria</a>
+    </header>
 
     <% if (saved) { %>
       <div class="mt-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">Identidade visual salva com sucesso.</div>
@@ -25,7 +26,7 @@
       <div class="mt-5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"><%= error %></div>
     <% } %>
 
-    <div class="mt-6 inline-flex rounded-xl border border-slate-700 bg-slate-950 p-1" role="tablist" aria-label="Tipo de marca">
+    <div class="brand-tabs mt-6" role="tablist" aria-label="Tipo de marca">
       <a href="/minha-marca"
         class="rounded-lg px-4 py-2 text-sm font-semibold <%= activeTab === 'imagem' ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:text-white' %>">
         Marca para imagem
@@ -37,7 +38,7 @@
     </div>
 
     <%- include('partials/page-distribution', { mode: 'brands' }) %>
-    <form action="/minha-marca" method="POST" enctype="multipart/form-data" class="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+    <form action="/minha-marca" method="POST" enctype="multipart/form-data" class="brand-form mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <input type="hidden" name="marca_tab" value="<%= activeTab %>" />
       <input type="hidden" name="marca_modelo_arte" value="<%= profile.marca_modelo_arte || defaultArtModel %>" id="hidden-modelo-arte" />
       <input type="hidden" name="marca_modelo_arte_secundario" value="<%= profile.marca_modelo_arte_secundario || '' %>" id="hidden-modelo-arte-sec" />

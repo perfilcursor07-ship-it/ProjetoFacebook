@@ -14,9 +14,33 @@ function redirectWith(res, type, message) {
 async function index(req, res, next) {
   try {
     const users = await Users.list();
+    const db = require('../config/db');
+
+    // Todas as páginas do sistema, com a conta dona, para o administrador
+    // liberar sem precisar saber de quem é cada uma.
+    const paginas = await db('facebook_pages as p')
+      .leftJoin('facebook_accounts as c', 'c.id', 'p.facebook_account_id')
+      .leftJoin('users as d', 'd.id', 'c.user_id')
+      .orderBy('p.page_name', 'asc')
+      .select('p.id', 'p.page_name', 'p.ayrshare_profile_key', 'd.nome as dono');
+
+    // { userId: Set(pageId) } para marcar os checkboxes.
+    const concessoes = {};
+    try {
+      for (const l of await db('user_facebook_pages').select('user_id', 'facebook_page_id')) {
+        (concessoes[l.user_id] ||= []).push(Number(l.facebook_page_id));
+      }
+    } catch (err) {
+      if (err?.code !== 'ER_NO_SUCH_TABLE') throw err;
+    }
+
     return res.render('usuarios', {
       title: 'Usuários',
       users,
+      paginas,
+      concessoes,
+      modulosCatalogo: require('../services/modulosMateriaService').MODULOS,
+      modulosDe: (u) => require('../services/modulosMateriaService').permitidos(u),
       success: req.query.success || null,
       error: req.query.error || null,
     });
@@ -79,6 +103,89 @@ async function updateAccess(req, res, next) {
   }
 }
 
+/**
+ * Páginas liberadas para cada usuário publicar.
+ *
+ * A posse da página continua de quem conectou o Facebook; isto é só
+ * permissão, para o administrador não precisar revincular a mesma página no
+ * Ayrshare a cada usuário novo.
+ */
+async function updatePages(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return redirectWith(res, 'error', 'Usuário inválido');
+
+    const alvo = await Users.findById(id);
+    if (!alvo) return redirectWith(res, 'error', 'Usuário não encontrado');
+
+    // Um checkbox só vem como string; vários vêm como array.
+    const bruto = req.body.paginas;
+    const pedidos = (Array.isArray(bruto) ? bruto : bruto ? [bruto] : [])
+      .map((v) => Number(v))
+      .filter((v) => Number.isInteger(v) && v > 0);
+
+    const db = require('../config/db');
+    // Só id de página que existe de verdade entra — o form pode vir adulterado.
+    const validos = pedidos.length ? await db('facebook_pages').whereIn('id', pedidos).pluck('id') : [];
+
+    await db.transaction(async (trx) => {
+      await trx('user_facebook_pages').where({ user_id: id }).del();
+      if (validos.length) {
+        await trx('user_facebook_pages').insert(
+          validos.map((pageId) => ({
+            user_id: id,
+            facebook_page_id: Number(pageId),
+            concedido_por: Number(req.user.id),
+          }))
+        );
+      }
+    });
+
+    // A página padrão do usuário pode ter acabado de perder a permissão.
+    const { defaultPageIdForUser } = require('../services/facebookPageResolver');
+    await defaultPageIdForUser(id);
+
+    return redirectWith(
+      res,
+      'success',
+      validos.length
+        ? `${alvo.nome} agora publica em ${validos.length} página(s)`
+        : `${alvo.nome} ficou sem página liberada`
+    );
+  } catch (err) {
+    return next(err);
+  }
+}
+/**
+ * Módulos da área Matérias que o usuário pode abrir.
+ *
+ * Grava sempre, inclusive lista vazia: "nenhum módulo" é escolha válida e
+ * precisa ser distinguível de "nunca configurado" (que libera tudo).
+ */
+async function updateModules(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return redirectWith(res, 'error', 'Usuário inválido');
+
+    const alvo = await Users.findById(id);
+    if (!alvo) return redirectWith(res, 'error', 'Usuário não encontrado');
+
+    const modulos = require('../services/modulosMateriaService');
+    const json = modulos.sanear(req.body.modulos);
+    await Users.update(id, { modulos_materia: json });
+
+    const n = JSON.parse(json).length;
+    return redirectWith(
+      res,
+      'success',
+      n
+        ? `${alvo.nome} agora acessa ${n} módulo(s)`
+        : `${alvo.nome} ficou sem nenhum módulo de Matérias`
+    );
+  } catch (err) {
+    return next(err);
+  }
+}
 async function remove(req, res, next) {
   try {
     const id = Number(req.params.id);
@@ -127,4 +234,4 @@ async function resetPassword(req, res, next) {
   }
 }
 
-module.exports = { index, create, updateAccess, remove, resetPassword };
+module.exports = { index, create, updateAccess, updatePages, updateModules, remove, resetPassword };

@@ -45,7 +45,7 @@
     if (!badge) {
       badge = document.createElement('span');
       badge.className =
-        'mia-viral-badge shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ring-1';
+        'mia-viral-badge shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase ring-1';
       const status = row.querySelector('.mia-matter-status');
       if (status && status.parentNode) {
         status.insertAdjacentElement('afterend', badge);
@@ -54,7 +54,7 @@
       }
     }
     badge.className =
-      'mia-viral-badge shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ring-1 ' +
+      'mia-viral-badge shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase ring-1 ' +
       info.cls;
     badge.textContent = info.label;
     if (scoreEl) scoreEl.textContent = 'score ' + Math.round(info.score);

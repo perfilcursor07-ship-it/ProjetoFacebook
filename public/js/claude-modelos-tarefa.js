@@ -17,15 +17,14 @@
     lista.replaceChildren();
     for (const tarefa of estado.tarefas) {
       const campo = document.createElement('div');
+      campo.className = 'claude-task-field';
       const rotulo = document.createElement('label');
       rotulo.htmlFor = `modelo-tarefa-${tarefa.id}`;
-      rotulo.className = 'block text-xs font-semibold text-slate-200';
       rotulo.textContent = tarefa.nome;
 
       const select = document.createElement('select');
       select.id = `modelo-tarefa-${tarefa.id}`;
       select.dataset.tarefa = tarefa.id;
-      select.className = 'mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none';
 
       const padrao = document.createElement('option');
       padrao.value = '';

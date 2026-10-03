@@ -139,7 +139,7 @@
       return;
     }
     statusEl.textContent = `Abrindo lote com ${payload.topicos.length} pauta(s)…`;
-    window.location.href = '/conteudo/lote';
+    window.location.href = '/materias-ia/lote';
   }
 
   function abrirMateriaEmNovaAba(url) {
@@ -209,7 +209,7 @@
       a.className = 'text-emerald-400 underline hover:text-emerald-300';
       a.textContent = 'Abrir matéria';
       statusEl.appendChild(a);
-      statusEl.appendChild(document.createTextNode(' · você continua em /conteudo.'));
+      statusEl.appendChild(document.createTextNode(' · você continua em Pautas com IA.'));
     } catch (err) {
       setGenerating(false);
       statusEl.textContent = err.message;
@@ -639,7 +639,7 @@
       if (!dest) throw new Error('Matéria gerada, mas sem ID para abrir');
 
       setGenerating(false);
-      // Abre a matéria em nova aba e permanece em /conteudo
+      // Abre a matéria em nova aba e permanece em Pautas com IA.
       abrirMateriaEmNovaAba(dest);
       renderFontesManual(data.pesquisa);
       st.replaceChildren();
@@ -656,7 +656,7 @@
       a.className = 'text-emerald-400 underline hover:text-emerald-300';
       a.textContent = 'Abrir matéria';
       st.appendChild(a);
-      st.appendChild(document.createTextNode(' · você continua em /conteudo.'));
+      st.appendChild(document.createTextNode(' · você continua em Pautas com IA.'));
       const avisos = (data.avisos || []).filter(Boolean);
       if (avisos.length) {
         const p = document.createElement('span');

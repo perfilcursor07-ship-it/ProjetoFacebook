@@ -42,6 +42,9 @@ app.use((req, res, next) => {
 
 app.use(attachUser);
 app.use(require('./routes/accountPages'));
+// Depois do loadCurrentUser: barra a URL do módulo sem permissão, porque
+// esconder do menu não é controle de acesso.
+app.use(require('./services/modulosMateriaService').requireModulo);
 
 app.get('/health', (_req, res) => {
   res.json({
@@ -81,14 +84,13 @@ app.post('/login', async (req, res, next) => {
   }
 });
 
-app.get('/conteudo', requireAuth, require('./controllers/materiasIaController').listPage);
 app.get('/materia-manual', requireAuth, (_req, res) => renderPage(res, 'materia-manual', 'Matéria manual'));
 app.get('/piloto-automatico', requireAuth, (_req, res) => renderPage(res, 'piloto-automatico', 'Piloto automático'));
-app.get('/virais', requireAuth, require('./controllers/viraisController').showPage);
-app.get('/conteudo/lote', requireAuth, require('./controllers/materiasIaController').showLotePage);
-app.get('/viralizar', requireAuth, (_req, res) => res.redirect('/virais'));
+app.get('/furos', requireAuth, (_req, res) => renderPage(res, 'furos', 'Furos do dia'));
+app.get('/dots', requireAuth, (_req, res) => renderPage(res, 'dots', 'Dots'));
 app.get('/busca', requireAuth, (_req, res) => renderPage(res, 'busca', 'Vídeos'));
 app.get('/materias-ia', requireAuth, require('./controllers/materiasIaController').listPage);
+app.get('/materias-ia/lote', requireAuth, require('./controllers/materiasIaController').showLotePage);
 app.get('/biblioteca', requireAuth, require('./controllers/bibliotecaController').listPage);
 app.get('/biblioteca/fontes/:id', requireAuth, require('./controllers/bibliotecaController').fontePage);
 app.get('/biblioteca/posts/:postId', requireAuth, require('./controllers/bibliotecaController').postPage);
@@ -107,7 +109,7 @@ app.get('/paginas', requireAuth, (_req, res) => {
   });
 });
 app.get('/dashboard', requireAuth, require('./controllers/dashboardController').show);
-app.get('/cookies', requireAuth, (_req, res) => renderPage(res, 'cookies', 'Cookies do YouTube'));
+app.get('/cookies', requireAuth, (_req, res) => renderPage(res, 'cookies', 'Cookies'));
 app.get(
   '/configuracoes/descobrir-pautas',
   requireAuth,
@@ -121,10 +123,12 @@ app.use('/api/facebook', requireAuth, require('./routes/facebook'));
 app.use('/api/page-distribution', requireAuth, require('./routes/pageDistribution'));
 app.use('/api/clips', requireAuth, require('./routes/clips'));
 app.use('/api/publications', requireAuth, require('./routes/publications'));
+app.use('/api/dots', requireAuth, require('./routes/dots'));
 app.use('/api/materias-ia/chat-extras', requireAuth, require('./routes/materiaChatExtras'));
 app.use('/api/materias-ia', requireAuth, require('./routes/materiasIa'));
-app.use('/api/virais', requireAuth, require('./routes/virais'));
 app.use('/api/biblioteca', requireAuth, require('./routes/biblioteca'));
+app.use('/api/cookies', requireAuth, require('./routes/cookies'));
+// Endpoint antigo, mantido por compatibilidade: delega para /api/cookies/youtube.
 app.use('/api/youtube-cookies', requireAuth, require('./routes/ytCookies'));
 app.use('/api/pauta-fontes', requireAuth, require('./routes/pautaFontes'));
 app.use('/api/feed-sugerido', requireAuth, require('./routes/feedSugerido'));

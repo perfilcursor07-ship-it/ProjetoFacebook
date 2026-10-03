@@ -1,19 +1,25 @@
 <%- include('partials/app-start') %>
+  <link rel="stylesheet" href="/css/dots.css?v=20261003e" />
 <%
   const provider = String(typeof publishProvider !== 'undefined' ? publishProvider : 'auto').toLowerCase();
   const useAyrshare = provider === 'ayrshare' || (provider === 'auto' && Boolean(ayrshareConfigured));
 %>
 
-  <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8">
-    <h1 class="text-2xl font-semibold text-white">Páginas do Facebook</h1>
+  <main class="dots-pagina pages-page mx-auto max-w-8xl px-4 py-6 sm:px-6 sm:py-10">
+    <header class="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <p class="dots-etiqueta">Configurações</p>
+        <h1 class="dots-titulo mt-1">Páginas do Facebook</h1>
     <% if (useAyrshare) { %>
-    <p class="mt-2 text-slate-400">
+        <p class="dots-sub">
       Publicação via <strong class="font-medium text-emerald-300">Ayrshare</strong>.
       Um User Profile na Ayrshare = uma Página Facebook. Cole o <strong class="font-medium text-slate-300">Profile Key</strong> de cada profile.
-    </p>
+        </p>
     <% } else { %>
-    <p class="mt-2 text-slate-400">Conecte sua conta e vincule as páginas ao PostSyncer para publicar.</p>
+        <p class="dots-sub">Conecte sua conta e vincule as páginas ao PostSyncer para publicar.</p>
     <% } %>
+      </div>
+    </header>
 
     <div id="alert" class="mt-4 hidden rounded-lg px-4 py-3 text-sm"></div>
     <%- include('partials/page-distribution', { mode: 'settings' }) %>

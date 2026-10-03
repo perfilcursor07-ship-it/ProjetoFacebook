@@ -82,7 +82,7 @@
       if (authLost) {
         hintEl.innerHTML =
           'Sessão expirou. <a class="text-sky-400 hover:underline" href="/login?next=' +
-          encodeURIComponent('/conteudo/lote') +
+          encodeURIComponent('/materias-ia/lote') +
           '">Entrar de novo</a> para continuar o lote.';
       } else if (gerando) {
         hintEl.textContent = 'Gerando a próxima…';

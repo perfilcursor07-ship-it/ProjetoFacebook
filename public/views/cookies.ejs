@@ -1,174 +1,261 @@
 <%- include('partials/app-start') %>
 
   <main class="mx-auto max-w-9xl px-4 py-10">
-    <h1 class="text-2xl font-semibold text-white">Cookies do YouTube</h1>
-    <p class="mt-2 text-slate-400">
-      Quando a importação do YouTube falhar com "sessão expirada", envie aqui um novo arquivo de cookies.
-      O sistema filtra automaticamente só os cookies do YouTube e salva no lugar certo.
+    <h1 class="text-2xl font-semibold text-white">Cookies</h1>
+    <p class="mt-2 max-w-3xl text-slate-400">
+      Sessões do YouTube, Instagram e Facebook. Quando uma expirar, cole o conteúdo aqui
+      (ou envie o <span class="font-mono text-xs">.txt</span>) e teste —
+      <strong class="text-slate-300">sem precisar de SSH nem subir arquivo no servidor</strong>.
     </p>
 
-    <section class="mt-6 rounded-xl border border-slate-800 bg-slate-900/60 p-5">
-      <h2 class="font-medium text-white">Status atual</h2>
-      <div id="status-box" class="mt-3 text-sm text-slate-400">Carregando…</div>
-      <button type="button" id="test-btn"
-        class="mt-4 rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:border-emerald-500 hover:text-emerald-300 disabled:opacity-50">
-        Testar cookies agora
-      </button>
-      <p id="test-result" class="mt-3 text-sm"></p>
-    </section>
+    <div id="cartoes" class="mt-6 space-y-5">
+      <p class="text-sm text-slate-400">Carregando…</p>
+    </div>
 
-    <section class="mt-6 rounded-xl border border-slate-800 bg-slate-900/60 p-5">
-      <h2 class="font-medium text-white">Enviar novo arquivo</h2>
-      <form id="upload-form" class="mt-4 space-y-3">
-        <input type="file" name="arquivo" id="cookie-file" accept=".txt"
-          class="w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-700 file:px-3 file:py-2 file:text-sm file:text-slate-100 hover:file:bg-slate-600" />
-        <p class="text-xs text-slate-500">Ou cole o conteúdo do cookies.txt abaixo:</p>
-        <textarea name="conteudo" id="cookie-text" rows="5" spellcheck="false"
-          placeholder="# Netscape HTTP Cookie File&#10;.youtube.com&#9;TRUE&#9;/&#9;TRUE&#9;…"
-          class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs text-slate-200 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"></textarea>
-        <button type="submit" id="upload-btn"
-          class="rounded-lg bg-emerald-500 px-5 py-2.5 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50">
-          Salvar cookies
-        </button>
-      </form>
-      <p id="upload-status" class="mt-3 text-sm"></p>
-      <p class="mt-2 text-xs text-amber-300/80">
-        Segurança: pode enviar o export completo — o sistema descarta tudo que não for do youtube.com antes de salvar.
-      </p>
-    </section>
-
-    <section class="mt-6 rounded-xl border border-slate-800 bg-slate-900/60 p-5">
-      <h2 class="font-medium text-white">Passo a passo para gerar o cookies.txt</h2>
+    <section class="mt-8 rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+      <h2 class="font-medium text-white">Como gerar o arquivo de cookies</h2>
       <ol class="mt-4 list-decimal space-y-3 pl-5 text-sm text-slate-300">
         <li>
           Instale a extensão <strong class="text-white">Get cookies.txt LOCALLY</strong> no Chrome/Edge
-          (formato Netscape).
+          (exporta no formato Netscape).
         </li>
         <li>
           Abra uma <strong class="text-white">janela anônima</strong> (Ctrl+Shift+N) e permita a extensão nela
           (em <span class="font-mono text-xs">chrome://extensions</span> → detalhes → "Permitir em anônimo").
         </li>
         <li>
-          Na janela anônima, entre em <span class="font-mono text-xs">youtube.com</span> e
-          <strong class="text-white">faça login</strong> — de preferência com uma conta secundária, não a principal.
+          Na janela anônima, entre no site e <strong class="text-white">faça login</strong> — de preferência
+          com uma conta secundária, não a principal.
         </li>
         <li>
-          Ainda logado, visite
-          <span class="font-mono text-xs">https://www.youtube.com/robots.txt</span>
-          (evita que o YouTube invalide os cookies na exportação).
+          No YouTube, ainda logado, visite
+          <span class="font-mono text-xs">youtube.com/robots.txt</span>
+          antes de exportar (evita que a sessão seja invalidada na exportação).
         </li>
         <li>
-          Clique na extensão e use <strong class="text-white">Export</strong> (site atual). Salve o arquivo
-          <span class="font-mono text-xs">.txt</span>.
+          Clique na extensão, use <strong class="text-white">Export</strong> e abra o
+          <span class="font-mono text-xs">.txt</span>. Cole o conteúdo no cartão da plataforma, ou envie o arquivo.
         </li>
         <li>
-          <strong class="text-white">Feche a janela anônima sem deslogar</strong> e não use essa conta no
-          navegador — se usar, os cookies expiram rápido.
+          <strong class="text-white">Feche a janela anônima sem deslogar.</strong> Se usar essa conta no
+          navegador depois, os cookies expiram rápido.
         </li>
-        <li>Envie o arquivo no formulário acima e clique em <strong class="text-white">Testar cookies agora</strong>.</li>
+        <li>Salve e clique em <strong class="text-white">Testar sessão</strong>.</li>
       </ol>
+      <p class="mt-4 text-xs text-amber-300/80">
+        Pode colar o export inteiro do navegador: o sistema descarta tudo que não for do domínio da
+        plataforma antes de gravar, e o conteúdo nunca volta para a tela nem para o log.
+      </p>
     </section>
   </main>
 
   <script>
-    const statusBox = document.getElementById('status-box');
-    const testBtn = document.getElementById('test-btn');
-    const testResult = document.getElementById('test-result');
-    const form = document.getElementById('upload-form');
-    const uploadBtn = document.getElementById('upload-btn');
-    const uploadStatus = document.getElementById('upload-status');
+    const PLATAFORMAS = [
+      { id: 'youtube', rotulo: 'YouTube', dominio: '.youtube.com', usadoEm: 'transcrição de vídeo, legendas e importação' },
+      { id: 'instagram', rotulo: 'Instagram', dominio: '.instagram.com', usadoEm: 'leitura de perfis e posts na biblioteca' },
+      { id: 'facebook', rotulo: 'Facebook', dominio: '.facebook.com', usadoEm: 'leitura de páginas e posts' },
+    ];
 
-    function fmtDate(iso) {
+    const container = document.getElementById('cartoes');
+
+    function escapar(valor) {
+      return String(valor == null ? '' : valor).replace(/[&<>"']/g, (c) => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      ));
+    }
+
+    function formatarData(iso) {
+      if (!iso) return '—';
       try { return new Date(iso).toLocaleString('pt-BR'); } catch { return iso; }
     }
 
-    async function loadStatus() {
-      try {
-        const res = await fetch('/api/youtube-cookies/status');
-        const data = await res.json();
-        if (!data.configured) {
-          statusBox.innerHTML = '<span class="text-amber-300">' + data.message + '</span>';
-          return;
-        }
-        if (!data.exists) {
-          statusBox.innerHTML = 'Nenhum arquivo salvo ainda em <span class="font-mono text-xs">' + data.path + '</span>.';
-          return;
-        }
-        const auth = data.hasAuthCookies
-          ? '<span class="text-emerald-400">sessão logada ✓</span>'
-          : '<span class="text-rose-400">sem cookies de login — refaça a exportação logado</span>';
-        statusBox.innerHTML =
-          data.cookieCount + ' cookie(s) do YouTube · ' + auth +
-          '<br>Atualizado em ' + fmtDate(data.updatedAt) +
-          ' · <span class="font-mono text-xs">' + data.path + '</span>';
-      } catch {
-        statusBox.textContent = 'Erro ao carregar status.';
-      }
+    function montarCartao(p) {
+      return `
+        <section class="rounded-xl border border-slate-800 bg-slate-900/60 p-5" data-plataforma="${p.id}">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 class="font-medium text-white">${escapar(p.rotulo)}</h2>
+              <p class="mt-0.5 text-xs text-slate-500">Usado em: ${escapar(p.usadoEm)}</p>
+            </div>
+            <span class="js-badge rounded-full border border-slate-700 px-2.5 py-1 text-xs text-slate-400">…</span>
+          </div>
+
+          <div class="js-status mt-3 text-sm text-slate-400">Carregando…</div>
+
+          <div class="mt-4 space-y-3">
+            <label class="block text-xs text-slate-400">
+              Enviar arquivo .txt
+              <input type="file" accept=".txt" class="js-arquivo mt-1 w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-700 file:px-3 file:py-2 file:text-sm file:text-slate-100 hover:file:bg-slate-600" />
+            </label>
+
+            <label class="block text-xs text-slate-400">
+              ou cole o conteúdo dos cookies
+              <textarea rows="4" spellcheck="false"
+                class="js-conteudo mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs text-slate-200 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"
+                placeholder="# Netscape HTTP Cookie File&#10;${escapar(p.dominio)}&#9;TRUE&#9;/&#9;TRUE&#9;…"></textarea>
+            </label>
+          </div>
+
+          <div class="mt-4 flex flex-wrap items-center gap-2">
+            <button type="button" class="js-salvar rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50">
+              Salvar
+            </button>
+            <button type="button" class="js-testar rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:border-emerald-500 hover:text-emerald-300 disabled:opacity-50">
+              Testar sessão
+            </button>
+            <button type="button" class="js-remover ml-auto rounded-lg border border-slate-800 px-3 py-2 text-xs text-slate-500 hover:border-rose-500/50 hover:text-rose-300 disabled:opacity-50">
+              Apagar
+            </button>
+          </div>
+
+          <p class="js-resultado mt-3 text-sm"></p>
+        </section>
+      `;
     }
 
-    testBtn.addEventListener('click', async () => {
-      testBtn.disabled = true;
-      testResult.className = 'mt-3 text-sm text-slate-400';
-      testResult.textContent = 'Consultando o YouTube (pode levar ~20s)…';
-      try {
-        const res = await fetch('/api/youtube-cookies/test', { method: 'POST' });
-        const data = await res.json();
-        if (data.ok) {
-          testResult.className = 'mt-3 text-sm text-emerald-400';
-          testResult.textContent = '✓ ' + data.message + ' ("' + data.titulo + '")';
-        } else {
-          testResult.className = 'mt-3 text-sm text-rose-400';
-          testResult.textContent = '✗ ' + (data.error || 'Falha no teste');
-        }
-      } catch {
-        testResult.className = 'mt-3 text-sm text-rose-400';
-        testResult.textContent = '✗ Erro de rede ao testar.';
-      } finally {
-        testBtn.disabled = false;
-      }
-    });
+    function pintarStatus(cartao, dados) {
+      const badge = cartao.querySelector('.js-badge');
+      const status = cartao.querySelector('.js-status');
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const file = document.getElementById('cookie-file').files[0];
-      const text = document.getElementById('cookie-text').value.trim();
-      if (!file && !text) {
-        uploadStatus.className = 'mt-3 text-sm text-rose-400';
-        uploadStatus.textContent = 'Escolha um arquivo ou cole o conteúdo.';
+      if (!dados.existe) {
+        badge.className = 'js-badge rounded-full border border-slate-700 px-2.5 py-1 text-xs text-slate-400';
+        badge.textContent = 'sem cookies';
+        status.innerHTML = 'Nenhum cookie salvo ainda.'
+          + (dados.porEnv
+            ? ` O servidor aponta <span class="font-mono text-xs">${escapar(dados.variavelEnv)}</span> para <span class="font-mono text-xs">${escapar(dados.caminho)}</span>.`
+            : '');
         return;
       }
 
-      uploadBtn.disabled = true;
-      uploadStatus.className = 'mt-3 text-sm text-slate-400';
-      uploadStatus.textContent = 'Enviando…';
+      const problema = !dados.temSessao || dados.expirou;
+      badge.className = problema
+        ? 'js-badge rounded-full border border-rose-500/50 bg-rose-500/10 px-2.5 py-1 text-xs text-rose-300'
+        : 'js-badge rounded-full border border-emerald-500/50 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300';
+      badge.textContent = dados.expirou ? 'expirado' : (dados.temSessao ? 'sessão ativa' : 'sem login');
 
+      const linhas = [
+        `${dados.total} cookie(s) · ` + (dados.temSessao
+          ? '<span class="text-emerald-400">com cookies de login</span>'
+          : '<span class="text-rose-400">sem cookies de login — refaça a exportação logado</span>'),
+        `Salvo em ${escapar(formatarData(dados.atualizadoEm))}`,
+      ];
+      if (dados.expiraEm) {
+        linhas.push(dados.expirou
+          ? `<span class="text-rose-400">A sessão expirou em ${escapar(formatarData(dados.expiraEm))} — envie cookies novos.</span>`
+          : `Expira em ${escapar(formatarData(dados.expiraEm))}`);
+      }
+      // O caminho só interessa a quem for mexer no servidor: fica discreto.
+      linhas.push(`<span class="text-xs text-slate-600">${escapar(dados.caminho)}${dados.porEnv ? ' (via ' + escapar(dados.variavelEnv) + ')' : ''}</span>`);
+      status.innerHTML = linhas.join('<br>');
+    }
+
+    function mostrar(cartao, texto, tipo) {
+      const cores = { ok: 'text-emerald-400', erro: 'text-rose-400', neutro: 'text-slate-400' };
+      const alvo = cartao.querySelector('.js-resultado');
+      alvo.className = 'js-resultado mt-3 text-sm ' + (cores[tipo] || cores.neutro);
+      alvo.textContent = texto;
+    }
+
+    async function carregarStatus() {
+      try {
+        const res = await fetch('/api/cookies/status');
+        const data = await res.json();
+        const porId = new Map((data.plataformas || []).map((p) => [p.plataforma, p]));
+        for (const p of PLATAFORMAS) {
+          const cartao = container.querySelector(`[data-plataforma="${p.id}"]`);
+          const dados = porId.get(p.id);
+          if (cartao && dados) pintarStatus(cartao, dados);
+        }
+      } catch {
+        container.querySelectorAll('.js-status').forEach((el) => {
+          el.textContent = 'Erro ao carregar o status.';
+        });
+      }
+    }
+
+    async function salvar(cartao, id) {
+      const arquivo = cartao.querySelector('.js-arquivo').files[0];
+      const conteudo = cartao.querySelector('.js-conteudo').value.trim();
+      if (!arquivo && !conteudo) {
+        mostrar(cartao, 'Escolha um arquivo ou cole o conteúdo dos cookies.', 'erro');
+        return;
+      }
+
+      const botao = cartao.querySelector('.js-salvar');
+      botao.disabled = true;
+      mostrar(cartao, 'Salvando…', 'neutro');
       try {
         let res;
-        if (file) {
+        if (arquivo) {
           const fd = new FormData();
-          fd.append('arquivo', file);
-          res = await fetch('/api/youtube-cookies', { method: 'POST', body: fd });
+          fd.append('arquivo', arquivo);
+          res = await fetch(`/api/cookies/${id}`, { method: 'POST', body: fd });
         } else {
-          res = await fetch('/api/youtube-cookies', {
+          res = await fetch(`/api/cookies/${id}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ conteudo: text }),
+            body: JSON.stringify({ conteudo }),
           });
         }
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Falha ao salvar');
-        uploadStatus.className = 'mt-3 text-sm text-emerald-400';
-        uploadStatus.textContent = '✓ ' + data.message;
-        form.reset();
-        loadStatus();
+        mostrar(cartao, '✓ ' + data.message, 'ok');
+        // Não deixa o conteúdo da sessão parado na tela depois de gravado.
+        cartao.querySelector('.js-conteudo').value = '';
+        cartao.querySelector('.js-arquivo').value = '';
+        carregarStatus();
       } catch (err) {
-        uploadStatus.className = 'mt-3 text-sm text-rose-400';
-        uploadStatus.textContent = '✗ ' + err.message;
+        mostrar(cartao, '✗ ' + err.message, 'erro');
       } finally {
-        uploadBtn.disabled = false;
+        botao.disabled = false;
       }
-    });
+    }
 
-    loadStatus();
+    async function testar(cartao, id) {
+      const botao = cartao.querySelector('.js-testar');
+      botao.disabled = true;
+      mostrar(cartao, 'Consultando a plataforma (pode levar ~20s)…', 'neutro');
+      try {
+        const res = await fetch(`/api/cookies/${id}/test`, { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          mostrar(cartao, '✓ ' + data.message + (data.detalhe ? ` (${data.detalhe})` : ''), 'ok');
+        } else {
+          mostrar(cartao, '✗ ' + (data.error || 'Falha no teste'), 'erro');
+        }
+      } catch {
+        mostrar(cartao, '✗ Erro de rede ao testar.', 'erro');
+      } finally {
+        botao.disabled = false;
+        carregarStatus();
+      }
+    }
+
+    async function remover(cartao, id, rotulo) {
+      if (!window.confirm(`Apagar os cookies do ${rotulo}? As funções que dependem dessa sessão param até você enviar outros.`)) {
+        return;
+      }
+      const botao = cartao.querySelector('.js-remover');
+      botao.disabled = true;
+      try {
+        const res = await fetch(`/api/cookies/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        mostrar(cartao, data.message || 'Apagado.', 'neutro');
+        carregarStatus();
+      } catch {
+        mostrar(cartao, '✗ Erro ao apagar.', 'erro');
+      } finally {
+        botao.disabled = false;
+      }
+    }
+
+    container.innerHTML = PLATAFORMAS.map(montarCartao).join('');
+    for (const p of PLATAFORMAS) {
+      const cartao = container.querySelector(`[data-plataforma="${p.id}"]`);
+      cartao.querySelector('.js-salvar').addEventListener('click', () => salvar(cartao, p.id));
+      cartao.querySelector('.js-testar').addEventListener('click', () => testar(cartao, p.id));
+      cartao.querySelector('.js-remover').addEventListener('click', () => remover(cartao, p.id, p.rotulo));
+    }
+    carregarStatus();
   </script>
 <%- include('partials/app-end') %>

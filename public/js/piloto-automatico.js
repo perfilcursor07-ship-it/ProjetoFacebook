@@ -142,7 +142,6 @@
       ? `Última varredura${config.ultimo_scan_at ? ` (${quando(config.ultimo_scan_at)})` : ''}: ${config.ultimo_scan_resumo}`
       : '';
     renderForaDaFila(s.foraDaFila || []);
-    renderNtfy(config.ntfy || {});
     if (config.ultimo_erro) aviso(`Último problema: ${config.ultimo_erro}`, 'aviso');
     else if (el.aviso.dataset.fixo !== '1') aviso('');
 
@@ -207,119 +206,6 @@
     }
     el.atualizado.textContent = `Atualizado às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
   }
-
-  /* ------------------------------ ntfy ------------------------------ */
-
-  const ntfy = {
-    painel: $('ntfy'),
-    form: $('ntfy-form'),
-    estado: $('ntfy-estado'),
-    topico: $('ntfy-topico'),
-    servidor: $('ntfy-servidor'),
-    token: $('ntfy-token'),
-    publicada: $('ntfy-publicada'),
-    falha: $('ntfy-falha'),
-    salvar: $('ntfy-salvar'),
-    testar: $('ntfy-testar'),
-    gerar: $('ntfy-gerar'),
-    copiar: $('ntfy-copiar'),
-    msg: $('ntfy-msg'),
-  };
-  let ntfyPreenchido = false;
-  let ntfySalvo = null;
-
-  function ntfyMensagem(texto, tipo = '') {
-    if (!ntfy.msg) return;
-    ntfy.msg.textContent = texto || '';
-    ntfy.msg.className = `text-sm ${tipo === 'erro' ? 'text-rose-300' : tipo === 'ok' ? 'text-emerald-300' : 'text-slate-400'}`;
-  }
-
-  function renderNtfy(config) {
-    if (!ntfy.form) return;
-    ntfySalvo = config;
-    const ligado = Boolean(config.topico) && (config.publicada || config.falha);
-    ntfy.estado.textContent = ligado ? `Ligadas · ${config.topico}` : 'Desligadas';
-    ntfy.estado.className = `rounded-full px-2.5 py-1 text-xs font-semibold ${ligado ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-500/20 text-slate-300'}`;
-    ntfy.testar.disabled = !config.topico;
-    // O formulário só é preenchido uma vez: a atualização a cada 15 s não
-    // pode apagar o que o editor está digitando.
-    if (ntfyPreenchido) return;
-    ntfyPreenchido = true;
-    ntfy.topico.value = config.topico || '';
-    ntfy.servidor.value = config.servidor || '';
-    ntfy.token.placeholder = config.token_definido ? '•••••• salvo (deixe vazio para manter)' : 'tk_…';
-    ntfy.publicada.checked = config.publicada !== false;
-    ntfy.falha.checked = config.falha !== false;
-    if (!config.topico) ntfy.painel.open = true;
-  }
-
-  function topicoAleatorio() {
-    const letras = 'abcdefghijkmnpqrstuvwxyz23456789';
-    const bytes = new Uint8Array(12);
-    crypto.getRandomValues(bytes);
-    return `viralizeai-${[...bytes].map((b) => letras[b % letras.length]).join('')}`;
-  }
-
-  ntfy.gerar?.addEventListener('click', () => {
-    if (ntfy.topico.value.trim() && !confirm('Trocar o tópico? O celular precisa assinar o novo nome.')) return;
-    ntfy.topico.value = topicoAleatorio();
-    ntfyMensagem('Tópico gerado. Assine este nome no app e clique em Salvar.');
-  });
-
-  ntfy.copiar?.addEventListener('click', async () => {
-    const valor = ntfy.topico.value.trim();
-    if (!valor) return;
-    try {
-      await navigator.clipboard.writeText(valor);
-      ntfyMensagem('Tópico copiado.', 'ok');
-    } catch {
-      ntfy.topico.select();
-      ntfyMensagem('Selecionei o tópico: copie com Ctrl+C.');
-    }
-  });
-
-  ntfy.form?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    ntfy.salvar.disabled = true;
-    ntfyMensagem('Salvando…');
-    try {
-      const s = await api(`${API}/ntfy`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          topico: ntfy.topico.value.trim(),
-          servidor: ntfy.servidor.value.trim(),
-          token: ntfy.token.value.trim(),
-          publicada: ntfy.publicada.checked,
-          falha: ntfy.falha.checked,
-        }),
-      });
-      ntfy.token.value = '';
-      ntfyPreenchido = false;
-      render(s);
-      ntfyMensagem(s.config?.ntfy?.topico ? 'Salvo. Agora clique em Enviar teste.' : 'Notificações desligadas.', 'ok');
-    } catch (err) {
-      ntfyMensagem(err.message, 'erro');
-    } finally {
-      ntfy.salvar.disabled = false;
-    }
-  });
-
-  ntfy.testar?.addEventListener('click', async () => {
-    if (ntfySalvo && ntfy.topico.value.trim() !== (ntfySalvo.topico || '')) {
-      ntfyMensagem('Salve o tópico antes de testar.', 'erro');
-      return;
-    }
-    ntfy.testar.disabled = true;
-    ntfyMensagem('Enviando…');
-    try {
-      await api(`${API}/ntfy/teste`, { method: 'POST' });
-      ntfyMensagem('Teste enviado. Chegou no celular?', 'ok');
-    } catch (err) {
-      ntfyMensagem(err.message, 'erro');
-    } finally {
-      ntfy.testar.disabled = false;
-    }
-  });
 
   async function atualizar() {
     try {

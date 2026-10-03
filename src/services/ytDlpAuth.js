@@ -94,6 +94,13 @@ function getYtDlpAuthFlags(opts = {}) {
     return real ? { cookies: real } : {};
   }
 
+  // Salvo pela tela /cookies: o editor renova a sessão sem SSH no servidor.
+  const daTela = require('./cookieStore').caminhoSalvoPelaTela('youtube');
+  if (daTela) {
+    const real = validateCookiesFile(daTela, 'YouTube');
+    return real ? { cookies: real } : {};
+  }
+
   const browser = String(env.ytDlp.cookiesFromBrowser || '').trim().toLowerCase();
   if (!browser) return {};
   if (env.nodeEnv === 'production') {

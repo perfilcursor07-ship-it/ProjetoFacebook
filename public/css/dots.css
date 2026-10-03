@@ -1,0 +1,416 @@
+/* ============================================================================
+   Dots — e semente do novo visual do projeto.
+   Os tokens abaixo são a parte reaproveitável: copie o bloco :root para as
+   próximas telas e elas já nascem coerentes com esta.
+   ========================================================================= */
+
+:root {
+  /* Superfícies: três níveis, do fundo da página ao elemento em destaque. */
+  --d-bg: #060910;
+  --d-surface: #0e1420;
+  --d-surface-2: #141c2b;
+  --d-surface-hover: #18212f;
+
+  /* Traços: hairline normal, e uma versão mais clara para foco/hover. */
+  --d-border: #1e2938;
+  --d-border-forte: #2b3a4e;
+
+  /* Texto em quatro pesos. Mais que isso vira bagunça. */
+  --d-texto: #e8edf5;
+  --d-texto-2: #9fb0c6;
+  --d-texto-3: #6b7d95;
+  --d-texto-4: #47566b;
+
+  /* Marca. O verde é o mesmo da logo ViralizeAI. */
+  --d-acento: #34d399;
+  --d-acento-forte: #6ee7b7;
+  --d-acento-fundo: rgba(52, 211, 153, .08);
+  --d-acento-traco: rgba(52, 211, 153, .22);
+
+  --d-alerta: #fbbf24;
+  --d-erro: #fb7185;
+  --d-erro-fundo: rgba(251, 113, 133, .08);
+
+  /* Forma e movimento. */
+  --d-raio: .75rem;
+  --d-raio-g: 1.15rem;
+  --d-sombra: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -12px rgba(0, 0, 0, .5);
+  --d-transicao: 150ms cubic-bezier(.4, 0, .2, 1);
+}
+
+
+/* ---------------------------------------------------------------- layout
+   Em CSS puro de propósito: classe de valor arbitrário do Tailwind só
+   existe se o build a encontrar, e o app.css aqui é pré-compilado. */
+.d-layout { display: grid; gap: 1.5rem; }
+@media (min-width: 1024px) {
+  .d-layout { grid-template-columns: 23rem minmax(0, 1fr); gap: 1.75rem; align-items: start; }
+  .d-layout > .d-composer { position: sticky; top: 1.5rem; }
+}
+/* ------------------------------------------------------------------ base */
+
+.dots-pagina { color: var(--d-texto); }
+
+.dots-titulo {
+  font-size: 1.6rem;
+  font-weight: 650;
+  letter-spacing: -.02em;
+  color: var(--d-texto);
+}
+
+.dots-sub {
+  margin-top: .4rem;
+  max-width: 42rem;
+  font-size: .875rem;
+  line-height: 1.65;
+  color: var(--d-texto-2);
+}
+
+.dots-etiqueta {
+  font-size: .6875rem;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--d-acento);
+}
+
+/* --------------------------------------------------------------- cartões */
+
+.d-card {
+  background: var(--d-surface);
+  border: 1px solid var(--d-border);
+  border-radius: var(--d-raio-g);
+  box-shadow: var(--d-sombra);
+  transition: border-color var(--d-transicao), background var(--d-transicao);
+}
+.d-card:hover { border-color: var(--d-border-forte); }
+
+/* O cartão de quem está trabalhando ganha uma borda viva. */
+.d-card--trabalhando {
+  border-color: var(--d-acento-traco);
+  background: linear-gradient(180deg, var(--d-acento-fundo), transparent 42%), var(--d-surface);
+}
+.d-card--erro { border-color: rgba(251, 113, 133, .25); }
+
+/* -------------------------------------------------------------- composer */
+
+.d-composer textarea,
+.d-composer input[type='text'] {
+  width: 100%;
+  background: var(--d-surface-2);
+  border: 1px solid var(--d-border);
+  border-radius: var(--d-raio);
+  padding: .7rem .85rem;
+  color: var(--d-texto);
+  font-size: .875rem;
+  line-height: 1.6;
+  transition: border-color var(--d-transicao), background var(--d-transicao);
+}
+.d-composer textarea { resize: vertical; min-height: 7rem; }
+.d-composer textarea::placeholder,
+.d-composer input::placeholder { color: var(--d-texto-4); }
+.d-composer textarea:focus,
+.d-composer input:focus {
+  outline: 0;
+  border-color: var(--d-acento-traco);
+  background: var(--d-surface-hover);
+}
+
+.d-rotulo {
+  display: block;
+  font-size: .75rem;
+  font-weight: 500;
+  color: var(--d-texto-2);
+  margin-bottom: .35rem;
+}
+.d-ajuda { font-size: .6875rem; color: var(--d-texto-4); margin-top: .3rem; }
+
+/* Exemplos clicáveis: o jeito mais rápido de entender o que dá para pedir. */
+.d-exemplo {
+  border: 1px dashed var(--d-border-forte);
+  background: transparent;
+  border-radius: 999px;
+  padding: .3rem .7rem;
+  font-size: .72rem;
+  color: var(--d-texto-2);
+  cursor: pointer;
+  transition: all var(--d-transicao);
+}
+.d-exemplo:hover {
+  border-style: solid;
+  border-color: var(--d-acento-traco);
+  color: var(--d-acento-forte);
+  background: var(--d-acento-fundo);
+}
+
+/* --------------------------------------------------------------- botões */
+
+.d-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  border-radius: var(--d-raio);
+  padding: .45rem .85rem;
+  font-size: .78rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all var(--d-transicao);
+  white-space: nowrap;
+}
+.d-btn:disabled { opacity: .5; cursor: default; }
+
+.d-btn--principal { background: var(--d-acento); color: #042f21; font-weight: 600; }
+.d-btn--principal:hover:not(:disabled) { background: var(--d-acento-forte); }
+
+.d-btn--neutro { border-color: var(--d-border-forte); color: var(--d-texto-2); background: transparent; }
+.d-btn--neutro:hover:not(:disabled) {
+  border-color: var(--d-acento-traco);
+  color: var(--d-acento-forte);
+  background: var(--d-acento-fundo);
+}
+
+.d-btn--fantasma { color: var(--d-texto-3); background: transparent; padding: .35rem .5rem; }
+.d-btn--fantasma:hover:not(:disabled) { color: var(--d-texto); background: var(--d-surface-hover); }
+.d-btn--perigo:hover:not(:disabled) { color: var(--d-erro); background: var(--d-erro-fundo); }
+
+/* --------------------------------------------------------------- estado */
+
+.d-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  border-radius: 999px;
+  padding: .2rem .6rem .2rem .45rem;
+  font-size: .6875rem;
+  font-weight: 600;
+  letter-spacing: .01em;
+  border: 1px solid transparent;
+}
+.d-pill--trabalhando { background: var(--d-acento-fundo); border-color: var(--d-acento-traco); color: var(--d-acento-forte); }
+.d-pill--ativo { background: rgba(148, 163, 184, .08); border-color: var(--d-border-forte); color: var(--d-texto-2); }
+.d-pill--pausado { background: rgba(148, 163, 184, .06); border-color: var(--d-border); color: var(--d-texto-3); }
+.d-pill--erro { background: var(--d-erro-fundo); border-color: rgba(251, 113, 133, .25); color: var(--d-erro); }
+
+.d-luz { width: .4rem; height: .4rem; border-radius: 999px; background: currentColor; flex-shrink: 0; }
+.d-luz--pulsa { animation: d-pulso 1.6s ease-in-out infinite; }
+
+@keyframes d-pulso {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, .5); opacity: 1; }
+  50% { box-shadow: 0 0 0 .35rem rgba(52, 211, 153, 0); opacity: .5; }
+}
+
+/* ---------------------------------------------------------------- stats */
+
+.d-stats { display: flex; flex-wrap: wrap; gap: .3rem .9rem; }
+.d-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  font-size: .75rem;
+  color: var(--d-texto-3);
+}
+.d-stat svg { width: .8rem; height: .8rem; opacity: .7; }
+.d-stat b { color: var(--d-texto-2); font-weight: 600; }
+
+/* Barra do limite do dia: entender "quanto falta" sem ler número. */
+.d-barra { height: 3px; border-radius: 999px; background: var(--d-border); overflow: hidden; }
+.d-barra > span {
+  display: block;
+  height: 100%;
+  background: var(--d-acento);
+  border-radius: 999px;
+  transition: width 400ms var(--d-transicao);
+}
+.d-barra--cheia > span { background: var(--d-alerta); }
+
+/* ------------------------------------------------------------- atividade */
+
+.d-agora {
+  display: flex;
+  align-items: flex-start;
+  gap: .55rem;
+  border: 1px solid var(--d-acento-traco);
+  background: var(--d-acento-fundo);
+  border-radius: var(--d-raio);
+  padding: .6rem .75rem;
+  font-size: .8rem;
+  color: var(--d-acento-forte);
+}
+
+.d-reticencias::after { content: ''; animation: d-reticencias 1.5s steps(4, end) infinite; }
+@keyframes d-reticencias {
+  0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; }
+}
+
+.d-secao {
+  font-size: .625rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--d-texto-4);
+}
+
+/* Timeline do que já foi feito. */
+.d-linha {
+  display: flex;
+  gap: .6rem;
+  align-items: flex-start;
+  font-size: .78rem;
+  line-height: 1.55;
+  color: var(--d-texto-2);
+  padding: .3rem 0;
+}
+.d-linha-marca {
+  flex-shrink: 0;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: .65rem;
+  background: var(--d-surface-2);
+  color: var(--d-texto-4);
+  margin-top: .1rem;
+}
+.d-linha--ok .d-linha-marca { background: var(--d-acento-fundo); color: var(--d-acento); }
+.d-linha--erro .d-linha-marca { background: var(--d-erro-fundo); color: var(--d-erro); }
+.d-linha--erro { color: #fda4af; }
+.d-quando { color: var(--d-texto-4); font-size: .7rem; }
+
+/* O nome vira campo ao clicar, sem abrir caixa de diálogo. */
+.d-nome {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: .4rem;
+  color: var(--d-texto);
+  font-size: .95rem;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  padding: .1rem .35rem;
+  margin-left: -.35rem;
+  min-width: 6rem;
+  max-width: 100%;
+  transition: all var(--d-transicao);
+}
+.d-nome:hover { background: var(--d-surface-2); }
+.d-nome:focus { outline: 0; background: var(--d-surface-2); border-color: var(--d-acento-traco); }
+
+/* --------------------------------------------------------------- vazio */
+
+.d-vazio {
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  border: 1px dashed var(--d-border-forte);
+  border-radius: var(--d-raio-g);
+  color: var(--d-texto-3);
+}
+.d-vazio-icone {
+  display: inline-flex;
+  gap: .3rem;
+  margin-bottom: .9rem;
+}
+.d-vazio-icone i {
+  width: .5rem; height: .5rem; border-radius: 999px; background: var(--d-acento); opacity: .8;
+  animation: d-salto 1.4s ease-in-out infinite;
+}
+.d-vazio-icone i:nth-child(2) { animation-delay: .18s; }
+.d-vazio-icone i:nth-child(3) { animation-delay: .36s; }
+@keyframes d-salto {
+  0%, 100% { transform: translateY(0); opacity: .35; }
+  50% { transform: translateY(-.3rem); opacity: 1; }
+}
+
+/* --------------------------------------------------------------- detalhes */
+
+.d-detalhes > summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: .75rem;
+  color: var(--d-texto-3);
+  padding: .2rem 0;
+  transition: color var(--d-transicao);
+}
+.d-detalhes > summary::-webkit-details-marker { display: none; }
+.d-detalhes > summary:hover { color: var(--d-texto); }
+.d-detalhes > summary::before {
+  content: '';
+  width: 0; height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform var(--d-transicao);
+}
+.d-detalhes[open] > summary::before { transform: rotate(90deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .d-luz--pulsa, .d-reticencias::after, .d-vazio-icone i { animation: none; }
+}
+
+/* Seletor de IA dentro do cartão: parece texto, vira campo ao focar. */
+.d-escolha {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: .4rem;
+  color: var(--d-texto-2);
+  font-size: .75rem;
+  font-weight: 600;
+  padding: .05rem .25rem;
+  cursor: pointer;
+  transition: all var(--d-transicao);
+}
+.d-escolha:hover { background: var(--d-surface-2); border-color: var(--d-border); }
+.d-escolha:focus { outline: 0; background: var(--d-surface-2); border-color: var(--d-acento-traco); }
+.d-escolha option { background: var(--d-surface-2); color: var(--d-texto); }
+
+/* ---------------------------------------------------- tabela (usuários) */
+
+.d-busca {
+  background: var(--d-surface-2);
+  border: 1px solid var(--d-border);
+  border-radius: var(--d-raio);
+  padding: .45rem .75rem;
+  color: var(--d-texto);
+  font-size: .8rem;
+  transition: border-color var(--d-transicao);
+}
+.d-busca::placeholder { color: var(--d-texto-4); }
+.d-busca:focus { outline: 0; border-color: var(--d-acento-traco); }
+
+.d-thead {
+  background: var(--d-surface-2);
+  font-size: .6875rem;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--d-texto-4);
+}
+.d-tbody > tr + tr { border-top: 1px solid var(--d-border); }
+.d-tr { color: var(--d-texto-2); transition: background var(--d-transicao); }
+.d-tr:hover { background: var(--d-surface-2); }
+
+.d-avatar,
+.d-avatar--admin {
+  background: var(--d-surface-2);
+  color: var(--d-texto-2);
+}
+.d-avatar--admin { background: var(--d-acento-fundo); color: var(--d-acento-forte); }
+
+/* Caixa de marcar: páginas e módulos usam a mesma. */
+.d-opcao {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  border: 1px solid var(--d-border);
+  background: var(--d-surface);
+  border-radius: var(--d-raio);
+  padding: .5rem .7rem;
+  cursor: pointer;
+  transition: border-color var(--d-transicao), background var(--d-transicao);
+}
+.d-opcao:hover { border-color: var(--d-acento-traco); background: var(--d-surface-hover); }
+.d-opcao:has(input:checked) { border-color: var(--d-acento-traco); background: var(--d-acento-fundo); }
+.d-opcao:has(input:disabled) { opacity: .55; cursor: default; }

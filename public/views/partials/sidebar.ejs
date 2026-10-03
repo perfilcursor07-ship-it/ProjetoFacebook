@@ -2,16 +2,19 @@
   const path = typeof currentPath !== 'undefined' ? currentPath : '';
   const loggedUser = typeof user !== 'undefined' ? user : null;
   function navActive(href) {
-    return path === href || (href !== '/' && path.startsWith(href));
-  }
-  function contentAreaActive() {
-    return path === '/conteudo' || path === '/busca' || path === '/fila';
+    return path === href || (href !== '/' && path.startsWith(href + '/'));
   }
   function materiasAreaActive() {
     return path === '/minhas-materias' || path.startsWith('/materias-ia');
   }
-  function itemClass(href, groupedContent = false) {
-    return (groupedContent ? contentAreaActive() : navActive(href)) ? 'is-active' : '';
+  // Módulo sem permissão não aparece no menu (a rota também é barrada).
+  // A lista vem pronta do servidor; sem ela, mostra tudo.
+  const modulosOk = typeof modulosPermitidos !== 'undefined' && Array.isArray(modulosPermitidos)
+    ? modulosPermitidos
+    : null;
+  const podeVer = (id) => !modulosOk || modulosOk.includes(id);
+  function itemClass(href) {
+    return navActive(href) ? 'is-active' : '';
   }
   function iniciais(nome) {
     const partes = String(nome || '').trim().split(/\s+/).filter(Boolean);
@@ -47,84 +50,87 @@
     </div>
   </div>
 
-  <nav class="sidebar-nav" id="app-sidebar-nav">
-    <a href="/dashboard" title="Dashboard" class="sidebar-link <%= itemClass('/dashboard') %>">
+  <nav class="sidebar-nav" id="app-sidebar-nav" aria-label="Menu principal">
+    <a href="/dashboard" title="Visão geral" class="sidebar-link <%= itemClass('/dashboard') %>">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
-      <span class="sidebar-text">Dashboard</span>
+      <span class="sidebar-text">Visão geral</span>
     </a>
 
     <p class="sidebar-label">Matérias</p>
-    <a href="/materia-manual" title="Criar matéria" class="sidebar-link <%= itemClass('/materia-manual') %>">
+    <% if (podeVer('chat-materia')) { %>
+    <a href="/materia-manual" title="Chat Matéria" class="sidebar-link <%= itemClass('/materia-manual') %>">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
-      <span class="sidebar-text">Criar matéria</span>
+      <span class="sidebar-text">Chat Matéria</span>
     </a>
-    <a href="/piloto-automatico" title="Piloto automático do Furos do dia" class="sidebar-link <%= itemClass('/piloto-automatico') %>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-      <span class="sidebar-text">Piloto automático</span>
+    <% } %>
+    <% if (podeVer('furos')) { %>
+    <a href="/furos" title="Furos do dia: o que está bombando no seu nicho" class="sidebar-link <%= itemClass('/furos') %>">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>
+      <span class="sidebar-text">Furos do dia</span>
     </a>
-    <a href="/virais" title="Virais para meu público" class="sidebar-link <%= itemClass('/virais') %>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22c4 0 7-3 7-7 0-3-1.5-5.5-4-8-1 3-2.5 4-4 5 0-4-2-7-4-9 0 4-3 6-3 11 0 4.5 3.5 8 8 8Z"/></svg>
-      <span class="sidebar-text">Virais</span>
+    <% } %>
+    <% if (podeVer('dots')) { %>
+    <a href="/dots" title="Dots: agentes automáticos" class="sidebar-link <%= itemClass('/dots') %>">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+      <span class="sidebar-text">Agentes Dots</span>
     </a>
+    <% } %>
+    <% if (podeVer('materias-salvas')) { %>
     <a href="/minhas-materias" title="Matérias salvas" class="sidebar-link <%= materiasAreaActive() ? 'is-active' : '' %>">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
       <span class="sidebar-text">Matérias salvas</span>
     </a>
-
-    <p class="sidebar-label">Conteúdo</p>
-    <a href="/conteudo" title="Criar conteúdo" class="sidebar-link <%= itemClass('/conteudo', true) %>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/></svg>
-      <span class="sidebar-text">Criar conteúdo</span>
-    </a>
-    <a href="/biblioteca" title="Biblioteca de fontes" class="sidebar-link <%= itemClass('/biblioteca') %>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M8 7h8M8 11h6"/></svg>
-      <span class="sidebar-text">Biblioteca</span>
-    </a>
-    <a href="/busca" title="Vídeos" class="sidebar-link <%= itemClass('/busca') %>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m10 8 6 4-6 4V8Z"/><rect x="3" y="5" width="18" height="14" rx="2.5"/></svg>
-      <span class="sidebar-text">Vídeos</span>
-    </a>
-    <a href="/fila" title="Produção" class="sidebar-link <%= itemClass('/fila') %>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
-      <span class="sidebar-text">Produção</span>
-    </a>
-
-    <p class="sidebar-label">Conta</p>
-    <a href="/paginas" title="Páginas" class="sidebar-link <%= itemClass('/paginas') %>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18M8 4v5"/></svg>
-      <span class="sidebar-text">Páginas</span>
-    </a>
-    <a href="/minha-marca" title="Minha marca" class="sidebar-link <%= itemClass('/minha-marca') %>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="m3 16 5-5 4 4 3-3 6 6"/><circle cx="9" cy="9" r="1.2"/></svg>
-      <span class="sidebar-text">Minha marca</span>
-    </a>
-    <a href="/cookies" title="Cookies do YouTube" class="sidebar-link <%= itemClass('/cookies') %>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9c0 2 1.5 3.5 3.5 3.5S19 8 19 10c0 1 .8 2 2 2Z"/><circle cx="8.5" cy="10.5" r=".8"/><circle cx="12" cy="15" r=".8"/><circle cx="15" cy="11" r=".8"/></svg>
-      <span class="sidebar-text">Cookies YouTube</span>
-    </a>
-
-    <p class="sidebar-label">Configurações</p>
+    <% } %>
+    <% if (podeVer('descobrir-pautas')) { %>
     <a href="/configuracoes/descobrir-pautas" title="Configurar sites de pautas" class="sidebar-link <%= itemClass('/configuracoes/descobrir-pautas') %>">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <span class="sidebar-text">Descobrir pautas</span>
     </a>
+    <% } %>
+    <% if (podeVer('feed-sugerido') && loggedUser && loggedUser.nivel_acesso === 'administrador') { %>
+      <a href="/configuracoes/feed-sugerido" title="Feed sugerido (Instagram, YouTube, Facebook)" class="sidebar-link <%= itemClass('/configuracoes/feed-sugerido') %>">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="m10.5 9.5 4 2.5-4 2.5Z"/></svg>
+        <span class="sidebar-text">Feed sugerido</span>
+      </a>
+    <% } %>
+    <% if (podeVer('piloto')) { %>
+    <a href="/piloto-automatico" title="Piloto automático" class="sidebar-link <%= itemClass('/piloto-automatico') %>">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      <span class="sidebar-text">Piloto automático</span>
+    </a>
+    <% } %>
+
+    <p class="sidebar-label">Configurações</p>
+    <a href="/minha-marca" title="Minha marca" class="sidebar-link <%= itemClass('/minha-marca') %>">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="m3 16 5-5 4 4 3-3 6 6"/><circle cx="9" cy="9" r="1.2"/></svg>
+      <span class="sidebar-text">Minha marca</span>
+    </a>
+
     <% if (loggedUser && loggedUser.nivel_acesso === 'administrador') { %>
+      <p class="sidebar-label">Administração</p>
       <a href="/claude" title="Sessão do Claude" class="sidebar-link <%= itemClass('/claude') %>">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9Z"/><path d="M19 17l.8 2.2L22 20l-2.2.8L19 23l-.8-2.2L16 20l2.2-.8Z"/></svg>
         <span class="sidebar-text">Sessão IA</span>
       </a>
-      <p class="sidebar-label">Administração</p>
       <a href="/usuarios" title="Usuários" class="sidebar-link <%= itemClass('/usuarios') %>">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span class="sidebar-text">Usuários</span>
+      </a>
+      <a href="/paginas" title="Páginas" class="sidebar-link <%= itemClass('/paginas') %>">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18M8 4v5"/></svg>
+        <span class="sidebar-text">Páginas</span>
+      </a>
+      <a href="/cookies" title="Cookies de sessao: YouTube, Instagram e Facebook" class="sidebar-link <%= itemClass('/cookies') %>">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9c0 2 1.5 3.5 3.5 3.5S19 8 19 10c0 1 .8 2 2 2Z"/><circle cx="8.5" cy="10.5" r=".8"/><circle cx="12" cy="15" r=".8"/><circle cx="15" cy="11" r=".8"/></svg>
+        <span class="sidebar-text">Cookies</span>
       </a>
       <a href="/midias" title="Mídias no servidor" class="sidebar-link <%= itemClass('/midias') %>">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
         <span class="sidebar-text">Mídias</span>
       </a>
-      <a href="/configuracoes/feed-sugerido" title="Feed sugerido (Instagram, YouTube, Facebook)" class="sidebar-link <%= itemClass('/configuracoes/feed-sugerido') %>">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="m10.5 9.5 4 2.5-4 2.5Z"/></svg>
-        <span class="sidebar-text">Feed sugerido</span>
+      <a href="/configuracoes/notificacoes" title="Notificações no celular" class="sidebar-link <%= itemClass('/configuracoes/notificacoes') %>">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+        <span class="sidebar-text">Notificações</span>
       </a>
     <% } %>
   </nav>

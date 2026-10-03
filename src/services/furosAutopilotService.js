@@ -299,7 +299,11 @@ async function salvarConfig(userId, entrada = {}) {
     intervalo_minutos: intervalo,
     limite_dia: limiteDia,
     facebook_page_id: page?.id || null,
-    modelo: corta(entrada.modelo, 120),
+    // O seletor de modelo vive no chat; a página do Furos não o tem. Sem o
+    // campo, manter o que já está salvo em vez de apagar.
+    ...(entrada.modelo === undefined || entrada.modelo === null
+      ? {}
+      : { modelo: corta(entrada.modelo, 120) }),
     foto_original_se_falhar: entrada.foto_original_se_falhar !== false,
     modo_imagem: entrada.modo_imagem === 'original' ? 'original' : 'ia',
     ultimo_erro: null,

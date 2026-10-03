@@ -8,6 +8,7 @@
 const express = require('express');
 const { uploadChatDoc } = require('../middleware/uploadChatDoc');
 const { uploadMatterImage } = require('../middleware/uploadMatterImage');
+const { loadCurrentUser, requireAdmin } = require('../middleware/accessControl');
 
 const router = express.Router();
 
@@ -857,10 +858,10 @@ router.put('/furos/auto', (req, res, next) =>
   responderAuto(res, next, require('../services/furosAutopilotService').salvarConfig(req.session.userId, req.body || {})));
 
 /** Notificações no app ntfy (publicada / não publicada). */
-router.put('/furos/auto/ntfy', (req, res, next) =>
+router.put('/furos/auto/ntfy', loadCurrentUser, requireAdmin, (req, res, next) =>
   responderAuto(res, next, require('../services/furosAutopilotService').salvarNtfy(req.session.userId, req.body || {})));
 
-router.post('/furos/auto/ntfy/teste', (req, res, next) =>
+router.post('/furos/auto/ntfy/teste', loadCurrentUser, requireAdmin, (req, res, next) =>
   responderAuto(res, next, require('../services/furosAutopilotService').testarNtfy(req.session.userId)));
 
 router.put('/furos/auto/modelo', (req, res, next) =>

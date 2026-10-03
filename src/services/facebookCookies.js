@@ -12,7 +12,8 @@ function resolveFbCookiesPath() {
   const configured = String(env.ytDlp?.fbCookiesFile || '').trim();
   if (configured) return configured;
   if (fs.existsSync(DEFAULT_FB_COOKIES)) return DEFAULT_FB_COOKIES;
-  return '';
+  // Salvo pela tela /cookies (ver instagramCookies para o mesmo motivo).
+  return require('./cookieStore').caminhoSalvoPelaTela('facebook');
 }
 
 /**

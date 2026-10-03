@@ -1,0 +1,51 @@
+/* ============================================================================
+   Furos do dia como módulo próprio.
+
+   O painel foi desenhado como modal dentro do /materia-manual, e os estilos
+   dele estão todos em materia-manual.css escopados em .mia-manual-claude.
+   Em vez de duplicar 160 regras, a página reusa aquele CSS e aqui só desfaz
+   o que é específico de modal: posição fixa, centralização, sombra, trava de
+   rolagem e os controles que só fazem sentido numa janela flutuante.
+   ========================================================================= */
+
+.furos-modulo { display: block; min-height: 0; height: auto; }
+
+/* De janela centralizada para conteúdo da página. */
+.furos-modulo.mia-manual-claude .mia-furos {
+  position: static;
+  transform: none;
+  z-index: auto;
+  width: 100%;
+  max-width: 72rem;
+  max-height: none;
+  margin: 1.25rem auto 2rem;
+  box-shadow: none;
+  background: #0f1217;
+}
+
+/* Numa página dedicada não há o que escurecer nem o que fechar. O backdrop e
+   o botão continuam no DOM porque o materia-furos.js os acessa sem checar. */
+.furos-pagina .mia-furos-backdrop,
+.furos-modulo #furos-fechar {
+  display: none !important;
+}
+
+/* abrir() trava a rolagem do body para o modal; aqui a página precisa rolar. */
+body.furos-pagina.mia-furos-aberto { overflow: auto; }
+
+/* O laranja do título era herança do tema antigo; a marca é verde. */
+.furos-modulo.mia-manual-claude .mia-furos-eyebrow { color: #34d399; }
+.furos-modulo.mia-manual-claude .mia-furos-head {
+  background: radial-gradient(40rem 10rem at 0 0, rgb(52 211 153 / 10%), transparent 70%);
+}
+
+/* Em tela cheia o modal virava full-bleed; como página, mantém a margem. */
+@media (max-width: 640px) {
+  .furos-modulo.mia-manual-claude .mia-furos {
+    inset: auto;
+    width: 100%;
+    height: auto;
+    border-radius: 1rem;
+    margin: .75rem auto 1.5rem;
+  }
+}

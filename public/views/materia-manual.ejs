@@ -1,9 +1,10 @@
 <%- include('partials/app-start') %>
+  <link rel="stylesheet" href="/css/dots.css?v=20261003manual1" />
   <link rel="stylesheet" href="/css/materia-chat.css?v=20261001selecao1" />
-  <link rel="stylesheet" href="/css/materia-manual.css?v=20261001chips1" />
+  <link rel="stylesheet" href="/css/materia-manual.css?v=20261003dots1" />
   <link rel="stylesheet" href="/css/feed-sugerido.css?v=20260927feed4" />
 
-  <main class="mia-chat mia-manual-claude" data-recolher-menu>
+  <main class="mia-chat mia-manual-claude manual-dots-page" data-recolher-menu>
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
 
     <div id="mia-manual" class="mia-chat-shell mia-panel">
@@ -46,9 +47,9 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
             Matérias salvas
           </a>
-          <a href="/conteudo" class="mia-chat-foot-link">
+          <a href="/materias-ia" class="mia-chat-foot-link">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v18M3 12h18"/></svg>
-            Criar conteúdo
+            Pautas com IA
           </a>
         </div>
       </aside>
@@ -66,10 +67,6 @@
             <p id="chat-titulo" class="truncate">Nova conversa</p>
           </div>
           <div class="mia-chat-header-actions">
-            <button type="button" class="mia-furos-open mia-furos-header-btn" aria-haspopup="dialog" aria-controls="furos-dialog" title="Furos do dia: notícias mais quentes por nicho">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22c4 0 7-3 7-7 0-3-1.5-5.5-4-8-1 3-2.5 4-4 5 0-4-2-7-4-9 0 4-3 6-3 11 0 4.5 3.5 8 8 8Z"/></svg>
-              <span>Furos do dia</span>
-            </button>
             <a id="piloto-chip" href="/piloto-automatico" class="mia-piloto-chip" hidden title="Piloto automático do Furos do dia"></a>
             <button type="button" id="chat-nova-top" class="mia-chat-icon-btn mia-chat-mobile-only" aria-label="Nova matéria">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -93,10 +90,6 @@
               <p class="mia-chat-empty-sub">Cole um link, conte uma ideia ou envie um arquivo. A IA ajuda a pesquisar, escrever e revisar.</p>
             </div>
             <div class="mia-start-actions" aria-label="Como começar sua matéria">
-              <button type="button" class="mia-furos-open mia-start-featured" aria-haspopup="dialog" aria-controls="furos-dialog">
-                <span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c4 0 7-3 7-7 0-3-1.5-5.5-4-8-1 3-2.5 4-4 5 0-4-2-7-4-9 0 4-3 6-3 11 0 4.5 3.5 8 8 8Z"/></svg></span>
-                <strong>Furos do dia</strong><small>O que está bombando no Google News, YouTube, Instagram e Facebook no seu nicho vira várias matérias prontas para o Facebook</small>
-              </button>
               <button type="button" data-start-matter="link">
                 <span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></span>
                 <strong>Criar de um link</strong><small>Transforme uma notícia em matéria</small>
@@ -373,180 +366,7 @@
           <p id="chat-manual-status"></p>
         </form>
 
-        <div id="furos-backdrop" class="mia-furos-backdrop" hidden></div>
-        <section id="furos-dialog" class="mia-furos" role="dialog" aria-modal="true" aria-labelledby="furos-titulo" hidden>
-          <header class="mia-furos-head">
-            <div>
-              <p class="mia-furos-eyebrow">Google News · YouTube · Instagram · Facebook</p>
-              <h2 id="furos-titulo">Furos do dia</h2>
-              <p class="mia-furos-sub">Escolha o nicho e as fontes, veja o que está bombando e gere várias matérias de uma vez.</p>
-            </div>
-            <button type="button" id="furos-fechar" class="mia-chat-icon-btn" aria-label="Fechar">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
-            </button>
-          </header>
-
-          <div class="mia-furos-filtros" id="furos-filtros">
-            <div class="mia-furos-filtros-resumo" id="furos-filtros-resumo" hidden>
-              <span id="furos-filtros-texto"></span>
-              <button type="button" id="furos-filtros-abrir" class="mia-furos-sec">Alterar filtros</button>
-            </div>
-            <div class="mia-furos-nichos" id="furos-nichos" role="group" aria-label="Nichos"></div>
-            <label class="mia-furos-palavras">
-              <span class="mia-furos-canais-rotulo">Palavra-chave</span>
-              <input type="text" id="furos-palavra-nova" maxlength="2000" autocomplete="off" spellcheck="false" enterkeyhint="done"
-                placeholder="Digite e aperte vírgula ou Enter (pode colar uma lista)"
-                title="Até 30 palavras-chave. Com “Automático”, a busca fica só nelas; com nichos marcados, procura nos dois." />
-              <input type="hidden" id="furos-palavras" />
-            </label>
-            <div class="mia-furos-palavras-lista" id="furos-palavras-lista" role="list" aria-label="Palavras-chave" hidden></div>
-            <div class="mia-furos-canais" role="group" aria-label="Onde procurar">
-              <span class="mia-furos-canais-rotulo">Procurar em</span>
-              <button type="button" class="mia-furos-chip is-active" data-furos-canal="noticias" aria-pressed="true" title="Google News + portais do nicho lidos direto: Guiame, O Fuxico Gospel, Gospel Prime, Gospel Mais, Folha Gospel, Pleno News, Gazeta do Povo, Revista Oeste, Poder360, CNN Brasil, Metrópoles e outros">Notícias</button>
-              <button type="button" class="mia-furos-chip is-active" data-furos-canal="youtube" aria-pressed="true" title="Vídeos recentes do nicho no YouTube, ordenados também por visualizações">YouTube</button>
-              <button type="button" class="mia-furos-chip is-active" data-furos-canal="instagram" aria-pressed="true" title="Posts recentes dos perfis que a Biblioteca monitora">Instagram</button>
-              <button type="button" class="mia-furos-chip is-active" data-furos-canal="facebook" aria-pressed="true" title="Posts recentes das páginas que a Biblioteca monitora">Facebook</button>
-            </div>
-            <div class="mia-furos-linha">
-              <div class="mia-chat-seg" role="group" aria-label="Período">
-                <button type="button" class="mia-chat-seg-btn" data-furos-horas="3" aria-pressed="false" title="Só o que saiu nas últimas 3 horas">Recente</button>
-                <button type="button" class="mia-chat-seg-btn" data-furos-horas="8" aria-pressed="false" title="Últimas 8 horas">8h</button>
-                <button type="button" class="mia-chat-seg-btn" data-furos-horas="12" aria-pressed="false">12h</button>
-                <button type="button" class="mia-chat-seg-btn is-active" data-furos-horas="24" aria-pressed="true">24h</button>
-                <button type="button" class="mia-chat-seg-btn" data-furos-horas="48" aria-pressed="false">48h</button>
-              </div>
-              <label class="mia-furos-qtd">
-                <span class="sr-only">Quantidade de pautas</span>
-                <select id="furos-limite" title="Quantas pautas mostrar">
-                  <option value="15">15 pautas</option>
-                  <option value="25" selected>25 pautas</option>
-                  <option value="40">40 pautas</option>
-                </select>
-              </label>
-              <button type="button" id="furos-buscar" class="mia-furos-buscar">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-                Buscar furos
-              </button>
-            </div>
-          </div>
-
-          <section id="furos-auto" class="mia-furos-auto" aria-labelledby="furos-auto-titulo">
-            <div class="mia-furos-auto-linha">
-              <label class="mia-furos-auto-toggle" title="A cada 5 min a IA procura pautas novas, escolhe as melhores, escreve, gera a imagem com IA e publica sozinha. Roda no servidor, mesmo com o navegador fechado.">
-                <input type="checkbox" id="furos-auto-ativo" />
-                <strong id="furos-auto-titulo">Automatizar</strong>
-              </label>
-              <span id="furos-auto-curto" class="mia-furos-auto-curto" aria-live="polite">A IA escolhe, escreve, gera a imagem e publica sozinha.</span>
-              <a href="/piloto-automatico" target="_blank" rel="noopener" class="mia-furos-auto-link">Acompanhar</a>
-            </div>
-            <details id="furos-auto-mais" class="mia-furos-auto-mais">
-              <summary>Configurar e ver andamento</summary>
-              <p class="mia-furos-auto-ajuda">A cada 5 min a IA procura pautas novas (nichos, palavras-chave, fontes e período acima), escolhe, escreve, gera a imagem e agenda sozinha. Roda no servidor. Desmarque “Automatizar” para pausar.</p>
-              <div class="mia-furos-auto-campos">
-                <label>
-                  <span>Postar a cada</span>
-                  <select id="furos-auto-intervalo">
-                    <option value="5">5 min</option>
-                    <option value="10" selected>10 min</option>
-                    <option value="15">15 min</option>
-                    <option value="20">20 min</option>
-                    <option value="30">30 min</option>
-                    <option value="60">1 hora</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Página</span>
-                  <select id="furos-auto-pagina"><option value="">Página padrão</option></select>
-                </label>
-                <label>
-                  <span>Máximo por dia</span>
-                  <select id="furos-auto-limite">
-                    <option value="20">20</option>
-                    <option value="40" selected>40</option>
-                    <option value="60">60</option>
-                    <option value="100">100</option>
-                  </select>
-                </label>
-                <fieldset class="mia-furos-agenda" id="furos-agenda">
-                  <legend class="sr-only">Quando o piloto trabalha</legend>
-                  <label>
-                    <span>Quando trabalhar</span>
-                    <select id="furos-agenda-modo">
-                      <option value="sempre">Sempre (enquanto ligado)</option>
-                      <option value="diario">Todo dia, num horário</option>
-                      <option value="periodo">Num período (datas)</option>
-                    </select>
-                  </label>
-                  <span class="mia-furos-agenda-grupo" data-agenda="periodo" hidden>
-                    <label><span>Início</span><input type="datetime-local" id="furos-agenda-inicio" /></label>
-                    <label><span>Fim</span><input type="datetime-local" id="furos-agenda-fim" /></label>
-                    <label class="mia-furos-auto-check"><input type="checkbox" id="furos-agenda-so-horario" /><span>Só num horário a cada dia</span></label>
-                  </span>
-                  <span class="mia-furos-agenda-grupo" data-agenda="horas" hidden>
-                    <label><span>Das</span><input type="time" id="furos-agenda-hora-ini" value="07:00" /></label>
-                    <label><span>Até</span><input type="time" id="furos-agenda-hora-fim" value="23:00" /></label>
-                  </span>
-                  <span class="mia-furos-agenda-dias" id="furos-agenda-dias" data-agenda="dias" role="group" aria-label="Dias da semana" hidden>
-                    <button type="button" data-dia="0" aria-pressed="true" title="Domingo">D</button>
-                    <button type="button" data-dia="1" aria-pressed="true" title="Segunda">S</button>
-                    <button type="button" data-dia="2" aria-pressed="true" title="Terça">T</button>
-                    <button type="button" data-dia="3" aria-pressed="true" title="Quarta">Q</button>
-                    <button type="button" data-dia="4" aria-pressed="true" title="Quinta">Q</button>
-                    <button type="button" data-dia="5" aria-pressed="true" title="Sexta">S</button>
-                    <button type="button" data-dia="6" aria-pressed="true" title="Sábado">S</button>
-                  </span>
-                  <span class="mia-furos-agenda-ajuda" id="furos-agenda-ajuda"></span>
-                </fieldset>
-                <label class="mia-furos-auto-modo">
-                  <span>Imagem das publicações</span>
-                  <select id="furos-auto-modo-imagem">
-                    <option value="ia" selected>Gerar com IA</option>
-                    <option value="original">Usar a foto da matéria original</option>
-                  </select>
-                </label>
-                <label class="mia-furos-auto-check" id="furos-auto-foto-linha">
-                  <input type="checkbox" id="furos-auto-foto" checked />
-                  <span>Se a imagem da IA falhar 2 vezes, publicar com a arte da foto original</span>
-                </label>
-                <div class="mia-furos-auto-botoes">
-                  <button type="button" id="furos-auto-salvar" class="mia-furos-sec">Salvar configuração</button>
-                  <button type="button" id="furos-auto-escanear" class="mia-furos-sec" hidden>Varrer agora</button>
-                </div>
-              </div>
-              <p id="furos-auto-resumo" class="mia-furos-auto-resumo" aria-live="polite"></p>
-              <ol id="furos-auto-itens" class="mia-furos-auto-itens"></ol>
-            </details>
-          </section>
-
-          <p id="furos-status" class="mia-furos-status" aria-live="polite"></p>
-          <div id="furos-lista" class="mia-furos-lista"></div>
-
-          <footer class="mia-furos-foot">
-            <div class="mia-furos-publicar">
-              <label>
-                <span>Depois de gerar</span>
-                <select id="furos-destino" title="O que fazer com as matérias marcadas">
-                  <option value="5">Publicar 1 a cada 5 min</option>
-                  <option value="10" selected>Publicar 1 a cada 10 min</option>
-                  <option value="15">Publicar 1 a cada 15 min</option>
-                  <option value="20">Publicar 1 a cada 20 min</option>
-                  <option value="30">Publicar 1 a cada 30 min</option>
-                  <option value="60">Publicar 1 por hora</option>
-                  <option value="rascunho">Só salvar como rascunho</option>
-                </select>
-              </label>
-              <label id="furos-pagina-campo">
-                <span>Página</span>
-                <select id="furos-pagina"><option value="">Página padrão</option></select>
-              </label>
-              <p id="furos-destino-ajuda" class="mia-furos-aviso">Cada matéria é escrita, ganha imagem com IA e é AGENDADA (aparece em Matérias salvas › Agendados) para publicar sozinha no intervalo escolhido. Roda no servidor: pode fechar a página.</p>
-            </div>
-            <div class="mia-furos-acoes">
-              <button type="button" id="furos-top" class="mia-furos-sec" disabled>Marcar os 5 mais quentes</button>
-              <button type="button" id="furos-gerar" class="mia-furos-gerar" disabled>Gerar matérias</button>
-            </div>
-          </footer>
-        </section>
+        <!-- Furos do dia virou módulo próprio: /furos -->
 
         <div id="feed-sugerido-backdrop" class="mia-manual-backdrop hidden" hidden></div>
         <section id="feed-sugerido" class="feed-sug hidden" role="dialog" aria-modal="true" aria-labelledby="feed-sugerido-titulo">
@@ -754,7 +574,5 @@
   </script>
   <script src="/js/materia-chat.js?v=20261001selecao1"></script>
   <script src="/js/materia-chat-extras.js?v=20261001publicar1"></script>
-  <script src="/js/materia-furos.js?v=20261001chips1"></script>
-  <script src="/js/materia-furos-auto.js?v=20261001chips1"></script>
   <script src="/js/feed-sugerido.js?v=20260928feedModelo1"></script>
 <%- include('partials/app-end') %>

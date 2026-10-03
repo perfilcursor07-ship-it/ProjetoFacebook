@@ -1,0 +1,198 @@
+<%- include('partials/app-start') %>
+  <link rel="stylesheet" href="/css/materia-chat.css?v=20261003furos1" />
+  <link rel="stylesheet" href="/css/materia-manual.css?v=20261003furos1" />
+  <link rel="stylesheet" href="/css/furos-pagina.css?v=20261003furos1" />
+
+  <!-- O painel do Furos nasceu como modal dentro do /materia-manual. Aqui ele
+       é a própria página: o furos-pagina.css desfaz o posicionamento de modal
+       e o bootstrap no fim abre o painel ao carregar, reusando o mesmo
+       abrir() que já cuidava de nichos, páginas e destino. -->
+  <main class="mia-chat mia-manual-claude furos-modulo">
+    <div id="furos-backdrop" class="mia-furos-backdrop" hidden></div>
+    <section id="furos-dialog" class="mia-furos" aria-labelledby="furos-titulo">
+      <header class="mia-furos-head">
+        <div>
+          <p class="mia-furos-eyebrow">Google News · YouTube · Instagram · Facebook</p>
+          <h2 id="furos-titulo">Furos do dia</h2>
+          <p class="mia-furos-sub">Escolha o nicho e as fontes, veja o que está bombando e gere várias matérias de uma vez.</p>
+        </div>
+        <button type="button" id="furos-fechar" class="mia-chat-icon-btn" aria-label="Fechar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </header>
+
+      <div class="mia-furos-filtros" id="furos-filtros">
+        <div class="mia-furos-filtros-resumo" id="furos-filtros-resumo" hidden>
+          <span id="furos-filtros-texto"></span>
+          <button type="button" id="furos-filtros-abrir" class="mia-furos-sec">Alterar filtros</button>
+        </div>
+        <div class="mia-furos-nichos" id="furos-nichos" role="group" aria-label="Nichos"></div>
+        <label class="mia-furos-palavras">
+          <span class="mia-furos-canais-rotulo">Palavra-chave</span>
+          <input type="text" id="furos-palavra-nova" maxlength="2000" autocomplete="off" spellcheck="false" enterkeyhint="done"
+            placeholder="Digite e aperte vírgula ou Enter (pode colar uma lista)"
+            title="Até 30 palavras-chave. Com “Automático”, a busca fica só nelas; com nichos marcados, procura nos dois." />
+          <input type="hidden" id="furos-palavras" />
+        </label>
+        <div class="mia-furos-palavras-lista" id="furos-palavras-lista" role="list" aria-label="Palavras-chave" hidden></div>
+        <div class="mia-furos-canais" role="group" aria-label="Onde procurar">
+          <span class="mia-furos-canais-rotulo">Procurar em</span>
+          <button type="button" class="mia-furos-chip is-active" data-furos-canal="noticias" aria-pressed="true" title="Google News + portais do nicho lidos direto: Guiame, O Fuxico Gospel, Gospel Prime, Gospel Mais, Folha Gospel, Pleno News, Gazeta do Povo, Revista Oeste, Poder360, CNN Brasil, Metrópoles e outros">Notícias</button>
+          <button type="button" class="mia-furos-chip is-active" data-furos-canal="youtube" aria-pressed="true" title="Vídeos recentes do nicho no YouTube, ordenados também por visualizações">YouTube</button>
+          <button type="button" class="mia-furos-chip is-active" data-furos-canal="instagram" aria-pressed="true" title="Posts recentes dos perfis que a Biblioteca monitora">Instagram</button>
+          <button type="button" class="mia-furos-chip is-active" data-furos-canal="facebook" aria-pressed="true" title="Posts recentes das páginas que a Biblioteca monitora">Facebook</button>
+        </div>
+        <div class="mia-furos-linha">
+          <div class="mia-chat-seg" role="group" aria-label="Período">
+            <button type="button" class="mia-chat-seg-btn" data-furos-horas="3" aria-pressed="false" title="Só o que saiu nas últimas 3 horas">Recente</button>
+            <button type="button" class="mia-chat-seg-btn" data-furos-horas="8" aria-pressed="false" title="Últimas 8 horas">8h</button>
+            <button type="button" class="mia-chat-seg-btn" data-furos-horas="12" aria-pressed="false">12h</button>
+            <button type="button" class="mia-chat-seg-btn is-active" data-furos-horas="24" aria-pressed="true">24h</button>
+            <button type="button" class="mia-chat-seg-btn" data-furos-horas="48" aria-pressed="false">48h</button>
+          </div>
+          <label class="mia-furos-qtd">
+            <span class="sr-only">Quantidade de pautas</span>
+            <select id="furos-limite" title="Quantas pautas mostrar">
+              <option value="15">15 pautas</option>
+              <option value="25" selected>25 pautas</option>
+              <option value="40">40 pautas</option>
+            </select>
+          </label>
+          <button type="button" id="furos-buscar" class="mia-furos-buscar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            Buscar furos
+          </button>
+        </div>
+      </div>
+
+      <section id="furos-auto" class="mia-furos-auto" aria-labelledby="furos-auto-titulo">
+        <div class="mia-furos-auto-linha">
+          <label class="mia-furos-auto-toggle" title="A cada 5 min a IA procura pautas novas, escolhe as melhores, escreve, gera a imagem com IA e publica sozinha. Roda no servidor, mesmo com o navegador fechado.">
+            <input type="checkbox" id="furos-auto-ativo" />
+            <strong id="furos-auto-titulo">Automatizar</strong>
+          </label>
+          <span id="furos-auto-curto" class="mia-furos-auto-curto" aria-live="polite">A IA escolhe, escreve, gera a imagem e publica sozinha.</span>
+          <a href="/piloto-automatico" target="_blank" rel="noopener" class="mia-furos-auto-link">Acompanhar</a>
+        </div>
+        <details id="furos-auto-mais" class="mia-furos-auto-mais">
+          <summary>Configurar e ver andamento</summary>
+          <p class="mia-furos-auto-ajuda">A cada 5 min a IA procura pautas novas (nichos, palavras-chave, fontes e período acima), escolhe, escreve, gera a imagem e agenda sozinha. Roda no servidor. Desmarque “Automatizar” para pausar.</p>
+          <div class="mia-furos-auto-campos">
+            <label>
+              <span>Postar a cada</span>
+              <select id="furos-auto-intervalo">
+                <option value="5">5 min</option>
+                <option value="10" selected>10 min</option>
+                <option value="15">15 min</option>
+                <option value="20">20 min</option>
+                <option value="30">30 min</option>
+                <option value="60">1 hora</option>
+              </select>
+            </label>
+            <label>
+              <span>Página</span>
+              <select id="furos-auto-pagina"><option value="">Página padrão</option></select>
+            </label>
+            <label>
+              <span>Máximo por dia</span>
+              <select id="furos-auto-limite">
+                <option value="20">20</option>
+                <option value="40" selected>40</option>
+                <option value="60">60</option>
+                <option value="100">100</option>
+              </select>
+            </label>
+            <fieldset class="mia-furos-agenda" id="furos-agenda">
+              <legend class="sr-only">Quando o piloto trabalha</legend>
+              <label>
+                <span>Quando trabalhar</span>
+                <select id="furos-agenda-modo">
+                  <option value="sempre">Sempre (enquanto ligado)</option>
+                  <option value="diario">Todo dia, num horário</option>
+                  <option value="periodo">Num período (datas)</option>
+                </select>
+              </label>
+              <span class="mia-furos-agenda-grupo" data-agenda="periodo" hidden>
+                <label><span>Início</span><input type="datetime-local" id="furos-agenda-inicio" /></label>
+                <label><span>Fim</span><input type="datetime-local" id="furos-agenda-fim" /></label>
+                <label class="mia-furos-auto-check"><input type="checkbox" id="furos-agenda-so-horario" /><span>Só num horário a cada dia</span></label>
+              </span>
+              <span class="mia-furos-agenda-grupo" data-agenda="horas" hidden>
+                <label><span>Das</span><input type="time" id="furos-agenda-hora-ini" value="07:00" /></label>
+                <label><span>Até</span><input type="time" id="furos-agenda-hora-fim" value="23:00" /></label>
+              </span>
+              <span class="mia-furos-agenda-dias" id="furos-agenda-dias" data-agenda="dias" role="group" aria-label="Dias da semana" hidden>
+                <button type="button" data-dia="0" aria-pressed="true" title="Domingo">D</button>
+                <button type="button" data-dia="1" aria-pressed="true" title="Segunda">S</button>
+                <button type="button" data-dia="2" aria-pressed="true" title="Terça">T</button>
+                <button type="button" data-dia="3" aria-pressed="true" title="Quarta">Q</button>
+                <button type="button" data-dia="4" aria-pressed="true" title="Quinta">Q</button>
+                <button type="button" data-dia="5" aria-pressed="true" title="Sexta">S</button>
+                <button type="button" data-dia="6" aria-pressed="true" title="Sábado">S</button>
+              </span>
+              <span class="mia-furos-agenda-ajuda" id="furos-agenda-ajuda"></span>
+            </fieldset>
+            <label class="mia-furos-auto-modo">
+              <span>Imagem das publicações</span>
+              <select id="furos-auto-modo-imagem">
+                <option value="ia" selected>Gerar com IA</option>
+                <option value="original">Usar a foto da matéria original</option>
+              </select>
+            </label>
+            <label class="mia-furos-auto-check" id="furos-auto-foto-linha">
+              <input type="checkbox" id="furos-auto-foto" checked />
+              <span>Se a imagem da IA falhar 2 vezes, publicar com a arte da foto original</span>
+            </label>
+            <div class="mia-furos-auto-botoes">
+              <button type="button" id="furos-auto-salvar" class="mia-furos-sec">Salvar configuração</button>
+              <button type="button" id="furos-auto-escanear" class="mia-furos-sec" hidden>Varrer agora</button>
+            </div>
+          </div>
+          <p id="furos-auto-resumo" class="mia-furos-auto-resumo" aria-live="polite"></p>
+          <ol id="furos-auto-itens" class="mia-furos-auto-itens"></ol>
+        </details>
+      </section>
+
+      <p id="furos-status" class="mia-furos-status" aria-live="polite"></p>
+      <div id="furos-lista" class="mia-furos-lista"></div>
+
+      <footer class="mia-furos-foot">
+        <div class="mia-furos-publicar">
+          <label>
+            <span>Depois de gerar</span>
+            <select id="furos-destino" title="O que fazer com as matérias marcadas">
+              <option value="5">Publicar 1 a cada 5 min</option>
+              <option value="10" selected>Publicar 1 a cada 10 min</option>
+              <option value="15">Publicar 1 a cada 15 min</option>
+              <option value="20">Publicar 1 a cada 20 min</option>
+              <option value="30">Publicar 1 a cada 30 min</option>
+              <option value="60">Publicar 1 por hora</option>
+              <option value="rascunho">Só salvar como rascunho</option>
+            </select>
+          </label>
+          <label id="furos-pagina-campo">
+            <span>Página</span>
+            <select id="furos-pagina"><option value="">Página padrão</option></select>
+          </label>
+          <p id="furos-destino-ajuda" class="mia-furos-aviso">Cada matéria é escrita, ganha imagem com IA e é AGENDADA (aparece em Matérias salvas › Agendados) para publicar sozinha no intervalo escolhido. Roda no servidor: pode fechar a página.</p>
+        </div>
+        <div class="mia-furos-acoes">
+          <button type="button" id="furos-top" class="mia-furos-sec" disabled>Marcar os 5 mais quentes</button>
+          <button type="button" id="furos-gerar" class="mia-furos-gerar" disabled>Gerar matérias</button>
+        </div>
+      </footer>
+    </section>
+
+    <!-- O materia-furos.js liga o abrir() em .mia-furos-open e exige que o
+         botão de fechar exista. Numa página dedicada nenhum dos dois aparece,
+         mas os elementos continuam no DOM. -->
+    <button type="button" id="furos-abrir-auto" class="mia-furos-open" hidden aria-hidden="true"></button>
+  </main>
+
+  <script src="/js/materia-furos.js?v=20261003furos1"></script>
+  <script src="/js/materia-furos-auto.js?v=20261003furos1"></script>
+  <script>
+    document.body.classList.add("furos-pagina");
+    document.getElementById("furos-abrir-auto")?.click();
+  </script>
+<%- include('partials/app-end') %>

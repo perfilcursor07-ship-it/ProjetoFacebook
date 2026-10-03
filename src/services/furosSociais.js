@@ -374,6 +374,8 @@ async function buscarFurosSociais({ userId, canais, consultas, horas, limite, po
 module.exports = {
   CANAIS_SOCIAIS,
   buscarFurosSociais,
+  // O Dots aplica o mesmo corte de post curto demais.
+  conteudoSuficiente,
   // exportados para testes
   numeroDeViews,
   horasAtras,

@@ -1,0 +1,85 @@
+<%- include('partials/app-start') %>
+  <link rel="stylesheet" href="/css/dots.css?v=20261003e" />
+
+  <main class="dots-pagina mx-auto max-w-8xl px-4 py-6 sm:px-6 sm:py-10">
+
+    <!-- ------------------------------------------------------------- topo -->
+    <header class="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <p class="dots-etiqueta">Agentes</p>
+        <h1 class="dots-titulo mt-1">Dots</h1>
+        <p class="dots-sub">
+          Diga o que você quer, do seu jeito. O dot cuida do resto no servidor — acompanha as
+          páginas, separa o que tem conteúdo e escreve a matéria. Você fecha a aba, ele continua.
+        </p>
+      </div>
+      <span id="dots-pulso" class="d-stat"></span>
+    </header>
+
+    <!-- Em tela larga o composer fica fixo à esquerda e os dots à direita;
+         abaixo de lg os dois empilham. -->
+    <div class="d-layout mt-7">
+
+      <!-- ------------------------------------------------------- composer -->
+      <section class="d-card d-composer p-5">
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="text-sm font-semibold" style="color: var(--d-texto)">Criar um dot</h2>
+          <button type="button" id="dot-recolher" class="d-btn d-btn--fantasma" aria-expanded="true">Recolher</button>
+        </div>
+
+        <div id="dot-form" class="mt-4 space-y-4">
+          <div>
+            <label class="d-rotulo" for="dot-nome">Nome</label>
+            <input id="dot-nome" type="text" maxlength="160" placeholder="Radar das páginas gospel" />
+            <p class="d-ajuda">Deixe vazio que eu sugiro um a partir do que você escrever.</p>
+          </div>
+
+          <div>
+            <label class="d-rotulo" for="dot-objetivo">O que ele deve fazer</label>
+            <textarea id="dot-objetivo" rows="7"
+              placeholder="Monitore estas páginas e crie matéria do que render, até 10 por dia, salvando como rascunho:&#10;https://www.facebook.com/exemplo1&#10;https://www.facebook.com/exemplo2"></textarea>
+            <div class="mt-2 flex flex-wrap gap-1.5">
+              <button type="button" class="d-exemplo" data-exemplo="monitorar">Monitorar e escrever</button>
+              <button type="button" class="d-exemplo" data-exemplo="acompanhar">Só acompanhar</button>
+              <button type="button" class="d-exemplo" data-exemplo="publicar">Escrever e publicar</button>
+            </div>
+          </div>
+
+          <label class="d-stat gap-1.5">
+            <span>Escreve com</span>
+            <select id="dot-provedor" class="flex-1 rounded-lg border px-2 py-1 text-xs"
+              style="background: var(--d-surface-2); border-color: var(--d-border); color: var(--d-texto-2)">
+              <option value="auto">Carregando…</option>
+            </select>
+          </label>
+
+          <label class="d-stat gap-1.5">
+            <span>Página</span>
+            <select id="dot-pagina" class="flex-1 rounded-lg border px-2 py-1 text-xs"
+              style="background: var(--d-surface-2); border-color: var(--d-border); color: var(--d-texto-2)">
+              <option value="">Carregando…</option>
+            </select>
+          </label>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" id="dot-previa" class="d-btn d-btn--neutro">Ver o que eu entendi</button>
+            <button type="button" id="dot-criar" class="d-btn d-btn--principal">Criar dot</button>
+          </div>
+
+          <p id="dot-aviso" class="d-ajuda" aria-live="polite"></p>
+          <div id="dot-previa-box" class="hidden"></div>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------- lista -->
+      <section>
+        <h2 class="d-secao">Seus dots</h2>
+        <div id="dots-lista" class="mt-3 space-y-3">
+          <p class="d-stat">Carregando…</p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/js/dots.js?v=20261003e"></script>
+<%- include('partials/app-end') %>

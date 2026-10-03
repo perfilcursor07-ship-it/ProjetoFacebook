@@ -96,6 +96,31 @@ const TAREFAS_NO_CLAUDE = new Set(
 
 const TODAS_AS_TAREFAS = ['redacao', 'conversa', 'auxiliar'];
 
+/**
+ * Provedor forçado para o trecho de código em execução.
+ *
+ * O roteamento normal é global (AI_PROVIDER, CLAUDE_TAREFAS, FREE_TIER_*).
+ * O Dots precisa de escolha por agente: um dot escreve no Claude, outro na
+ * DeepSeek, sem um atropelar o outro. Mesmo padrão que o gateway já usa para
+ * fixar modelo, com AsyncLocalStorage em vez de variável global — duas voltas
+ * simultâneas não se misturam.
+ *
+ * Valores: 'claude' | 'deepseek' | 'gratis'. Qualquer outro (ou vazio) = o
+ * comportamento normal de sempre.
+ */
+const { AsyncLocalStorage } = require('node:async_hooks');
+
+const provedorDaRequisicao = new AsyncLocalStorage();
+
+function comProvedor(provedor, tarefa) {
+  const id = String(provedor || '').trim().toLowerCase();
+  const validos = ['claude', 'deepseek', 'gratis'];
+  return validos.includes(id) ? provedorDaRequisicao.run(id, tarefa) : tarefa();
+}
+
+function provedorForcado() {
+  return provedorDaRequisicao.getStore() || null;
+}
 function claudeDisponivel() {
   if (String(env.aiProvider || '').toLowerCase() !== 'claude') return false;
   if (!require('./claudeService').isConfigured()) {
@@ -107,6 +132,8 @@ function claudeDisponivel() {
 
 /** Esta chamada especifica vai no Claude? */
 function usarClaude(tarefa = 'redacao') {
+  const forcado = provedorForcado();
+  if (forcado) return forcado === 'claude' && require('./claudeService').isConfigured();
   if (!claudeDisponivel()) return false;
   return TAREFAS_NO_CLAUDE.has(String(tarefa || 'auxiliar').toLowerCase());
 }
@@ -132,6 +159,8 @@ function usarTokenFree(tarefa = 'conversa') {
  */
 async function tentarFreeTier(messages, { temperature, json, tarefa }) {
   const freeTier = require('./freeTierGateway');
+  const forcado = provedorForcado();
+  if (forcado) return forcado === 'gratis' ? freeTier.chatCompletion(messages, { temperature, json }) : null;
   if (!freeTier.cobreTarefa(tarefa)) return null;
   try {
     return await freeTier.chatCompletion(messages, { temperature, json });
@@ -144,6 +173,8 @@ async function tentarFreeTier(messages, { temperature, json, tarefa }) {
 /** Igual ao tentarFreeTier, mas para o streaming do /materia-manual. */
 async function tentarFreeTierStream(messages, { temperature, onDelta, tarefa }) {
   const freeTier = require('./freeTierGateway');
+  const forcado = provedorForcado();
+  if (forcado) return forcado === 'gratis' ? freeTier.chatCompletionStream(messages, { temperature, onDelta }) : null;
   if (!freeTier.cobreTarefa(tarefa)) return null;
   try {
     return await freeTier.chatCompletionStream(messages, { temperature, onDelta });
@@ -4523,7 +4554,10 @@ module.exports = {
   recortarReferenciaLivre,
   checarPedidoNasFontes,
   revisarMateriaContraFontes,
+  // Porta única de IA do projeto (roteia free tier -> DeepSeek/Claude).
+  chatCompletion,
   chatCompletionStream,
+  comProvedor,
   chatCompletionClaudeObrigatorio,
   traduzirPostsParaPortugues,
   sugerirConsultasImagem,

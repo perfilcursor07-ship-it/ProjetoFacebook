@@ -53,9 +53,7 @@
 
     for (const modelo of modelos) {
       const card = document.createElement('div');
-      card.className = `flex items-start gap-3 rounded-lg border p-3 transition ${
-        modelo.habilitado ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-slate-800 bg-slate-950/40'
-      }`;
+      card.className = `claude-model-card ${modelo.habilitado ? 'is-enabled' : ''}`;
 
       const check = document.createElement('input');
       check.type = 'checkbox';
@@ -75,7 +73,7 @@
       topo.htmlFor = check.id;
       topo.className = 'flex cursor-pointer flex-wrap items-center gap-2';
       const nome = document.createElement('span');
-      nome.className = 'text-sm font-semibold text-white';
+      nome.className = 'claude-model-title';
       nome.textContent = modelo.nome;
       topo.appendChild(nome);
       const prov = provedores[modelo.provedor];
@@ -87,11 +85,11 @@
       }
 
       const id = document.createElement('p');
-      id.className = 'mt-0.5 break-all font-mono text-[11px] text-slate-500';
+      id.className = 'claude-model-meta break-all font-mono';
       id.textContent = modelo.id;
 
       const disp = document.createElement('p');
-      disp.className = `mt-1 text-[11px] ${modelo.disponivel === false ? 'text-amber-300/80' : 'text-slate-500'}`;
+      disp.className = `claude-model-note ${modelo.disponivel === false ? 'text-amber-300/80' : ''}`;
       disp.textContent = textoDisponibilidade(modelo);
 
       corpo.append(topo, id, disp);

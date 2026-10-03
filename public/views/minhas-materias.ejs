@@ -1,4 +1,5 @@
 <%- include('partials/app-start') %>
+  <link rel="stylesheet" href="/css/dots.css?v=20261003e" />
 <%
   const mattersList = typeof matters !== 'undefined' && Array.isArray(matters) ? matters : [];
   const q = typeof searchQuery !== 'undefined' ? String(searchQuery || '') : '';
@@ -129,149 +130,141 @@
   const toItem = Math.min(pag.page * pag.perPage, pag.total);
 %>
 
-  <main class="mx-auto max-w-9xl px-4 py-4 sm:px-6 sm:py-6" data-matters-page>
-    <div class="flex flex-wrap items-end justify-between gap-2">
-      <div class="min-w-0">
-        <p class="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/80">Matérias</p>
-        <h1 class="mt-0.5 text-lg font-semibold text-white sm:text-xl">Matérias salvas</h1>
-        <p class="mt-0.5 text-xs text-slate-500">Rascunhos, agenda e publicadas — abra para editar, agendar ou ver o engajamento.</p>
+  <main class="dots-pagina matters-page mx-auto max-w-8xl px-4 py-6 sm:px-6 sm:py-10" data-matters-page>
+    <header class="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <p class="dots-etiqueta">Matérias</p>
+        <h1 class="dots-titulo mt-1">Matérias salvas</h1>
+        <p class="dots-sub">
+          Tudo que foi criado, agendado ou publicado fica aqui. Filtre por status, acompanhe
+          desempenho e abra uma matéria para ajustar antes de publicar.
+        </p>
       </div>
       <a href="/materia-manual"
-        class="inline-flex h-9 items-center rounded-lg bg-emerald-500 px-3 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400 sm:text-sm">
+        class="d-btn d-btn--principal">
         Criar matéria
       </a>
-    </div>
+    </header>
 
-    <form method="get" action="/minhas-materias" class="mt-3 flex flex-wrap items-center gap-1.5">
-      <% if (activeStatus && activeStatus !== 'all') { %>
-        <input type="hidden" name="status" value="<%= activeStatus %>" />
-      <% } %>
-      <% if (activeStatus === 'viralizou' && activeViralLevel !== 'all') { %>
-        <input type="hidden" name="nivel" value="<%= activeViralLevel %>" />
-      <% } %>
-      <% if (activeStatus === 'viralizou' && activeViralOrder !== 'viral') { %>
-        <input type="hidden" name="ordem" value="<%= activeViralOrder %>" />
-      <% } %>
-      <label class="relative min-w-[180px] flex-1">
-        <span class="sr-only">Buscar matérias</span>
-        <input type="search" name="q" value="<%= q %>" placeholder="Buscar título, texto, fonte…"
-          class="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30" />
-      </label>
-      <button type="submit" class="inline-flex h-9 items-center rounded-lg border border-slate-700 px-3 text-xs text-slate-200 hover:border-emerald-500 hover:text-emerald-300 sm:text-sm">
-        Buscar
-      </button>
-      <% if (q) { %>
-        <a href="<%= listHref({ status: activeStatus, page: 1, keepQuery: false }) %>" class="inline-flex h-9 items-center rounded-lg px-2.5 text-xs text-slate-500 hover:text-slate-300">Limpar</a>
-      <% } %>
-    </form>
-
-    <!-- Abas por status -->
-    <div class="mt-3 flex gap-1 overflow-x-auto pb-0.5" role="tablist" aria-label="Filtrar por status" id="mia-status-tabs">
-      <% tabDefs.forEach((tab) => {
-        const count = counts[tab.key] || 0;
-        const isActive = activeStatus === tab.key;
-        if (tab.key !== 'all' && tab.key !== 'viralizou' && count === 0 && !isActive) return;
-        const activeCls =
-          tab.key === 'viralizou' && isActive
-            ? 'bg-rose-500 text-white'
-            : isActive
-              ? 'bg-emerald-500 text-slate-950'
-              : 'border border-slate-800 bg-slate-900/50 text-slate-400 hover:border-slate-600 hover:text-slate-200';
-        const countCls =
-          tab.key === 'viralizou' && isActive
-            ? 'bg-black/20 text-white'
-            : isActive
-              ? 'bg-slate-950/20 text-slate-900'
-              : 'bg-slate-800 text-slate-400';
-      %>
-        <a href="<%= listHref({ status: tab.key, page: 1 }) %>"
-          role="tab"
-          aria-selected="<%= isActive ? 'true' : 'false' %>"
-          data-status="<%= tab.key %>"
-          class="mia-status-tab inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition <%= activeCls %>">
-          <%= tab.label %>
-          <span class="mia-tab-count rounded-md px-1.5 py-0.5 text-[10px] tabular-nums <%= countCls %>"><%= count %></span>
-        </a>
-      <% }) %>
-    </div>
-
-    <% if (activeStatus === 'viralizou') { %>
-      <p class="mt-2 text-[11px] text-slate-500">
-        Mostra posts com engajamento <span class="text-rose-300">Viralizou</span> ou <span class="text-amber-300">Bom</span>
-        (a partir de ~10 comentários ou ~40 curtidas). Por padrão, aparecem do maior para o menor potencial de viralização.
-        Ao abrir esta aba, o sistema atualiza as publicações recentes no Facebook.
-        <% if (typeof engajamentoSync !== 'undefined' && engajamentoSync) { %>
-          <span class="text-slate-400">· Sync: <%= engajamentoSync.checked || 0 %> posts · <%= engajamentoSync.destaques || 0 %> em destaque</span>
+    <section class="d-card mt-7 p-3 sm:p-4">
+      <form method="get" action="/minhas-materias" class="matters-search">
+        <% if (activeStatus && activeStatus !== 'all') { %>
+          <input type="hidden" name="status" value="<%= activeStatus %>" />
         <% } %>
-      </p>
-
-      <form method="get" action="/minhas-materias"
-        class="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900/50 p-2.5">
-        <input type="hidden" name="status" value="viralizou" />
-        <% if (q) { %><input type="hidden" name="q" value="<%= q %>" /><% } %>
-        <label class="min-w-[150px] flex-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">
-          Desempenho
-          <select name="nivel"
-            class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs font-normal normal-case tracking-normal text-slate-200 focus:border-rose-500 focus:outline-none">
-            <option value="all" <%= activeViralLevel === 'all' ? 'selected' : '' %>>Todos: Viralizou + Bom</option>
-            <option value="alto" <%= activeViralLevel === 'alto' ? 'selected' : '' %>>Somente Viralizou</option>
-            <option value="medio" <%= activeViralLevel === 'medio' ? 'selected' : '' %>>Somente Bom</option>
-          </select>
+        <% if (activeStatus === 'viralizou' && activeViralLevel !== 'all') { %>
+          <input type="hidden" name="nivel" value="<%= activeViralLevel %>" />
+        <% } %>
+        <% if (activeStatus === 'viralizou' && activeViralOrder !== 'viral') { %>
+          <input type="hidden" name="ordem" value="<%= activeViralOrder %>" />
+        <% } %>
+        <label class="matters-search-field">
+          <span class="sr-only">Buscar matérias</span>
+          <input type="search" name="q" value="<%= q %>" placeholder="Buscar título, texto, fonte..." />
         </label>
-        <label class="min-w-[190px] flex-[1.35] text-[10px] font-medium uppercase tracking-wide text-slate-500">
-          Ordenar por
-          <select name="ordem"
-            class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs font-normal normal-case tracking-normal text-slate-200 focus:border-rose-500 focus:outline-none">
-            <option value="viral" <%= activeViralOrder === 'viral' ? 'selected' : '' %>>Mais viralizou → menos viralizou</option>
-            <option value="curtidas" <%= activeViralOrder === 'curtidas' ? 'selected' : '' %>>Mais curtidas</option>
-            <option value="comentarios" <%= activeViralOrder === 'comentarios' ? 'selected' : '' %>>Mais comentários</option>
-            <option value="compartilhamentos" <%= activeViralOrder === 'compartilhamentos' ? 'selected' : '' %>>Mais compartilhamentos</option>
-            <option value="visualizacoes" <%= activeViralOrder === 'visualizacoes' ? 'selected' : '' %>>Mais visualizações</option>
-            <option value="recente" <%= activeViralOrder === 'recente' ? 'selected' : '' %>>Mais recentes</option>
-          </select>
-        </label>
-        <button type="submit"
-          class="rounded-lg bg-rose-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-rose-400">
-          Aplicar filtro
+        <button type="submit" class="d-btn d-btn--neutro">
+          Buscar
         </button>
-        <% if (activeViralLevel !== 'all' || activeViralOrder !== 'viral') { %>
-          <a href="<%= listHref({ status: 'viralizou', page: 1, nivel: 'all', ordem: 'viral' }) %>"
-            class="rounded-lg px-2 py-2 text-xs text-slate-500 hover:text-slate-300">Limpar</a>
+        <% if (q) { %>
+          <a href="<%= listHref({ status: activeStatus, page: 1, keepQuery: false }) %>" class="d-btn d-btn--fantasma">Limpar</a>
         <% } %>
       </form>
-    <% } %>
+
+      <div class="matters-tabs mt-3" role="tablist" aria-label="Filtrar por status" id="mia-status-tabs">
+        <% tabDefs.forEach((tab) => {
+          const count = counts[tab.key] || 0;
+          const isActive = activeStatus === tab.key;
+          if (tab.key !== 'all' && tab.key !== 'viralizou' && count === 0 && !isActive) return;
+        %>
+          <a href="<%= listHref({ status: tab.key, page: 1 }) %>"
+            role="tab"
+            aria-selected="<%= isActive ? 'true' : 'false' %>"
+            data-status="<%= tab.key %>"
+            class="mia-status-tab <%= isActive ? 'is-active' : '' %> <%= tab.key === 'viralizou' ? 'is-viral' : '' %>">
+            <%= tab.label %>
+            <span class="mia-tab-count"><%= count %></span>
+          </a>
+        <% }) %>
+      </div>
+
+      <% if (activeStatus === 'viralizou') { %>
+        <p class="mt-3 text-xs leading-relaxed" style="color: var(--d-texto-3)">
+          Mostra posts com engajamento <span class="text-rose-300">Viralizou</span> ou <span class="text-amber-300">Bom</span>.
+          Ao abrir esta aba, o sistema atualiza as publicações recentes no Facebook.
+          <% if (typeof engajamentoSync !== 'undefined' && engajamentoSync) { %>
+            <span style="color: var(--d-texto-2)">Sync: <%= engajamentoSync.checked || 0 %> posts, <%= engajamentoSync.destaques || 0 %> em destaque.</span>
+          <% } %>
+        </p>
+
+        <form method="get" action="/minhas-materias" class="matters-viral-filter mt-3">
+          <input type="hidden" name="status" value="viralizou" />
+          <% if (q) { %><input type="hidden" name="q" value="<%= q %>" /><% } %>
+          <label>
+            <span>Desempenho</span>
+            <select name="nivel">
+              <option value="all" <%= activeViralLevel === 'all' ? 'selected' : '' %>>Todos: Viralizou + Bom</option>
+              <option value="alto" <%= activeViralLevel === 'alto' ? 'selected' : '' %>>Somente Viralizou</option>
+              <option value="medio" <%= activeViralLevel === 'medio' ? 'selected' : '' %>>Somente Bom</option>
+            </select>
+          </label>
+          <label>
+            <span>Ordenar por</span>
+            <select name="ordem">
+              <option value="viral" <%= activeViralOrder === 'viral' ? 'selected' : '' %>>Mais viralizou primeiro</option>
+              <option value="curtidas" <%= activeViralOrder === 'curtidas' ? 'selected' : '' %>>Mais curtidas</option>
+              <option value="comentarios" <%= activeViralOrder === 'comentarios' ? 'selected' : '' %>>Mais comentários</option>
+              <option value="compartilhamentos" <%= activeViralOrder === 'compartilhamentos' ? 'selected' : '' %>>Mais compartilhamentos</option>
+              <option value="visualizacoes" <%= activeViralOrder === 'visualizacoes' ? 'selected' : '' %>>Mais visualizações</option>
+              <option value="recente" <%= activeViralOrder === 'recente' ? 'selected' : '' %>>Mais recentes</option>
+            </select>
+          </label>
+          <button type="submit" class="d-btn d-btn--neutro">
+            Aplicar filtro
+          </button>
+          <% if (activeViralLevel !== 'all' || activeViralOrder !== 'viral') { %>
+            <a href="<%= listHref({ status: 'viralizou', page: 1, nivel: 'all', ordem: 'viral' }) %>"
+              class="d-btn d-btn--fantasma">Limpar</a>
+          <% } %>
+        </form>
+      <% } %>
+    </section>
 
     <% if (!mattersList.length) { %>
-      <p class="mt-4 rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
-        <%= q
-          ? 'Nenhuma matéria encontrada para essa busca.'
-          : (activeStatus === 'viralizou'
-            ? 'Nenhuma matéria com bom engajamento ainda. Abra Publicadas para sincronizar curtidas/comentários, ou aguarde o sync automático desta aba.'
-            : (activeStatus !== 'all' ? 'Nenhuma matéria neste status.' : 'Nenhuma matéria gerada ainda.')) %>
-        <a href="<%= q || activeStatus !== 'all' ? '/minhas-materias' : '/materia-manual' %>" class="mt-2 block text-emerald-400 hover:text-emerald-300">
+      <div class="d-vazio mt-5">
+        <span class="d-vazio-icone" aria-hidden="true"><i></i><i></i><i></i></span>
+        <p>
+          <%= q
+            ? 'Nenhuma matéria encontrada para essa busca.'
+            : (activeStatus === 'viralizou'
+              ? 'Nenhuma matéria com bom engajamento ainda. Abra Publicadas para sincronizar curtidas/comentários, ou aguarde o sync automático desta aba.'
+              : (activeStatus !== 'all' ? 'Nenhuma matéria neste status.' : 'Nenhuma matéria gerada ainda.')) %>
+        </p>
+        <a href="<%= q || activeStatus !== 'all' ? '/minhas-materias' : '/materia-manual' %>" class="mt-2 inline-flex text-emerald-300 hover:text-emerald-200">
           <%= q || activeStatus !== 'all' ? 'Ver todas →' : 'Criar matéria →' %>
         </a>
-      </p>
+      </div>
     <% } else { %>
-      <p id="mia-matters-count" class="mt-2.5 text-[11px] text-slate-500">
-        <%= fromItem %>–<%= toItem %> de <span id="mia-visible-count"><%= pag.total %></span> matéria(s)<%= q ? ' encontrada(s)' : '' %>
-      </p>
+      <div class="mt-5 flex flex-wrap items-center justify-between gap-3">
+        <h2 class="d-secao">Lista</h2>
+        <p id="mia-matters-count" class="d-stat">
+          <b><%= fromItem %>–<%= toItem %></b> de <span id="mia-visible-count"><%= pag.total %></span> matéria(s)<%= q ? ' encontrada(s)' : '' %>
+        </p>
+      </div>
 
       <% if (activeStatus === 'rascunho') { %>
-        <div id="mia-bulk-bar" class="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-2.5 py-2 sm:px-3">
-          <label class="inline-flex cursor-pointer items-center gap-2 text-[11px] text-slate-300">
+        <div id="mia-bulk-bar" class="matters-bulk d-card mt-3">
+          <label class="inline-flex cursor-pointer items-center gap-2 text-xs" style="color: var(--d-texto-2)">
             <input type="checkbox" id="mia-select-all" class="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500/40" />
             <span>Selecionar todas nesta página</span>
           </label>
-          <span id="mia-selected-count" class="text-[11px] text-slate-500">0 selecionada(s)</span>
+          <span id="mia-selected-count" class="d-stat">0 selecionada(s)</span>
           <div class="ml-auto flex flex-wrap items-center gap-1.5">
             <button type="button" id="mia-bulk-delete" disabled
-              class="rounded-md border border-rose-500/35 bg-rose-500/10 px-2.5 py-1 text-[11px] font-medium text-rose-200 transition enabled:hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40">
+              class="d-btn d-btn--neutro d-btn--perigo disabled:cursor-not-allowed disabled:opacity-40">
               Excluir selecionadas
             </button>
             <% if (pag.total > 0) { %>
               <button type="button" id="mia-bulk-delete-all"
-                class="rounded-md border border-rose-500/20 px-2.5 py-1 text-[11px] text-rose-300/80 transition hover:border-rose-400/50 hover:bg-rose-500/10 hover:text-rose-200"
+                class="d-btn d-btn--fantasma d-btn--perigo"
                 data-total="<%= pag.total %>"
                 title="Apaga todos os rascunhos, inclusive das outras páginas">
                 Excluir todos (<%= pag.total %>)
@@ -281,7 +274,7 @@
         </div>
       <% } %>
 
-      <ul id="mia-matters-list" class="mia-matters-list mt-2 rounded-xl border border-slate-800 bg-slate-900/40 <%= activeStatus === 'rascunho' ? 'is-select' : '' %>">
+      <ul id="mia-matters-list" class="mia-matters-list d-card mt-3 <%= activeStatus === 'rascunho' ? 'is-select' : '' %>">
         <li class="mia-matters-head" aria-hidden="true">
           <% if (activeStatus === 'rascunho') { %><span></span><% } %>
           <span></span>
@@ -311,7 +304,7 @@
             ? 'text-amber-300/90'
             : (isPub ? 'text-emerald-300/90' : 'text-slate-500');
         %>
-          <li class="mia-matter-row group transition hover:bg-slate-900/70"
+          <li class="mia-matter-row group"
             data-id="<%= item.id %>"
             data-status="<%= st %>">
             <% if (activeStatus === 'rascunho') { %>
@@ -324,29 +317,29 @@
               </label>
             <% } %>
             <a href="/materias-ia/<%= item.id %>"
-              class="mia-matter-thumb flex shrink-0 items-center justify-center overflow-hidden border border-slate-800 bg-slate-950"
+              class="mia-matter-thumb flex shrink-0 items-center justify-center overflow-hidden"
               title="Abrir matéria">
               <% if (thumbUrl) { %>
                 <img src="<%= thumbUrl %>" alt="" loading="lazy"
                   class="h-full w-full object-cover transition duration-150 group-hover:scale-[1.03]" />
               <% } else { %>
-                <span class="px-1 text-center text-[9px] leading-tight text-slate-600">sem arte</span>
+                <span class="px-1 text-center text-[9px] leading-tight">sem arte</span>
               <% } %>
             </a>
             <div class="min-w-0">
-              <div class="flex min-w-0 items-center gap-1.5">
-                <span class="mia-matter-status shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide <%= statusClass[st] || statusClass.rascunho %>"><%= statusLabels[st] || st %></span>
+              <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+                <span class="mia-matter-status shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium uppercase <%= statusClass[st] || statusClass.rascunho %>"><%= statusLabels[st] || st %></span>
                 <% if (viral) { %>
-                  <span class="mia-viral-badge shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ring-1 <%= viral.cls %>"><%= viral.label %></span>
+                  <span class="mia-viral-badge shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase ring-1 <%= viral.cls %>"><%= viral.label %></span>
                 <% } %>
                 <% if (activeStatus === 'viralizou' && viral) { %>
                   <span class="mia-viral-score shrink-0 text-[9px] tabular-nums text-slate-500" title="Pontuação ponderada de engajamento">score <%= Math.round(viral.score) %></span>
                 <% } %>
-                <a href="/materias-ia/<%= item.id %>" class="mia-matter-title text-sm font-medium text-white hover:text-emerald-200">
+                <a href="/materias-ia/<%= item.id %>" class="mia-matter-title">
                   <%= item.titulo || 'Sem título' %>
                 </a>
               </div>
-              <div class="mia-when-mobile mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-500">
+              <div class="mia-when-mobile mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px]">
                 <% if (item.page_name) { %>
                   <span class="truncate"><%= item.page_name %></span>
                 <% } %>
@@ -370,7 +363,7 @@
                 </button>
               <% } %>
             </div>
-            <div class="mia-matter-when text-[10px] text-slate-500">
+            <div class="mia-matter-when">
               <% if (whenValue) { %>
                 <span class="font-medium tabular-nums <%= whenCls %>"><%= whenLabel %> · <%= formatQuandoCurto(whenValue) %></span>
               <% } else { %>
@@ -415,34 +408,34 @@
       </ul>
 
       <% if (pag.totalPages > 1) { %>
-        <nav class="mt-3 flex flex-wrap items-center justify-between gap-2" aria-label="Paginação">
-          <p class="text-[11px] text-slate-500">Página <%= pag.page %> de <%= pag.totalPages %></p>
-          <div class="flex flex-wrap items-center gap-1">
+        <nav class="matters-pagination mt-4" aria-label="Paginação">
+          <p class="d-stat">Página <b><%= pag.page %></b> de <%= pag.totalPages %></p>
+          <div class="flex flex-wrap items-center gap-1.5">
             <% if (pag.page > 1) { %>
               <a href="<%= listHref({ page: pag.page - 1 }) %>"
-                class="inline-flex h-8 items-center rounded-lg border border-slate-800 px-2.5 text-xs text-slate-300 hover:border-slate-600 hover:text-white">
+                class="d-btn d-btn--neutro">
                 ← Anterior
               </a>
             <% } else { %>
-              <span class="inline-flex h-8 items-center rounded-lg border border-slate-800/50 px-2.5 text-xs text-slate-600">← Anterior</span>
+              <span class="d-btn d-btn--fantasma opacity-40">← Anterior</span>
             <% } %>
 
             <% pages.forEach((p) => { %>
               <% if (p === pag.page) { %>
-                <span class="inline-flex h-8 min-w-[2rem] items-center justify-center rounded-lg bg-emerald-500 px-2 text-xs font-semibold text-slate-950"><%= p %></span>
+                <span class="matters-page-number is-active"><%= p %></span>
               <% } else { %>
                 <a href="<%= listHref({ page: p }) %>"
-                  class="inline-flex h-8 min-w-[2rem] items-center justify-center rounded-lg border border-slate-800 px-2 text-xs text-slate-300 hover:border-slate-600 hover:text-white"><%= p %></a>
+                  class="matters-page-number"><%= p %></a>
               <% } %>
             <% }) %>
 
             <% if (pag.page < pag.totalPages) { %>
               <a href="<%= listHref({ page: pag.page + 1 }) %>"
-                class="inline-flex h-8 items-center rounded-lg border border-slate-800 px-2.5 text-xs text-slate-300 hover:border-slate-600 hover:text-white">
+                class="d-btn d-btn--neutro">
                 Próxima →
               </a>
             <% } else { %>
-              <span class="inline-flex h-8 items-center rounded-lg border border-slate-800/50 px-2.5 text-xs text-slate-600">Próxima →</span>
+              <span class="d-btn d-btn--fantasma opacity-40">Próxima →</span>
             <% } %>
           </div>
         </nav>

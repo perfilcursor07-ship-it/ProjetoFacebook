@@ -24,6 +24,8 @@ router.post('/minha-marca', requireAuth, (req, res, next) => {
 
 router.get('/usuarios', requireAuth, requireAdmin, usersController.index);
 router.post('/usuarios', requireAuth, requireAdmin, usersController.create);
+router.post('/usuarios/:id/paginas', requireAuth, requireAdmin, usersController.updatePages);
+router.post('/usuarios/:id/modulos', requireAuth, requireAdmin, usersController.updateModules);
 router.post('/usuarios/:id/nivel', requireAuth, requireAdmin, usersController.updateAccess);
 router.post('/usuarios/:id/senha', requireAuth, requireAdmin, usersController.resetPassword);
 router.post('/usuarios/:id/remover', requireAuth, requireAdmin, usersController.remove);
@@ -31,6 +33,12 @@ router.post('/usuarios/:id/remover', requireAuth, requireAdmin, usersController.
 const feedSugeridoController = require('../controllers/feedSugeridoController');
 router.get('/configuracoes/feed-sugerido', requireAuth, requireAdmin, feedSugeridoController.paginaAdmin);
 router.put('/api/admin/feed-sugerido/config', requireAuth, requireAdmin, feedSugeridoController.salvarAdmin);
+
+const notificacoesController = require('../controllers/notificacoesController');
+router.get('/configuracoes/notificacoes', requireAuth, requireAdmin, notificacoesController.paginaAdmin);
+router.get('/api/admin/notificacoes/ntfy', requireAuth, requireAdmin, notificacoesController.statusNtfy);
+router.put('/api/admin/notificacoes/ntfy', requireAuth, requireAdmin, notificacoesController.salvarNtfy);
+router.post('/api/admin/notificacoes/ntfy/teste', requireAuth, requireAdmin, notificacoesController.testarNtfy);
 
 const midiasController = require('../controllers/midiasController');
 router.get('/midias', requireAuth, requireAdmin, midiasController.index);
