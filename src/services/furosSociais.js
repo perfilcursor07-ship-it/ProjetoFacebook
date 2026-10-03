@@ -200,8 +200,45 @@ async function buscarYoutube({ consultas, horas, limitePorConsulta = 10 }) {
  * Posts recentes da Biblioteca (páginas e perfis monitorados) que ainda não
  * viraram matéria, do mais engajado para o menos.
  */
+/**
+ * Post curto demais não vira matéria.
+ *
+ * Uma ou duas linhas de legenda não dão base para escrever: não há fato,
+ * contexto nem declaração para apurar, e a IA acaba inventando o resto. A
+ * exceção é o post com vídeo — aí o texto curto não importa, porque o
+ * conteúdo vem da transcrição.
+ *
+ * A medida ignora link, hashtag, menção e emoji: "Confira! 🔥 #gospel
+ * #jesus https://..." tem 50 caracteres e nenhum conteúdo.
+ */
+const MIN_CARACTERES_POST = Number(process.env.FUROS_MIN_CARACTERES_POST || 180);
+const MIN_PALAVRAS_POST = Number(process.env.FUROS_MIN_PALAVRAS_POST || 20);
+
+function temVideoParaTranscrever(linha) {
+  if (String(linha.media_type || '').toLowerCase() === 'video') return true;
+  if (String(linha.media_url || '').trim()) return true;
+  return /\/(reel|reels|videos|watch|tv)\//i.test(String(linha.url || ''));
+}
+
+function textoAproveitavel(texto) {
+  return String(texto || '')
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/[#@][\p{L}\p{N}_.]+/gu, ' ')
+    .replace(/[\p{Extended_Pictographic}\u200d\uFE0F]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Dá para escrever uma matéria a partir deste post? */
+function conteudoSuficiente(linha) {
+  if (temVideoParaTranscrever(linha)) return true;
+  const texto = textoAproveitavel(linha.resumo || linha.titulo);
+  if (texto.length < MIN_CARACTERES_POST) return false;
+  return texto.split(/\s+/).filter(Boolean).length >= MIN_PALAVRAS_POST;
+}
+
 async function buscarBiblioteca({ userId, plataformas, horas, limite = 30 }) {
-  if (!userId || !plataformas.length) return { itens: [] };
+  if (!userId || !plataformas.length) return { itens: [], descartadosCurtos: 0 };
   const db = require('../config/db');
   const desde = new Date(Date.now() - horas * 3_600_000);
   const linhas = await db('biblioteca_posts as p')
@@ -219,6 +256,8 @@ async function buscarBiblioteca({ userId, plataformas, horas, limite = 30 }) {
       'p.url',
       'p.resumo',
       'p.thumbnail',
+      'p.media_type',
+      'p.media_url',
       'p.publicado_em',
       'p.created_at',
       'p.viral_score',
@@ -226,8 +265,10 @@ async function buscarBiblioteca({ userId, plataformas, horas, limite = 30 }) {
       'f.handle as fonte_handle',
       'f.plataforma'
     );
-  const itens = linhas
-    .filter((l) => /^https?:\/\//i.test(String(l.url || '')))
+  const comLink = linhas.filter((l) => /^https?:\/\//i.test(String(l.url || '')));
+  const aproveitaveis = comLink.filter(conteudoSuficiente);
+  const descartadosCurtos = comLink.length - aproveitaveis.length;
+  const itens = aproveitaveis
     .map((l) => {
       const texto = String(l.resumo || l.titulo || '').replace(/\s+/g, ' ').trim();
       const quando = new Date(l.publicado_em || l.created_at).getTime();
@@ -246,7 +287,7 @@ async function buscarBiblioteca({ userId, plataformas, horas, limite = 30 }) {
         viralScore: Number(l.viral_score) || 0,
       };
     });
-  return { itens };
+  return { itens, descartadosCurtos };
 }
 
 /** Tira vídeos/posts que já viraram matéria desta conta (últimos 60 dias). */
@@ -293,6 +334,11 @@ async function buscarFurosSociais({ userId, canais, consultas, horas, limite, po
     tarefas.push(
       buscarBiblioteca({ userId, plataformas: daBiblioteca, horas, limite })
         .then((r) => {
+          if (r.descartadosCurtos) {
+            avisos.push(
+              `${r.descartadosCurtos} post(s) sem texto suficiente para virar matéria foram ignorados.`
+            );
+          }
           for (const rede of ['instagram', 'facebook'].filter((c) => daBiblioteca.includes(c))) {
             if (!r.itens.some((i) => i.canal === rede)) {
               const nome = rede === 'instagram' ? 'Instagram' : 'Facebook';

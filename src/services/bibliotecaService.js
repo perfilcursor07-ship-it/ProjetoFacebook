@@ -325,6 +325,9 @@ function extrairHandle(url, plataforma) {
       return (parts[0] || '').replace(/^@/, '') || null;
     }
     if (plataforma === 'facebook') {
+      // Página sem vanity URL (/profile.php?id=123): o identificador é o id,
+      // senão as três viram todas '@profile.php' na lista.
+      if (parts[0] === 'profile.php') return u.searchParams.get('id') || null;
       return parts[0] || null;
     }
   } catch {
