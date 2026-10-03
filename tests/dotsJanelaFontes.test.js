@@ -95,3 +95,67 @@ test('teto generoso o bastante para o ritmo não gera alerta falso', () => {
   ).join(' | ');
   assert.doesNotMatch(linhas, /Atenção/, '1 por hora em 24h cabe exatamente no teto de 24');
 });
+
+const { rodiziarPorFonte } = require('../src/services/dotsService');
+
+/** Posts já na ordem que o banco devolve: viral_score DESC. */
+const POSTS = [
+  { id: 1, fonte_id: 10, viral_score: 99 }, // pagina popular
+  { id: 2, fonte_id: 10, viral_score: 90 },
+  { id: 3, fonte_id: 20, viral_score: 50 },
+  { id: 4, fonte_id: 30, viral_score: 10 },
+];
+
+test('dá a vez à página que está há mais tempo sem render matéria', () => {
+  // A 10 publicou agora; a 20 há muito tempo; a 30 nunca.
+  const ultima = new Map([
+    [10, Date.now()],
+    [20, Date.now() - 60 * 60_000],
+  ]);
+
+  const ordem = rodiziarPorFonte(POSTS, ultima).map((p) => p.fonte_id);
+  assert.equal(ordem[0], 30, 'quem nunca produziu vai na frente');
+  assert.equal(ordem[1], 20);
+  assert.equal(ordem[2], 10, 'a mais popular, que acabou de produzir, vai por último');
+});
+
+test('a página popular não ganha todas as voltas — era o bug', () => {
+  // Sem rodizio, a ordem do banco poria a fonte 10 sempre em primeiro.
+  assert.equal(POSTS[0].fonte_id, 10, 'ordem crua do banco');
+
+  let ultima = new Map();
+  const escolhidas = [];
+  for (let volta = 0; volta < 3; volta += 1) {
+    const escolhida = rodiziarPorFonte(POSTS, ultima)[0];
+    escolhidas.push(escolhida.fonte_id);
+    // Escrever marca a fonte como usada agora.
+    ultima = new Map(ultima).set(Number(escolhida.fonte_id), Date.now() + volta);
+  }
+
+  assert.equal(new Set(escolhidas).size, 3, `repetiu página: ${escolhidas.join(',')}`);
+});
+
+test('dentro da mesma página, o melhor post continua na frente', () => {
+  const ordem = rodiziarPorFonte(POSTS, new Map());
+  const daFonte10 = ordem.filter((p) => p.fonte_id === 10);
+  assert.equal(daFonte10[0].id, 1, 'o de maior viral_score da fonte 10');
+});
+
+test('todos os candidatos continuam na lista, só a ordem muda', () => {
+  const ordem = rodiziarPorFonte(POSTS, new Map());
+  assert.equal(ordem.length, POSTS.length, 'nenhum candidato pode ser descartado');
+  assert.deepEqual(
+    [...ordem.map((p) => p.id)].sort(),
+    [...POSTS.map((p) => p.id)].sort()
+  );
+  assert.equal(new Set(ordem.map((p) => p.id)).size, POSTS.length, 'sem duplicar');
+});
+
+test('lista vazia e empate não quebram', () => {
+  assert.deepEqual(rodiziarPorFonte([], new Map()), []);
+  const empate = [
+    { id: 1, fonte_id: 10, viral_score: 5 },
+    { id: 2, fonte_id: 20, viral_score: 5 },
+  ];
+  assert.equal(rodiziarPorFonte(empate, new Map()).length, 2);
+});

@@ -117,8 +117,14 @@ const SISTEMA_PLANO = [
   'Campos:',
   '  nome: rótulo curto (até 60 caracteres) que descreva o trabalho.',
   '  acao: "monitorar_e_escrever" ou "monitorar" (só acompanha, sem escrever).',
-  '  intervalo_minutos: de quanto em quanto tempo ele trabalha.',
+  '  intervalo_minutos: de quanto em quanto tempo ele ENTREGA matéria.',
   '      Aceita 10, 15, 30, 60, 120, 180 ou 360.',
+  '      Este é o ritmo que o editor vê acontecer. Quando ele disser dois ritmos',
+  '      ("monitore a cada 1 hora e publique a cada 15 min"), o ritmo de',
+  '      ENTREGA é o que vem para cá: intervalo_minutos 15.',
+  '  scan_minutos: de quanto em quanto tempo ele relê as páginas. Use quando o',
+  '      editor pedir um ritmo de monitoramento diferente do de entrega',
+  '      (no exemplo acima: 60). Null quando ele não separar os dois.',
   '  materias_por_volta: quantas matérias ele escreve a cada volta (1 a 5).',
   '  limite_dia: teto de matérias por dia (1 a 200). Quando o editor disser um',
   '      ritmo, calcule o teto a partir dele (ex.: 1 a cada 15 min = 96 por dia)',
@@ -138,9 +144,10 @@ const SISTEMA_PLANO = [
   'Traduza o jeito de falar do editor. Exemplos:',
   '  "3 matérias por hora"        -> intervalo_minutos 60, materias_por_volta 3',
   '  "uma a cada 15 minutos"      -> intervalo_minutos 15, materias_por_volta 1, limite_dia 96',
-  '  "1 de cada página a cada 15 min" -> intervalo_minutos 15, materias_por_volta 1,',
-  '      limite_dia 96. O dot alterna as páginas sozinho a cada volta; não',
-  '      multiplique por quantidade de página.',
+  '  "monitore a cada 1 hora e publique 1 a cada 15 min, uma de cada página"',
+  '      -> intervalo_minutos 15, scan_minutos 60, materias_por_volta 1,',
+  '         limite_dia 96, destino "publicar". O dot já alterna as páginas',
+  '         sozinho: não multiplique por quantidade de página.',
   '  "só quando a foto tiver texto" -> modo_imagem "ia_com_texto"',
   '  "deixa no rascunho"          -> destino "rascunho"',
   '  "vai publicando de 20 em 20 min" -> destino "agendar", agendar_minutos 20',
@@ -182,8 +189,13 @@ function resumoDoPlano(plano, urls = []) {
   const porVolta = plano.materias_por_volta;
   const intervalo = plano.intervalo_minutos;
 
+  // Dois ritmos: entregar e reler. Mostrar só um deles era o que fazia o
+  // editor pedir "publique a cada 15 min" e ler "trabalha a cada 1 hora".
+  const scan = Number(plano.scan_minutos) || 0;
   linhas.push(
-    `Acompanha ${urls.length} ${plural(urls.length, 'página', 'páginas')} e trabalha a cada ${tempoPorExtenso(intervalo)}.`
+    scan && scan !== intervalo
+      ? `Acompanha ${urls.length} ${plural(urls.length, 'página', 'páginas')}: relê a cada ${tempoPorExtenso(scan)} e entrega a cada ${tempoPorExtenso(intervalo)}.`
+      : `Acompanha ${urls.length} ${plural(urls.length, 'página', 'páginas')} e trabalha a cada ${tempoPorExtenso(intervalo)}.`
   );
 
   if (plano.acao === 'monitorar') {
@@ -203,6 +215,11 @@ function resumoDoPlano(plano, urls = []) {
       const horasTexto = Number.isInteger(horas) ? String(horas) : horas.toFixed(1).replace('.', ',');
       linhas.push(
         `Atenção: nesse ritmo daria ${porDiaDoRitmo} por dia, mas o teto de ${plano.limite_dia} para antes — ele trabalha cerca de ${horasTexto}h e espera a virada do dia.`
+      );
+    }
+    if (urls.length > 1) {
+      linhas.push(
+        'Alterna as páginas: a vez é sempre de quem está há mais tempo sem render matéria.'
       );
     }
     linhas.push(`Imagem: ${ROTULO_IMAGEM[plano.modo_imagem] || ROTULO_IMAGEM.original}.`);
@@ -239,6 +256,7 @@ async function interpretar(texto) {
     nome: nomeDoTexto(texto),
     acao: 'monitorar_e_escrever',
     intervalo_minutos: 30,
+    scan_minutos: null,
     materias_por_volta: 1,
     limite_dia: 10,
     destino: 'rascunho',
@@ -268,6 +286,14 @@ async function interpretar(texto) {
       nome: corta(vindo.nome, 60) || padrao.nome,
       acao: vindo.acao === 'monitorar' ? 'monitorar' : 'monitorar_e_escrever',
       intervalo_minutos: intervalos.includes(intervalo) ? intervalo : padrao.intervalo_minutos,
+      // Reler mais devagar que entregar é o único sentido útil: varrer mais
+      // rápido que a entrega só gastaria raspagem sem gerar nada a mais.
+      scan_minutos: (() => {
+        const pedido = Number(vindo.scan_minutos);
+        if (!intervalos.includes(pedido)) return null;
+        const entrega = intervalos.includes(intervalo) ? intervalo : padrao.intervalo_minutos;
+        return pedido > entrega ? pedido : null;
+      })(),
       materias_por_volta: Math.min(5, Math.max(1, Number(vindo.materias_por_volta) || 1)),
       limite_dia: Math.min(200, Math.max(1, Number(vindo.limite_dia) || padrao.limite_dia)),
       destino: destinos.includes(vindo.destino) ? vindo.destino : padrao.destino,
@@ -350,6 +376,7 @@ async function criar(userId, { objetivo, nome = null, facebookPageId = null, pro
     fonte_ids: JSON.stringify([]),
     estado: 'ativo',
     intervalo_minutos: plano.intervalo_minutos,
+    scan_minutos: plano.scan_minutos,
     limite_dia: plano.limite_dia,
     facebook_page_id: facebookPageId || null,
     destino: plano.destino,
@@ -427,6 +454,7 @@ async function candidatosDoDot(dot) {
     .limit(CANDIDATOS_POR_CICLO)
     .select(
       'p.id',
+      'p.fonte_id',
       'p.titulo',
       'p.url',
       'p.resumo',
@@ -440,7 +468,58 @@ async function candidatosDoDot(dot) {
     );
 
   const { conteudoSuficiente } = require('./furosSociais');
-  return linhas.filter((l) => /^https?:\/\//i.test(String(l.url || ''))).filter(conteudoSuficiente);
+  const uteis = linhas
+    .filter((l) => /^https?:\/\//i.test(String(l.url || '')))
+    .filter(conteudoSuficiente);
+
+  return rodiziarPorFonte(uteis, await ultimaMateriaPorFonte(dot, fonteIds));
+}
+
+/**
+ * Quando cada página produziu matéria pela última vez para este usuário.
+ * Página que nunca produziu não aparece no mapa — e por isso entra na frente.
+ */
+async function ultimaMateriaPorFonte(dot, fonteIds) {
+  const linhas = await db('biblioteca_posts')
+    .where({ user_id: dot.user_id })
+    .whereIn('fonte_id', fonteIds)
+    .whereNotNull('matter_id')
+    .groupBy('fonte_id')
+    .select('fonte_id')
+    .max({ ultima: 'created_at' });
+
+  return new Map(
+    linhas.map((l) => [Number(l.fonte_id), new Date(l.ultima || 0).getTime() || 0])
+  );
+}
+
+/**
+ * Ordena para dar a vez à página que está há mais tempo sem render matéria.
+ *
+ * Sem isto a ordem era só `viral_score DESC`: a página mais popular da lista
+ * ganhava todas as voltas e as outras 25 nunca viravam matéria — o contrário de
+ * "uma de cada página". Dentro da mesma página, o melhor post continua na
+ * frente.
+ */
+function rodiziarPorFonte(posts, ultimaPorFonte = new Map()) {
+  const melhorDaFonte = new Map();
+  for (const post of posts) {
+    const fonte = Number(post.fonte_id);
+    // `posts` já vem por viral_score DESC, então o primeiro de cada fonte é o melhor.
+    if (!melhorDaFonte.has(fonte)) melhorDaFonte.set(fonte, post);
+  }
+
+  const vez = (post) => ultimaPorFonte.get(Number(post.fonte_id)) ?? 0;
+  const naFrente = [...melhorDaFonte.values()].sort((a, b) => {
+    const diferenca = vez(a) - vez(b);
+    if (diferenca) return diferenca;
+    return (Number(b.viral_score) || 0) - (Number(a.viral_score) || 0);
+  });
+
+  // O resto vai atrás, para a volta não ficar sem candidato se os da frente
+  // falharem na escrita.
+  const jaEscolhidos = new Set(naFrente.map((p) => p.id));
+  return [...naFrente, ...posts.filter((p) => !jaEscolhidos.has(p.id))];
 }
 
 /** Escreve pelo mesmo caminho do "Criar matéria" do chat. */
@@ -593,6 +672,7 @@ async function rodarCiclo(dot) {
   let escritas = 0;
   let ignorados = 0;
   let cursorFonte = Number(dot.cursor_fonte) || 0;
+  let scanEm = dot.ultimo_scan_at || null;
 
   // Contagem do dia zera sozinha na virada.
   const dia = hoje();
@@ -601,10 +681,21 @@ async function rodarCiclo(dot) {
 
   try {
     // 1) Puxa post novo das páginas do dot.
+    //
+    // Entregar de 15 em 15 min não obriga a reler as 26 páginas de 15 em 15:
+    // com scan_minutos, a leitura segue o ritmo que o editor pediu e as voltas
+    // intermediárias só aproveitam o que já está na biblioteca.
     const fonteIds = parseJson(dot.fonte_ids, []);
-    const janela = janelaDeFontes(fonteIds, dot.cursor_fonte);
+    const scanCada = Number(dot.scan_minutos) || 0;
+    const ultimoScan = dot.ultimo_scan_at ? new Date(dot.ultimo_scan_at).getTime() : 0;
+    const vaiVarrer = !scanCada || !ultimoScan || Date.now() - ultimoScan >= scanCada * 60_000;
+
+    const janela = vaiVarrer
+      ? janelaDeFontes(fonteIds, dot.cursor_fonte)
+      : { aVarrer: [], proximoCursor: Number(dot.cursor_fonte) || 0 };
     const aVarrer = janela.aVarrer;
     cursorFonte = janela.proximoCursor;
+    if (vaiVarrer) scanEm = agora;
 
     if (aVarrer.length) {
       const bibliotecaService = require('./bibliotecaService');
@@ -635,6 +726,7 @@ async function rodarCiclo(dot) {
         atividade: null,
         ultimo_run_at: agora,
         cursor_fonte: cursorFonte,
+        ultimo_scan_at: scanEm,
         proxima_execucao_at: new Date(Date.now() + dot.intervalo_minutos * 60_000),
         ultimo_resumo: corta(
           saldo
@@ -703,6 +795,7 @@ async function rodarCiclo(dot) {
       atividade: null,
       ultimo_run_at: agora,
       cursor_fonte: cursorFonte,
+      ultimo_scan_at: scanEm,
       proxima_execucao_at: new Date(Date.now() + dot.intervalo_minutos * 60_000),
       feitas_hoje: feitasHoje + escritas,
       dia_contagem: dia,
@@ -720,6 +813,7 @@ async function rodarCiclo(dot) {
       atividade: null,
       ultimo_run_at: agora,
       cursor_fonte: cursorFonte,
+      ultimo_scan_at: scanEm,
       proxima_execucao_at: new Date(Date.now() + dot.intervalo_minutos * 60_000),
       ultimo_erro: corta(err.message, 500),
     });
@@ -867,4 +961,5 @@ module.exports = {
   interpretar,
   janelaDeFontes,
   resumoDoPlano,
+  rodiziarPorFonte,
 };
