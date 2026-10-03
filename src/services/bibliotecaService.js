@@ -1401,6 +1401,42 @@ async function criarFonte({
   }
 }
 
+/**
+ * Fonte já cadastrada para esta URL, ou null.
+ *
+ * O Dots comparava a URL crua, como o editor colou, com a que está no banco —
+ * que passou por `normalizeUrl` e perdeu a barra final. Então
+ * "facebook.com/pagina/" nunca casava com "facebook.com/pagina": o dot tentava
+ * criar, batia na unicidade (user_id, url) e nascia sem página nenhuma.
+ *
+ * A comparação mora aqui, junto da normalização, para não haver duas verdades.
+ */
+async function encontrarFontePorUrl(userId, url) {
+  let normalizada;
+  try {
+    normalizada = normalizeUrl(url);
+  } catch {
+    return null;
+  }
+
+  const semBarra = (valor) => String(valor || '').replace(/\/+$/, '').toLowerCase();
+  const alvo = semBarra(normalizada);
+  const fontes = await BibliotecaFontes.findByUser(userId);
+
+  const exata = fontes.find((f) => semBarra(f.url) === alvo);
+  if (exata) return exata;
+
+  // Mesmo perfil na mesma plataforma: cobre www, http/https e query a mais.
+  const plataforma = detectarPlataforma(normalizada);
+  const handle = extrairHandle(normalizada, plataforma);
+  if (!handle) return null;
+  return (
+    fontes.find(
+      (f) => f.plataforma === plataforma && semBarra(f.handle) === semBarra(handle)
+    ) || null
+  );
+}
+
 async function atualizarFonte(userId, fonteId, patch = {}) {
   const fonte = await BibliotecaFontes.findById(fonteId);
   if (!fonte || Number(fonte.user_id) !== Number(userId)) {
@@ -2962,6 +2998,7 @@ async function tickAutopilot() {
 module.exports = {
   detectarPlataforma,
   criarFonte,
+  encontrarFontePorUrl,
   atualizarFonte,
   escanearAgora,
   gerarTextoDePost,

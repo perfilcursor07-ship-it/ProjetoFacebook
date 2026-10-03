@@ -29,6 +29,11 @@ const ESCRITAS_POR_CICLO_MAX = 5;
  * mais páginas nunca via o fim da lista ser lido.
  */
 const FONTES_POR_CICLO = 10;
+/**
+ * Depois disso a trava de um ciclo é considerada abandonada (processo reiniciou
+ * no meio). Sem esse resgate, um pm2 reload travaria o dot para sempre.
+ */
+const TRAVA_CICLO_MS = 30 * 60 * 1000;
 const LIMITE_ESCRITA_MS = 15 * 60 * 1000;
 
 let rodando = false;
@@ -398,15 +403,16 @@ async function criar(userId, { objetivo, nome = null, facebookPageId = null, pro
     const bibliotecaService = require('./bibliotecaService');
     for (const url of urls) {
       try {
-        const existente = await db('biblioteca_fontes')
-          .where({ user_id: userId })
-          .andWhere('url', 'like', `%${url.replace(/^https?:\/\/(www\.)?/i, '').replace(/[%_]/g, '')}%`)
-          .first('id');
+        // A comparação vive no bibliotecaService, junto da normalização: era a
+        // falta disso que fazia "pagina/" não casar com "pagina" e o dot nascer
+        // sem fonte nenhuma.
+        const existente = await bibliotecaService.encontrarFontePorUrl(userId, url);
         if (existente) {
           await db('biblioteca_fontes').where({ id: existente.id }).update({ monitorar: true });
-          fonteIds.push(existente.id);
+          fonteIds.push(Number(existente.id));
           continue;
         }
+
         const criada = await bibliotecaService.criarFonte({
           userId,
           url,
@@ -416,11 +422,29 @@ async function criar(userId, { objetivo, nome = null, facebookPageId = null, pro
         const novoId = criada?.id || criada;
         if (novoId) fonteIds.push(Number(novoId));
       } catch (err) {
+        // "Já está na biblioteca" não é problema: é a fonte que queremos. Pode
+        // acontecer num formato de URL que a busca ainda não cobre.
+        if (err.status === 409) {
+          const achada = await bibliotecaService
+            .encontrarFontePorUrl(userId, url)
+            .catch(() => null);
+          if (achada) {
+            await db('biblioteca_fontes').where({ id: achada.id }).update({ monitorar: true });
+            fonteIds.push(Number(achada.id));
+            continue;
+          }
+        }
         problemas.push(`${url}: ${err.message}`);
       }
     }
+    // O motivo ia só para o retorno da função: na tela aparecia "1 com
+    // problema" sem dizer qual nem por quê, e o dot ficava inútil em silêncio.
     await registrarLog(dot, 'criou_fonte', {
-      detalhe: `${fonteIds.length} página(s) monitorada(s)${problemas.length ? `; ${problemas.length} com problema` : ''}`,
+      detalhe: corta(
+        `${fonteIds.length} página(s) monitorada(s)` +
+          (problemas.length ? `; ${problemas.length} com problema — ${problemas.join(' | ')}` : ''),
+        600
+      ),
     });
   }
 
@@ -743,10 +767,43 @@ function janelaDeFontes(fonteIds, cursor = 0, tamanho = FONTES_POR_CICLO) {
 }
 
 /** Uma volta de trabalho de um dot. Nunca lança: erro vira registro. */
+/**
+ * Pega o dot para esta volta, em uma única instrução no banco.
+ *
+ * O botão "Trabalhar agora" chamava `rodarCiclo` direto, sem respeitar o
+ * `rodando` do tick nem a reserva do `proxima_execucao_at`. Clicar nele
+ * enquanto o tick já rodava o mesmo dot gerava dois ciclos em paralelo: cada
+ * um escolhia o mesmo melhor candidato antes de o outro marcá-lo, e a matéria
+ * saía duplicada.
+ *
+ * `trabalhando` já existia na tabela, mas só como enfeite da tela. Aqui ele
+ * vira a trava: o UPDATE condicional só afeta linha se ninguém estiver com o
+ * dot, e quem não afetar nada desiste da volta.
+ */
+async function reservarCiclo(dotId) {
+  const limiteTrava = new Date(Date.now() - TRAVA_CICLO_MS);
+  const linhas = await db(TABELA)
+    .where({ id: dotId })
+    .andWhere(function livre() {
+      this.where('trabalhando', false).orWhere('atividade_em', '<', limiteTrava);
+    })
+    .update({
+      trabalhando: true,
+      atividade: 'Começando a volta…',
+      atividade_em: new Date(),
+    });
+  return Number(linhas) > 0;
+}
+
 async function rodarCiclo(dot) {
+  // Duas voltas no mesmo dot escrevem a mesma matéria duas vezes.
+  if (!(await reservarCiclo(dot.id))) {
+    console.info(`[dots #${dot.id}] já há uma volta em andamento; esta foi dispensada`);
+    return;
+  }
+
   const plano = parseJson(dot.plano, {});
   const agora = new Date();
-  await marcarAtividade(dot.id, 'Começando a volta…');
   let escritas = 0;
   let ignorados = 0;
   let cursorFonte = Number(dot.cursor_fonte) || 0;
@@ -792,6 +849,21 @@ async function rodarCiclo(dot) {
           console.warn(`[dots #${dot.id}] varrer fonte ${fonteId}:`, err.message);
         }
       }
+    }
+
+    // Sem fonte nenhuma o dot gira para sempre sem nada para ler, mas a tela
+    // mostrava "Agendado · próxima volta em 4 min" como se estivesse saudável.
+    if (!fonteIds.length) {
+      await db(TABELA).where({ id: dot.id }).update({
+        trabalhando: false,
+        atividade: null,
+        ultimo_run_at: agora,
+        proxima_execucao_at: new Date(Date.now() + dot.intervalo_minutos * 60_000),
+        ultimo_resumo: 'Nenhuma página monitorada: não há o que ler.',
+        ultimo_erro:
+          'Este dot não tem página monitorada. Veja em Atividade por que o link não entrou e crie o dot de novo.',
+      });
+      return;
     }
 
     // 2) Escolhe o que presta.
@@ -905,6 +977,14 @@ async function rodarCiclo(dot) {
       ultimo_erro: corta(err.message, 500),
     });
     await registrarLog(dot, 'erro', { detalhe: corta(err.message, 600) });
+  } finally {
+    // Rede de segurança da trava: se até o `catch` estourar (banco fora, por
+    // exemplo), sem isto o dot ficaria preso até o resgate de 30 min.
+    try {
+      await db(TABELA).where({ id: dot.id }).update({ trabalhando: false });
+    } catch (err) {
+      console.warn(`[dots #${dot.id}] não consegui liberar a trava:`, err.message);
+    }
   }
 }
 
@@ -941,6 +1021,16 @@ async function tick() {
 
 async function listar(userId) {
   const linhas = await db(TABELA).where({ user_id: userId }).orderBy('created_at', 'desc');
+
+  // Para onde cada dot manda. O cartão não mostrava isso, então uma matéria na
+  // página errada era impossível de perceber antes de ir ao ar.
+  const paginaIds = [...new Set(linhas.map((d) => Number(d.facebook_page_id)).filter(Boolean))];
+  const nomePorPagina = new Map();
+  if (paginaIds.length) {
+    const paginas = await db('facebook_pages').whereIn('id', paginaIds).select('id', 'page_name');
+    for (const p of paginas) nomePorPagina.set(Number(p.id), p.page_name || `Página ${p.id}`);
+  }
+
   return linhas.map((d) => ({
     id: d.id,
     nome: d.nome,
@@ -958,6 +1048,12 @@ async function listar(userId) {
     modo_imagem: d.modo_imagem || 'original',
     agendar_minutos: d.agendar_minutos,
     provedor: d.provedor || 'auto',
+    facebook_page_id: d.facebook_page_id || null,
+    // Sem página escolhida, a matéria cai na página padrão da conta na hora de
+    // salvar — e era justamente isso que acontecia sem ninguém ver.
+    pagina: d.facebook_page_id
+      ? nomePorPagina.get(Number(d.facebook_page_id)) || `Página ${d.facebook_page_id}`
+      : null,
     feitas_hoje: d.dia_contagem === hoje() ? d.feitas_hoje : 0,
     proxima_execucao_at: d.proxima_execucao_at,
     ultimo_run_at: d.ultimo_run_at,
@@ -1027,6 +1123,14 @@ async function rodarAgora(userId, dotId) {
   const dot = await db(TABELA).where({ id: dotId, user_id: userId }).first();
   if (!dot) throw erro('Dot não encontrado.', 404);
   if (dot.estado !== 'ativo') throw erro('Ative o dot antes de mandar trabalhar.');
+
+  // Clicar no botão durante a volta automática era o que duplicava a matéria.
+  // A trava em `rodarCiclo` já recusa a segunda, mas dizer "iniciado" seria
+  // mentira: o editor clicaria de novo achando que não pegou.
+  if (dot.trabalhando) {
+    throw erro('Este dot já está trabalhando agora. Espere esta volta terminar.', 409);
+  }
+
   setImmediate(() => void rodarCiclo(dot));
   return { iniciado: true };
 }
@@ -1051,4 +1155,5 @@ module.exports = {
   rodiziarPorFonte,
   semRepetirAssunto,
   semAssuntoRepetidoNaLista,
+  reservarCiclo,
 };

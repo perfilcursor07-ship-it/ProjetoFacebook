@@ -151,6 +151,13 @@
         <span class="d-stat">${icone('imagem')}${ROTULO_IMAGEM[dot.modo_imagem] || 'foto original'}</span>
         <span class="d-stat">${icone('folha')}<b>${dot.feitas_hoje}</b>/${dot.limite_dia} hoje</span>
         <span class="d-stat">${icone('raio')}${dot.destino === 'agendar' ? `agenda a cada ${dot.agendar_minutos || dot.intervalo_minutos} min` : dot.destino === 'publicar' ? 'publica' : 'rascunho'}</span>
+        ${
+          // Sem mostrar o destino, matéria na página errada só aparecia depois
+          // de publicada. Sem página escolhida, ela cai na padrão da conta.
+          dot.pagina
+            ? `<span class="d-stat" title="Página de destino das matérias">${icone('paginas')}em <b>${escapar(dot.pagina)}</b></span>`
+            : `<span class="d-stat d-stat--aviso" title="Nenhuma página foi escolhida: a matéria vai para a página padrão da sua conta">${icone('paginas')}sem página definida</span>`
+        }
         <label class="d-stat gap-1">
           ${icone('cpu')}
           <select data-provedor class="d-escolha" aria-label="IA que escreve">
@@ -389,7 +396,15 @@
       el.nome.value = '';
       el.previaBox.className = 'hidden';
       planoConfirmado = null;
-      avisar(`Pronto: dot criado com ${r.fontes} página(s).${r.problemas?.length ? ` ${r.problemas.length} link(s) não entraram.` : ''}`);
+      // "1 link(s) não entraram" não dizia qual nem por quê, e o dot nascia
+      // inútil sem o editor entender. O motivo vem no `problemas`.
+      const falhas = Array.isArray(r.problemas) ? r.problemas : [];
+      const base = `dot criado com ${r.fontes} página(s)`;
+      if (falhas.length) {
+        avisar(`${base}. Não entraram: ${falhas.slice(0, 3).join(' | ')}`, r.fontes === 0);
+      } else {
+        avisar(`Pronto: ${base}.`);
+      }
       await carregar();
     } catch (err) {
       avisar(err.message, true);

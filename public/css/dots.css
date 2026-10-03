@@ -414,3 +414,8 @@
 .d-opcao:hover { border-color: var(--d-acento-traco); background: var(--d-surface-hover); }
 .d-opcao:has(input:checked) { border-color: var(--d-acento-traco); background: var(--d-acento-fundo); }
 .d-opcao:has(input:disabled) { opacity: .55; cursor: default; }
+
+/* Destino sem definir: a matéria cai na página padrão da conta sem avisar. */
+.d-stat--aviso {
+  color: var(--d-alerta);
+}
