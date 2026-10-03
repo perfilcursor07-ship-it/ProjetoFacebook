@@ -141,17 +141,30 @@ async function updatePages(req, res, next) {
       }
     });
 
-    // A página padrão do usuário pode ter acabado de perder a permissão.
-    const { defaultPageIdForUser } = require('../services/facebookPageResolver');
-    await defaultPageIdForUser(id);
+    // Página padrão: é a que aparece já selecionada quando este usuário publica.
+    const padraoPedido = Number(req.body.pagina_padrao || 0);
+    await Users.setDefaultFacebookPageId(id, padraoPedido > 0 ? padraoPedido : null);
 
-    return redirectWith(
-      res,
-      'success',
-      validos.length
-        ? `${alvo.nome} agora publica em ${validos.length} página(s)`
-        : `${alvo.nome} ficou sem página liberada`
-    );
+    // Valida contra o que o usuário realmente alcança (páginas próprias + as
+    // concedidas acima) e zera se não alcançar. Também cobre o caso de a página
+    // padrão ter acabado de perder a permissão.
+    const { defaultPageIdForUser } = require('../services/facebookPageResolver');
+    const padraoFinal = await defaultPageIdForUser(id);
+
+    const base = validos.length
+      ? `${alvo.nome} agora publica em ${validos.length} página(s)`
+      : `${alvo.nome} ficou sem página liberada`;
+
+    // Escolha recusada não pode sumir calada: o admin precisa saber por quê.
+    if (padraoPedido > 0 && !padraoFinal) {
+      return redirectWith(
+        res,
+        'error',
+        `${base}, mas a página marcada como padrão não ficou liberada para ${alvo.nome} — marque a caixa dela também.`
+      );
+    }
+
+    return redirectWith(res, 'success', padraoFinal ? `${base}, com página padrão definida` : base);
   } catch (err) {
     return next(err);
   }

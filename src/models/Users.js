@@ -20,6 +20,10 @@ const Users = {
         'nivel_acesso',
         'logo_path',
         'default_facebook_page_id',
+        // Sem esta coluna a tela de permissões remontava tudo marcado: o
+        // usuário vinha sem o campo e `permitidos()` entendia como "nunca
+        // configurado = tudo liberado".
+        'modulos_materia',
         'created_at',
         'updated_at'
       )
