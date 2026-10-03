@@ -23,6 +23,12 @@ const LOG = 'dots_execucoes';
 const CANDIDATOS_POR_CICLO = 25;
 /** Teto de matérias por volta. O dot escolhe dentro disso. */
 const ESCRITAS_POR_CICLO_MAX = 5;
+/**
+ * Páginas varridas por volta. O resto fica para as próximas voltas, girando
+ * pela lista — antes a janela era fixa nas 10 primeiras e quem acompanhava
+ * mais páginas nunca via o fim da lista ser lido.
+ */
+const FONTES_POR_CICLO = 10;
 const LIMITE_ESCRITA_MS = 15 * 60 * 1000;
 
 let rodando = false;
@@ -114,7 +120,9 @@ const SISTEMA_PLANO = [
   '  intervalo_minutos: de quanto em quanto tempo ele trabalha.',
   '      Aceita 10, 15, 30, 60, 120, 180 ou 360.',
   '  materias_por_volta: quantas matérias ele escreve a cada volta (1 a 5).',
-  '  limite_dia: teto de matérias por dia (1 a 50).',
+  '  limite_dia: teto de matérias por dia (1 a 200). Quando o editor disser um',
+  '      ritmo, calcule o teto a partir dele (ex.: 1 a cada 15 min = 96 por dia)',
+  '      em vez de escolher um número qualquer — teto baixo trava o ritmo pedido.',
   '  destino: "rascunho" (salva para revisar), "agendar" (programa a saída)',
   '      ou "publicar" (vai direto para a fila).',
   '  agendar_minutos: com destino "agendar", de quantos em quantos minutos',
@@ -129,7 +137,10 @@ const SISTEMA_PLANO = [
   '',
   'Traduza o jeito de falar do editor. Exemplos:',
   '  "3 matérias por hora"        -> intervalo_minutos 60, materias_por_volta 3',
-  '  "uma a cada 15 minutos"      -> intervalo_minutos 15, materias_por_volta 1',
+  '  "uma a cada 15 minutos"      -> intervalo_minutos 15, materias_por_volta 1, limite_dia 96',
+  '  "1 de cada página a cada 15 min" -> intervalo_minutos 15, materias_por_volta 1,',
+  '      limite_dia 96. O dot alterna as páginas sozinho a cada volta; não',
+  '      multiplique por quantidade de página.',
   '  "só quando a foto tiver texto" -> modo_imagem "ia_com_texto"',
   '  "deixa no rascunho"          -> destino "rascunho"',
   '  "vai publicando de 20 em 20 min" -> destino "agendar", agendar_minutos 20',
@@ -183,6 +194,17 @@ function resumoDoPlano(plano, urls = []) {
     linhas.push(
       `Escreve ${porVolta} ${plural(porVolta, 'matéria', 'matérias')} por volta — cerca de ${porHoraTexto} por hora, no teto de ${plano.limite_dia} por dia.`
     );
+
+    // Teto menor que o ritmo faz o dot parar no meio do dia. Dizer só "no teto
+    // de N por dia" escondia isso: o editor lia como se o ritmo valesse 24h.
+    const porDiaDoRitmo = Math.round(porVolta * (1440 / intervalo));
+    if (plano.limite_dia < porDiaDoRitmo) {
+      const horas = plano.limite_dia / porHora;
+      const horasTexto = Number.isInteger(horas) ? String(horas) : horas.toFixed(1).replace('.', ',');
+      linhas.push(
+        `Atenção: nesse ritmo daria ${porDiaDoRitmo} por dia, mas o teto de ${plano.limite_dia} para antes — ele trabalha cerca de ${horasTexto}h e espera a virada do dia.`
+      );
+    }
     linhas.push(`Imagem: ${ROTULO_IMAGEM[plano.modo_imagem] || ROTULO_IMAGEM.original}.`);
 
     if (plano.destino === 'rascunho') {
@@ -247,7 +269,7 @@ async function interpretar(texto) {
       acao: vindo.acao === 'monitorar' ? 'monitorar' : 'monitorar_e_escrever',
       intervalo_minutos: intervalos.includes(intervalo) ? intervalo : padrao.intervalo_minutos,
       materias_por_volta: Math.min(5, Math.max(1, Number(vindo.materias_por_volta) || 1)),
-      limite_dia: Math.min(50, Math.max(1, Number(vindo.limite_dia) || padrao.limite_dia)),
+      limite_dia: Math.min(200, Math.max(1, Number(vindo.limite_dia) || padrao.limite_dia)),
       destino: destinos.includes(vindo.destino) ? vindo.destino : padrao.destino,
       agendar_minutos:
         vindo.destino === 'agendar'
@@ -544,6 +566,25 @@ async function agendarSaida(dot, matterId, posicao) {
   }
 }
 
+/**
+ * Quais páginas esta volta varre, girando pela lista.
+ *
+ * Antes a janela era `slice(0, 10)` fixo: um dot com 26 páginas lia sempre as
+ * 10 primeiras e as 16 do fim nunca geravam matéria. Aqui a volta continua de
+ * onde a anterior parou e a lista inteira é coberta ao longo dos ciclos.
+ *
+ * @returns {{ aVarrer: number[], proximoCursor: number }}
+ */
+function janelaDeFontes(fonteIds, cursor = 0, tamanho = FONTES_POR_CICLO) {
+  const lista = Array.isArray(fonteIds) ? fonteIds : [];
+  if (!lista.length) return { aVarrer: [], proximoCursor: 0 };
+  if (lista.length <= tamanho) return { aVarrer: [...lista], proximoCursor: 0 };
+
+  const inicio = ((Number(cursor) || 0) % lista.length + lista.length) % lista.length;
+  const aVarrer = Array.from({ length: tamanho }, (_, i) => lista[(inicio + i) % lista.length]);
+  return { aVarrer, proximoCursor: (inicio + tamanho) % lista.length };
+}
+
 /** Uma volta de trabalho de um dot. Nunca lança: erro vira registro. */
 async function rodarCiclo(dot) {
   const plano = parseJson(dot.plano, {});
@@ -551,6 +592,7 @@ async function rodarCiclo(dot) {
   await marcarAtividade(dot.id, 'Começando a volta…');
   let escritas = 0;
   let ignorados = 0;
+  let cursorFonte = Number(dot.cursor_fonte) || 0;
 
   // Contagem do dia zera sozinha na virada.
   const dia = hoje();
@@ -560,13 +602,21 @@ async function rodarCiclo(dot) {
   try {
     // 1) Puxa post novo das páginas do dot.
     const fonteIds = parseJson(dot.fonte_ids, []);
-    if (fonteIds.length) {
+    const janela = janelaDeFontes(fonteIds, dot.cursor_fonte);
+    const aVarrer = janela.aVarrer;
+    cursorFonte = janela.proximoCursor;
+
+    if (aVarrer.length) {
       const bibliotecaService = require('./bibliotecaService');
-      const aVarrer = fonteIds.slice(0, 10);
       let n = 0;
       for (const fonteId of aVarrer) {
         n += 1;
-        await marcarAtividade(dot.id, `Varrendo página ${n} de ${aVarrer.length}…`);
+        await marcarAtividade(
+          dot.id,
+          `Varrendo página ${n} de ${aVarrer.length}` +
+            (fonteIds.length > aVarrer.length ? ` (de ${fonteIds.length} no total)` : '') +
+            '…'
+        );
         try {
           await bibliotecaService.escanearAgora(dot.user_id, fonteId);
         } catch (err) {
@@ -584,6 +634,7 @@ async function rodarCiclo(dot) {
         trabalhando: false,
         atividade: null,
         ultimo_run_at: agora,
+        cursor_fonte: cursorFonte,
         proxima_execucao_at: new Date(Date.now() + dot.intervalo_minutos * 60_000),
         ultimo_resumo: corta(
           saldo
@@ -651,6 +702,7 @@ async function rodarCiclo(dot) {
       trabalhando: false,
       atividade: null,
       ultimo_run_at: agora,
+      cursor_fonte: cursorFonte,
       proxima_execucao_at: new Date(Date.now() + dot.intervalo_minutos * 60_000),
       feitas_hoje: feitasHoje + escritas,
       dia_contagem: dia,
@@ -667,6 +719,7 @@ async function rodarCiclo(dot) {
       trabalhando: false,
       atividade: null,
       ultimo_run_at: agora,
+      cursor_fonte: cursorFonte,
       proxima_execucao_at: new Date(Date.now() + dot.intervalo_minutos * 60_000),
       ultimo_erro: corta(err.message, 500),
     });
@@ -812,4 +865,6 @@ module.exports = {
   // Expostos para teste
   extrairUrls,
   interpretar,
+  janelaDeFontes,
+  resumoDoPlano,
 };

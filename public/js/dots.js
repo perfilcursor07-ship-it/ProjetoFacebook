@@ -112,7 +112,15 @@
       const paginas = Array.isArray(dados.pages) ? dados.pages : [];
       el.pagina.innerHTML = '';
       el.pagina.append(new Option('Sem página (só rascunho)', ''));
-      for (const p of paginas) el.pagina.append(new Option(p.nome || p.name || `Página ${p.id}`, p.id));
+      // A API devolve `page_name`. Ler `nome`/`name` caía no texto de reserva e
+      // o editor via "Página 2" em vez do nome real da página.
+      for (const p of paginas) {
+        const rotulo = p.page_name || `Página ${p.id}`;
+        el.pagina.append(new Option(p.is_default ? `${rotulo} (padrão)` : rotulo, p.id));
+      }
+      // Já vem na padrão do usuário, como nos outros seletores de publicação.
+      const padrao = paginas.find((p) => p.is_default);
+      if (padrao) el.pagina.value = String(padrao.id);
     } catch {
       el.pagina.innerHTML = '';
       el.pagina.append(new Option('Não consegui carregar as páginas', ''));
