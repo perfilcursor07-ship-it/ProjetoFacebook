@@ -2685,3 +2685,45 @@ body.mia-chat-drawer-open {
   width: 100%;
   max-width: 100%;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Abas de origem da lista de conversas
+
+   Dots, Furos do dia, Piloto e Feed sugerido escrevem pelo mesmo fluxo do
+   chat, e a conversa que vira matéria fica no histórico. Sem separar, a lista
+   do editor virava um amontoado de links automáticos misturados ao que ele
+   mesmo escreveu.
+   ────────────────────────────────────────────────────────────────────────── */
+.mia-chat-origens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0.5rem 0.35rem 0;
+}
+
+.mia-chat-origens:empty {
+  display: none;
+}
+
+.mia-chat-origem {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--mia-chat-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.mia-chat-origem:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--mia-chat-text);
+}
+
+.mia-chat-origem.is-active {
+  border-color: rgba(16, 185, 129, 0.45);
+  background: rgba(16, 185, 129, 0.14);
+  color: #a7f3d0;
+}

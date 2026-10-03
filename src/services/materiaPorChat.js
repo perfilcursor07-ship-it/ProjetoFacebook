@@ -24,7 +24,19 @@ function corta(valor, max) {
  */
 async function escreverPeloChat(
   { chatService, comModelo },
-  { userId, url, facebookPageId = null, imagemUrl = null, modelo = null, tom = 'natural', pesquisarWeb = false, onPasso = null }
+  {
+    userId,
+    url,
+    facebookPageId = null,
+    imagemUrl = null,
+    modelo = null,
+    tom = 'natural',
+    pesquisarWeb = false,
+    onPasso = null,
+    // Marca quem pediu a matéria. A conversa que vira matéria fica no
+    // histórico do editor; sem isto ela se mistura com o que ele escreveu.
+    origem = 'chat',
+  }
 ) {
   let chatId = null;
   const onEvent = (evento) => {
@@ -51,6 +63,7 @@ async function escreverPeloChat(
       modo: 'escrever',
       tipoConversa: 'materia',
       transcreverVideo: true,
+      origem,
       onEvent,
     }));
   } catch (err) {

@@ -805,7 +805,7 @@ async function escreverPeloChatDoPiloto({ userId, url, pageId, imagemUrl, modelo
   const { matterId } = await comLimite(
     escreverPeloChat(
       { chatService: require('./materiaChatService'), comModelo: require('./tokenFreeGatewayService').comModelo },
-      { userId, url, facebookPageId: pageId, imagemUrl, modelo }
+      { userId, url, facebookPageId: pageId, imagemUrl, modelo, origem: 'furos' }
     ),
     LIMITE_ESCRITA_MS,
     'a escrita passou de 15 min'

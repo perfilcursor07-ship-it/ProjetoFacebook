@@ -1677,12 +1677,24 @@ function serializarMensagem(row) {
   };
 }
 
+/**
+ * De onde a conversa nasceu. Dots, Furos e Feed sugerido escrevem pelo mesmo
+ * fluxo do chat; sem esta marca a lista do editor virava um amontoado de links.
+ */
+const ORIGENS = Object.freeze(['chat', 'dots', 'furos', 'feed']);
+
+function normalizarOrigem(valor) {
+  const origem = String(valor || '').toLowerCase();
+  return ORIGENS.includes(origem) ? origem : 'chat';
+}
+
 async function listarConversas(userId) {
   const rows = await AiChats.findByUser(userId, { limit: 80 });
   return rows.map((c) => ({
     id: c.id,
     titulo: c.titulo || 'Nova conversa',
     modo: c.modo === 'livre' ? 'livre' : 'materia',
+    origem: normalizarOrigem(c.origem),
     fixada: Boolean(c.fixado),
     pesquisarWeb: Boolean(c.pesquisar_web),
     tom: c.tom || 'natural',
@@ -1698,6 +1710,7 @@ async function criarConversa({
   facebookPageId = null,
   modo = 'materia',
   tom = 'natural',
+  origem = 'chat',
 }) {
   const id = await AiChats.create({
     user_id: userId,
@@ -1705,6 +1718,7 @@ async function criarConversa({
     titulo: titulo ? tituloDaConversa(titulo) : null,
     modo: modo === 'livre' ? 'livre' : 'materia',
     tom: normalizarTomTitulos(tom),
+    origem: normalizarOrigem(origem),
   });
   const chat = await AiChats.findById(id);
   return {
@@ -2375,6 +2389,8 @@ async function obterConversa({ userId, chatId }) {
     id: chat.id,
     titulo: chat.titulo || 'Nova conversa',
     modo: chat.modo === 'livre' ? 'livre' : 'materia',
+    // A tela usa a origem para abrir a aba certa da lista.
+    origem: normalizarOrigem(chat.origem),
     fixada: Boolean(chat.fixado),
     pesquisarWeb: Boolean(chat.pesquisar_web),
     tom: chat.tom || 'natural',
@@ -2502,6 +2518,7 @@ async function responder({
   modo = 'escrever',
   tipoConversa = 'materia',
   transcreverVideo = true,
+  origem = 'chat',
   onEvent = () => {},
 }) {
   // 'pautas': pesquisa o tema e devolve a lista de matérias para o usuário
@@ -2537,6 +2554,7 @@ async function responder({
       pesquisar_web: pesquisarWeb ? 1 : 0,
       tom: tomTitulos,
       periodo: periodoFinal,
+      origem: normalizarOrigem(origem),
     });
     chat = await AiChats.findById(novoId);
     onEvent({ tipo: 'conversa', chat: { id: chat.id, titulo: chat.titulo, nova: true } });
@@ -5266,6 +5284,7 @@ module.exports = {
   respostaAdmitePeriodoNaoAtendido,
   listarConversas,
   criarConversa,
+  ORIGENS,
   duplicarConversa,
   obterConversa,
   renomearConversa,

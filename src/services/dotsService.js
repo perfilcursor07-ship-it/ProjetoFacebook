@@ -129,7 +129,8 @@ const SISTEMA_PLANO = [
   '  limite_dia: teto de matérias por dia (1 a 200). Quando o editor disser um',
   '      ritmo, calcule o teto a partir dele (ex.: 1 a cada 15 min = 96 por dia)',
   '      em vez de escolher um número qualquer — teto baixo trava o ritmo pedido.',
-  '  destino: "rascunho" (salva para revisar), "agendar" (programa a saída)',
+  '  destino: "rascunho" (salva para revisar), "agendar" (programa a saída e',
+  '      publica na hora marcada — use quando o editor disser "agende e publique")',
   '      ou "publicar" (vai direto para a fila).',
   '  agendar_minutos: com destino "agendar", de quantos em quantos minutos',
   '      cada matéria pronta sai. Null quando não for agendar.',
@@ -151,6 +152,8 @@ const SISTEMA_PLANO = [
   '  "só quando a foto tiver texto" -> modo_imagem "ia_com_texto"',
   '  "deixa no rascunho"          -> destino "rascunho"',
   '  "vai publicando de 20 em 20 min" -> destino "agendar", agendar_minutos 20',
+  '  "agende e publique de 15 em 15 min" -> destino "agendar", agendar_minutos 15',
+  '  "publique" / "publica direto"  -> destino "publicar"',
   '',
   'Na dúvida: intervalo_minutos 30, materias_por_volta 1, limite_dia 10,',
   'destino "rascunho", modo_imagem "original".',
@@ -472,7 +475,63 @@ async function candidatosDoDot(dot) {
     .filter((l) => /^https?:\/\//i.test(String(l.url || '')))
     .filter(conteudoSuficiente);
 
-  return rodiziarPorFonte(uteis, await ultimaMateriaPorFonte(dot, fonteIds));
+  const ordenados = rodiziarPorFonte(uteis, await ultimaMateriaPorFonte(dot, fonteIds));
+  return semRepetirAssunto(dot, ordenados);
+}
+
+/**
+ * Tira o que já virou matéria e o que repete assunto dentro da mesma lista.
+ *
+ * `matter_id IS NULL` só impede reusar o MESMO post. A mesma notícia chega por
+ * páginas diferentes (UOL e Folha sobre a mesma pesquisa) e virava duas
+ * matérias publicadas — o dot não tinha checagem nenhuma, ao contrário do
+ * Furos e do Piloto, que já usavam estes mesmos mecanismos.
+ */
+async function semRepetirAssunto(dot, posts) {
+  if (!posts.length) return posts;
+
+  let lista = posts;
+  try {
+    // Histórico do usuário: matérias escritas e publicações já feitas.
+    const { marcarJaPublicados } = require('./materiaIaService');
+    const marcados = await marcarJaPublicados(dot.user_id, dot.facebook_page_id || null, posts);
+    const novos = marcados.filter((p) => !p.jaPublicado);
+    const repetidos = marcados.length - novos.length;
+    if (repetidos) {
+      await registrarLog(dot, 'ignorou', {
+        detalhe: `${repetidos} post(s) de assunto já publicado por esta conta`,
+      });
+    }
+    lista = novos;
+  } catch (err) {
+    // Falha na checagem não pode travar o dot, mas tem de aparecer: sem ela o
+    // risco é justamente publicar repetido.
+    console.warn(`[dots #${dot.id}] checagem de repetido falhou: ${err.message}`);
+    await registrarLog(dot, 'erro', {
+      detalhe: corta(`não consegui checar assunto repetido (${err.message})`, 600),
+    });
+  }
+
+  return semAssuntoRepetidoNaLista(lista);
+}
+
+/**
+ * Tira da própria lista os posts que contam a mesma notícia.
+ *
+ * A mesma pesquisa eleitoral chega por UOL, Folha e Poder360 na mesma volta.
+ * Sem isto, duas delas podiam virar matéria e ir as duas para a fila.
+ */
+function semAssuntoRepetidoNaLista(posts) {
+  const { titulosSimilares } = require('./newsResearch');
+  const titulosAceitos = [];
+  const escolhidos = [];
+  for (const post of Array.isArray(posts) ? posts : []) {
+    const titulo = String(post?.titulo || '').trim();
+    if (titulo && titulosAceitos.some((a) => titulosSimilares(a, titulo))) continue;
+    if (titulo) titulosAceitos.push(titulo);
+    escolhidos.push(post);
+  }
+  return escolhidos;
 }
 
 /**
@@ -540,6 +599,7 @@ async function escrever(dot, post) {
       url: post.url,
       facebookPageId: dot.facebook_page_id || null,
       imagemUrl: /^https?:\/\//i.test(String(post.thumbnail || '')) ? post.thumbnail : null,
+      origem: 'dots',
     }
   ));
 
@@ -579,7 +639,18 @@ async function resolverCapa(dot, post, matterId) {
         return 'original';
       }
     } catch (err) {
+      // Antes isso só saía num console.warn. Se o OCR quebrar no servidor, TODA
+      // imagem passa a ser gerada — o contrário do que o editor pediu, e com
+      // custo. Agora a falha aparece na atividade do dot.
       console.warn(`[dots #${dot.id}] OCR falhou, gerando imagem: ${err.message}`);
+      await registrarLog(dot, 'erro', {
+        detalhe: corta(
+          `não consegui checar texto na foto (${err.message}); gerei a imagem por garantia`,
+          600
+        ),
+        url: post.url,
+        matterId,
+      });
     }
   }
 
@@ -609,12 +680,17 @@ async function resolverCapa(dot, post, matterId) {
  * O horário acumula a partir da última agendada deste dot, para duas matérias
  * da mesma volta não saírem no mesmo minuto.
  */
-async function agendarSaida(dot, matterId, posicao) {
+async function agendarSaida(dot, matterId, posicao, { imediato = false } = {}) {
   const minutos = Number(dot.agendar_minutos) || Number(dot.intervalo_minutos) || 15;
   try {
-    const ultima = await db(TABELA).where({ id: dot.id }).first('proxima_saida_at');
-    const base = ultima?.proxima_saida_at ? new Date(ultima.proxima_saida_at).getTime() : 0;
-    const quando = new Date(Math.max(Date.now(), base) + minutos * 60_000 * (posicao === 0 ? 0 : 1));
+    // Publicar não espalha no tempo: o próprio ciclo já dá o ritmo (1 por
+    // volta, a cada intervalo_minutos). Espaçar de novo atrasaria a saída.
+    let quando = new Date();
+    if (!imediato) {
+      const ultima = await db(TABELA).where({ id: dot.id }).first('proxima_saida_at');
+      const base = ultima?.proxima_saida_at ? new Date(ultima.proxima_saida_at).getTime() : 0;
+      quando = new Date(Math.max(Date.now(), base) + minutos * 60_000 * (posicao === 0 ? 0 : 1));
+    }
 
     const AiMatters = require('../models/AiMatters');
     await AiMatters.update(matterId, {
@@ -634,9 +710,11 @@ async function agendarSaida(dot, matterId, posicao) {
     });
 
     // Guarda o próximo horário livre para a volta seguinte não atropelar.
-    await db(TABELA)
-      .where({ id: dot.id })
-      .update({ proxima_saida_at: new Date(quando.getTime() + minutos * 60_000) });
+    if (!imediato) {
+      await db(TABELA)
+        .where({ id: dot.id })
+        .update({ proxima_saida_at: new Date(quando.getTime() + minutos * 60_000) });
+    }
     return quando;
   } catch (err) {
     console.warn(`[dots #${dot.id}] agendar matéria ${matterId}: ${err.message}`);
@@ -761,8 +839,15 @@ async function rodarCiclo(dot) {
           await marcarAtividade(dot.id, `Resolvendo a imagem de ${indice}/${paraEscrever.length}…`);
           const capa = await resolverCapa(dot, post, matterId);
 
+          // 'publicar' só escrevia "na fila" no log e não enfileirava nada: a
+          // matéria ficava parada como rascunho enquanto a tela dizia que saiu.
           let agendada = null;
-          if (dot.destino === 'agendar') agendada = await agendarSaida(dot, matterId, indice - 1);
+          let publicada = false;
+          if (dot.destino === 'agendar') {
+            agendada = await agendarSaida(dot, matterId, indice - 1);
+          } else if (dot.destino === 'publicar') {
+            publicada = Boolean(await agendarSaida(dot, matterId, indice - 1, { imediato: true }));
+          }
 
           await registrarLog(dot, 'escreveu', {
             detalhe: corta(
@@ -772,7 +857,9 @@ async function rodarCiclo(dot) {
                 agendada
                   ? `sai ${agendada.toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
                   : dot.destino === 'publicar'
-                    ? 'na fila'
+                    ? publicada
+                      ? 'na fila para publicar'
+                      : 'não entrou na fila — ficou como rascunho'
                     : 'rascunho',
               ].join(' · '),
               600
@@ -962,4 +1049,6 @@ module.exports = {
   janelaDeFontes,
   resumoDoPlano,
   rodiziarPorFonte,
+  semRepetirAssunto,
+  semAssuntoRepetidoNaLista,
 };

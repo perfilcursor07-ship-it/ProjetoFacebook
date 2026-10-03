@@ -8,6 +8,8 @@
 
   const el = {
     lista: document.getElementById('chat-lista'),
+    origens: document.getElementById('chat-origens'),
+    listaLabel: document.getElementById('chat-lista-label'),
     busca: document.getElementById('chat-busca'),
     selecionar: document.getElementById('chat-selecionar'),
     selecao: document.getElementById('chat-selecao'),
@@ -47,10 +49,23 @@
 
   if (!el.mensagens || !el.input) return;
 
+  /**
+   * Dots, Furos do dia, Piloto e Feed sugerido escrevem pelo mesmo fluxo do
+   * chat, e a conversa que vira matéria fica no histórico. A aba começa em
+   * "Minhas" para o editor ver primeiro o que ele mesmo escreveu.
+   */
+  const ORIGENS = [
+    { id: 'chat', rotulo: 'Minhas', vazio: 'Nenhuma conversa sua ainda' },
+    { id: 'dots', rotulo: 'Dots', vazio: 'Nenhum agente Dots escreveu ainda' },
+    { id: 'furos', rotulo: 'Furos', vazio: 'Nenhuma matéria de Furos do dia ainda' },
+    { id: 'feed', rotulo: 'Feed', vazio: 'Nenhuma matéria do Feed sugerido ainda' },
+  ];
+
   const state = {
     iniciado: false,
     chatId: null,
     conversas: [],
+    origemAtiva: 'chat',
     // Modo "Selecionar" da sidebar: ids marcados para excluir de uma vez.
     selecionando: false,
     selecionadas: new Set(),
@@ -356,12 +371,57 @@
     }
   }
 
-  /** Conversas que aparecem na lista agora (respeita a busca). */
+  /** Origem gravada no servidor; conversa antiga sem a coluna conta como "chat". */
+  function origemDe(conversa) {
+    const origem = String(conversa?.origem || 'chat');
+    return ORIGENS.some((o) => o.id === origem) ? origem : 'chat';
+  }
+
+  /** Conversas que aparecem na lista agora (respeita a aba e a busca). */
   function conversasVisiveis() {
     const filtro = String(el.busca?.value || '').trim().toLowerCase();
     return state.conversas.filter(
-      (c) => !filtro || String(c.titulo || '').toLowerCase().includes(filtro)
+      (c) =>
+        origemDe(c) === state.origemAtiva &&
+        (!filtro || String(c.titulo || '').toLowerCase().includes(filtro))
     );
+  }
+
+  /** Abas de origem, com a contagem de cada uma. */
+  function renderOrigens() {
+    if (!el.origens) return;
+    const porOrigem = new Map(ORIGENS.map((o) => [o.id, 0]));
+    for (const c of state.conversas) {
+      const origem = origemDe(c);
+      porOrigem.set(origem, (porOrigem.get(origem) || 0) + 1);
+    }
+
+    el.origens.replaceChildren();
+    for (const origem of ORIGENS) {
+      const total = porOrigem.get(origem.id) || 0;
+      // Aba sem nenhuma conversa só ocuparia espaço — a não ser a que está aberta.
+      if (!total && state.origemAtiva !== origem.id) continue;
+
+      const aba = document.createElement('button');
+      aba.type = 'button';
+      aba.role = 'tab';
+      const ativa = state.origemAtiva === origem.id;
+      aba.className = `mia-chat-origem${ativa ? ' is-active' : ''}`;
+      aba.setAttribute('aria-selected', String(ativa));
+      aba.textContent = total ? `${origem.rotulo} ${total}` : origem.rotulo;
+      aba.title =
+        origem.id === 'chat'
+          ? 'Conversas que você mesmo escreveu aqui'
+          : `Matérias escritas automaticamente por ${origem.rotulo}`;
+      aba.addEventListener('click', () => {
+        if (state.origemAtiva === origem.id) return;
+        state.origemAtiva = origem.id;
+        // Sair da aba com itens marcados deixaria exclusão invisível pendente.
+        state.selecionadas.clear();
+        renderConversas();
+      });
+      el.origens.appendChild(aba);
+    }
   }
 
   function atualizarBarraSelecao() {
@@ -405,6 +465,7 @@
 
   function renderConversas() {
     const filtro = String(el.busca?.value || '').trim().toLowerCase();
+    renderOrigens();
     el.lista.replaceChildren();
 
     const itens = conversasVisiveis();
@@ -416,7 +477,8 @@
     if (!itens.length) {
       const p = document.createElement('p');
       p.className = 'mia-chat-list-empty';
-      p.textContent = filtro ? 'Nenhuma conversa encontrada' : 'Nenhuma conversa ainda';
+      const aba = ORIGENS.find((o) => o.id === state.origemAtiva);
+      p.textContent = filtro ? 'Nenhuma conversa encontrada' : aba?.vazio || 'Nenhuma conversa ainda';
       el.lista.appendChild(p);
       return;
     }
@@ -3126,6 +3188,9 @@
 
   function novaConversa({ preservarTipo = false } = {}) {
     state.chatId = null;
+    // Conversa nova nasce como 'chat'. Sem voltar para a aba, ela apareceria
+    // numa lista que o editor não está vendo.
+    state.origemAtiva = 'chat';
     // Conversa nova abre direto no Claude; o modo Matéria continua
     // disponível quando o editor quiser aplicar o fluxo editorial completo.
     if (!preservarTipo) state.tipoConversa = 'materia';
@@ -3155,6 +3220,10 @@
       const data = await api(`${API}/conversas/${id}`);
       const chat = data?.chat;
       state.chatId = chat.id;
+      // Conversa de Dots/Furos aberta com a aba em "Minhas" não apareceria
+      // destacada na lista; a aba segue a conversa aberta.
+      const origemDoChat = origemDe(chat);
+      if (origemDoChat !== state.origemAtiva) state.origemAtiva = origemDoChat;
       try {
         sessionStorage.setItem(STORAGE_KEY, String(chat.id));
       } catch {

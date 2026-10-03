@@ -441,6 +441,7 @@ async function processarItem(job, opcoes, item) {
     modelo,
     tom: opcoes.tom,
     pesquisarWeb: opcoes.pesquisarWeb,
+    origem: 'feed',
     onPasso: (texto) => {
       // Mostra no painel o passo atual do chat (transcrição, escrita…).
       if (Date.now() - ultimaEtapa < 1500) return;

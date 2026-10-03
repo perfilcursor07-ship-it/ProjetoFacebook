@@ -31,8 +31,12 @@
           </svg>
           <input id="chat-busca" type="search" placeholder="Buscar conversas…" autocomplete="off" />
         </label>
+        <!-- Dots, Furos e Feed sugerido escrevem pelo mesmo fluxo do chat e a
+             conversa fica no histórico. Sem separar, a lista do editor virava
+             um amontoado de links automáticos. -->
+        <div id="chat-origens" class="mia-chat-origens" role="tablist" aria-label="Origem das conversas"></div>
         <div class="mia-chat-sidebar-row">
-          <p class="mia-chat-sidebar-label">Conversas</p>
+          <p class="mia-chat-sidebar-label" id="chat-lista-label">Conversas</p>
           <button type="button" id="chat-selecionar" class="mia-chat-select-toggle" aria-pressed="false">Selecionar</button>
         </div>
         <div id="chat-selecao" class="mia-chat-select-bar hidden" role="group" aria-label="Excluir conversas selecionadas">

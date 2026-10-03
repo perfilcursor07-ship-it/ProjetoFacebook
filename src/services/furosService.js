@@ -765,6 +765,7 @@ async function iniciarGeracaoDeRede({ userId, pauta = {}, facebookPageId = null,
           facebookPageId: pageId || null,
           imagemUrl: pauta.imagem,
           modelo: modeloFinal,
+          origem: 'furos',
           onPasso: (texto) => {
             geracao.etapa = String(texto).slice(0, 200);
             geracao.atualizadoEm = Date.now();

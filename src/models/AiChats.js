@@ -22,6 +22,8 @@ const AiChats = {
         'c.id',
         'c.titulo',
         'c.modo',
+        // Sem a coluna aqui a lista não saberia separar chat de Dots/Furos.
+        'c.origem',
         'c.fixado',
         'c.pesquisar_web',
         'c.tom',
