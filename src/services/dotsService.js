@@ -635,6 +635,22 @@ async function escrever(dot, post) {
 }
 
 /**
+ * A foto que a matéria vai usar de fato — é ela que o OCR precisa olhar.
+ *
+ * `post.thumbnail` sozinho não serve: os raspadores do Facebook gravam o post
+ * na biblioteca sem imagem, e a foto só aparece quando o chat extrai o link e
+ * salva em `imagem_fonte_url`. Checar só a thumbnail fazia todo post cair no
+ * "não consegui checar" e ganhar imagem de IA.
+ */
+function fotoParaChecar(matter, post) {
+  const daMateria = String(matter?.imagem_fonte_url || matter?.imagem_url || '').trim();
+  // /media/artes/ é a arte composta (com título por cima), não a foto original.
+  if (daMateria && !/\/media\/artes\//i.test(daMateria)) return daMateria;
+  const thumb = String(post?.thumbnail || '').trim();
+  return /^https?:\/\//i.test(thumb) ? thumb : null;
+}
+
+/**
  * Resolve a imagem da matéria conforme o modo escolhido no dot.
  *
  * 'ia_com_texto' é o caso interessante: foto de portal costuma vir com
@@ -649,29 +665,42 @@ async function resolverCapa(dot, post, matterId) {
   if (modo === 'original' || modo === 'sem_imagem') return modo;
 
   if (modo === 'ia_com_texto') {
-    try {
-      const { fetchImage } = require('./editorialCardService');
-      const buffer = await fetchImage(post.thumbnail);
-      const { analisarTextoDaImagem } = require('./imageOcrService');
-      const ocr = await analisarTextoDaImagem(buffer);
-      if (!ocr.temTexto) {
-        await registrarLog(dot, 'ignorou', {
-          detalhe: `foto original sem texto (${ocr.palavras} palavra(s)) — mantida sem gerar IA`,
+    const matter = await require('../models/AiMatters').findById(matterId).catch(() => null);
+    const foto = fotoParaChecar(matter, post);
+
+    if (foto) {
+      try {
+        const { fetchImage } = require('./editorialCardService');
+        const buffer = await fetchImage(foto);
+        const { analisarTextoDaImagem } = require('./imageOcrService');
+        const ocr = await analisarTextoDaImagem(buffer);
+        if (!ocr.temTexto) {
+          await registrarLog(dot, 'ignorou', {
+            detalhe: `foto original sem texto (${ocr.palavras} palavra(s)) — mantida sem gerar IA`,
+            url: post.url,
+            matterId,
+          });
+          return 'original';
+        }
+      } catch (err) {
+        // O editor pediu IA SÓ quando a foto tiver texto. Sem conseguir checar,
+        // não há texto confirmado: fica a foto original. Gerar "por garantia"
+        // era o que fazia toda matéria sair com imagem de IA.
+        console.warn(`[dots #${dot.id}] OCR falhou, mantendo a foto original: ${err.message}`);
+        await registrarLog(dot, 'erro', {
+          detalhe: corta(
+            `não consegui checar texto na foto (${err.message}); mantive a foto original`,
+            600
+          ),
           url: post.url,
           matterId,
         });
         return 'original';
       }
-    } catch (err) {
-      // Antes isso só saía num console.warn. Se o OCR quebrar no servidor, TODA
-      // imagem passa a ser gerada — o contrário do que o editor pediu, e com
-      // custo. Agora a falha aparece na atividade do dot.
-      console.warn(`[dots #${dot.id}] OCR falhou, gerando imagem: ${err.message}`);
-      await registrarLog(dot, 'erro', {
-        detalhe: corta(
-          `não consegui checar texto na foto (${err.message}); gerei a imagem por garantia`,
-          600
-        ),
+    } else {
+      // Sem foto nenhuma não há original para manter: a ilustração é a única capa.
+      await registrarLog(dot, 'ignorou', {
+        detalhe: 'matéria sem foto original — gerando ilustração com IA',
         url: post.url,
         matterId,
       });
@@ -1149,6 +1178,8 @@ module.exports = {
   tick,
   // Expostos para teste
   extrairUrls,
+  fotoParaChecar,
+  resolverCapa,
   interpretar,
   janelaDeFontes,
   resumoDoPlano,

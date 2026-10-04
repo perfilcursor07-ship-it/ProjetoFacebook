@@ -444,6 +444,9 @@ async function fetchHtml(url, userAgent, extraHeaders = {}) {
   const res = await axios.get(url, {
     timeout: 20000,
     maxRedirects: 5,
+    beforeRedirect: extraHeaders.Cookie
+      ? require('./facebookCookies').manterCookieFacebookNoRedirect(extraHeaders.Cookie)
+      : undefined,
     validateStatus: (s) => s >= 200 && s < 400,
     headers: {
       'User-Agent': userAgent,
@@ -1346,7 +1349,11 @@ async function extrairViaFacebookPagePlugin(url) {
 }
 
 async function extrairViaFacebookHtml(url) {
-  const { buildFacebookCookieHeader: build, facebookHtmlHeaders } = require('./facebookCookies');
+  const {
+    buildFacebookCookieHeader: build,
+    facebookHtmlHeaders,
+    manterCookieFacebookNoRedirect,
+  } = require('./facebookCookies');
   const cookie = build();
   if (!cookie) return null;
 
@@ -1356,6 +1363,7 @@ async function extrairViaFacebookHtml(url) {
     const res = await axios.get(normalizarUrlSocial(url), {
       timeout: 30000,
       maxRedirects: 5,
+      beforeRedirect: manterCookieFacebookNoRedirect(cookie),
       headers: facebookHtmlHeaders(cookie, BROWSER_UA),
       validateStatus: () => true,
     });

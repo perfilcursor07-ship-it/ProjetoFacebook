@@ -2,6 +2,7 @@ const axios = require('axios');
 const {
   buildFacebookCookieHeader,
   facebookHtmlHeaders,
+  manterCookieFacebookNoRedirect,
 } = require('./facebookCookies');
 
 /**
@@ -501,6 +502,7 @@ async function baixarHtmlPagina(pageUrl) {
   const res = await axios.get(String(pageUrl || '').trim(), {
     timeout: 45000,
     maxRedirects: 5,
+    beforeRedirect: manterCookieFacebookNoRedirect(cookie),
     headers: facebookHtmlHeaders(cookie),
     validateStatus: () => true,
   });

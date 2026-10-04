@@ -153,6 +153,20 @@ function facebookHtmlHeaders(cookieHeader, userAgent) {
 }
 
 /**
+ * Em algumas regiões o www.facebook.com redireciona para web.facebook.com; o
+ * follow-redirects (axios) descarta o Cookie ao trocar de host e o salto chega
+ * deslogado. Use como `beforeRedirect` para reaplicar o Cookie dentro de facebook.com.
+ */
+function manterCookieFacebookNoRedirect(cookieHeader) {
+  return (options) => {
+    if (!cookieHeader) return;
+    if (!/(^|\.)facebook\.com$/i.test(String(options.hostname || ''))) return;
+    options.headers = options.headers || {};
+    options.headers.Cookie = cookieHeader;
+  };
+}
+
+/**
  * Testa a sessão remotamente sem retornar usuário, IDs ou valores de cookies.
  * O Facebook redireciona sessões inválidas para /login/.
  */
@@ -172,6 +186,7 @@ async function validateFacebookSession(axiosClient) {
       headers: facebookHtmlHeaders(cookieHeader),
       timeout: 20000,
       maxRedirects: 5,
+      beforeRedirect: manterCookieFacebookNoRedirect(cookieHeader),
       validateStatus: () => true,
     });
     const finalUrl = String(
@@ -214,5 +229,6 @@ module.exports = {
   buildFacebookCookieHeader,
   resolveCleanFacebookCookiesFile,
   facebookHtmlHeaders,
+  manterCookieFacebookNoRedirect,
   validateFacebookSession,
 };
