@@ -60,6 +60,7 @@ router.patch('/:id', (req, res, next) =>
   responder(res, next, dotsService.atualizar(req.session.userId, Number(req.params.id), {
     ...(req.body?.nome !== undefined ? { nome: req.body.nome } : {}),
     ...(req.body?.provedor !== undefined ? { provedor: req.body.provedor } : {}),
+    ...(req.body?.objetivo !== undefined ? { objetivo: req.body.objetivo } : {}),
   })));
 
 router.get('/:id', (req, res, next) =>

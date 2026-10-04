@@ -261,7 +261,12 @@ const SISTEMA_PLANO = [
   '  nome: rótulo curto (até 60 caracteres) que descreva o trabalho.',
   '  acao: "monitorar_e_escrever" ou "monitorar" (só acompanha, sem escrever).',
   '  criterio: uma frase dizendo o que, nestas páginas, merece virar matéria.',
-  '  palavras: lista de termos que interessam (pode ser vazia).',
+  '  palavras: termos que o post precisa citar para virar matéria. Use quando',
+  '      o editor pedir recorte ("só o que falar de Flávio Bolsonaro"). Vazia',
+  '      quando ele não limitar o assunto.',
+  '  estilo: como ESCREVER, nas palavras do editor ("título mais polêmico",',
+  '      "texto curto e direto", "tom de denúncia"). Null quando ele não pedir',
+  '      nada sobre a escrita. Não invente estilo.',
   '',
   'Exemplos:',
   '  "Monitore estas páginas e crie matéria do que render"',
@@ -269,6 +274,8 @@ const SISTEMA_PLANO = [
   '  "Só me avise o que aparecer, não escreva" -> acao "monitorar".',
   '  "Quero só política e bancada evangélica"',
   '      -> palavras ["política", "bancada evangélica"].',
+  '  "Só matérias que citem Flávio Bolsonaro ou Lula, com título polêmico"',
+  '      -> palavras ["Flávio Bolsonaro", "Lula"], estilo "título mais polêmico".',
   '',
   'Se o editor mencionar ritmo, quantidade ou destino, ignore: já está na tela.',
   'Nunca invente link: os links vêm separados, fora do seu JSON.',
@@ -365,6 +372,10 @@ function resumoDoPlano(plano, urls = [], config = {}) {
       : 'Imagem: usa a foto do post como veio.'
   );
 
+  if (Array.isArray(plano.palavras) && plano.palavras.length) {
+    linhas.push(`Só escreve se o post citar: ${plano.palavras.join(', ')}.`);
+  }
+  if (plano.estilo) linhas.push(`Estilo pedido: ${plano.estilo}`);
   if (plano.criterio) linhas.push(`Critério: ${plano.criterio}`);
   return linhas;
 }
@@ -387,6 +398,7 @@ async function interpretar(texto) {
     acao: 'monitorar_e_escrever',
     criterio: 'Post com fato novo e texto suficiente para apurar.',
     palavras: [],
+    estilo: null,
   };
 
   try {
@@ -408,6 +420,7 @@ async function interpretar(texto) {
       palavras: Array.isArray(vindo.palavras)
         ? vindo.palavras.map((x) => corta(x, 60)).filter(Boolean).slice(0, 20)
         : [],
+      estilo: corta(vindo.estilo, 300),
     };
   } catch (err) {
     // Sem a IA o dot ainda nasce util: objetivo e links ja bastam para trabalhar.
@@ -501,57 +514,7 @@ async function criar(userId, { objetivo, nome = null, facebookPageId = null, pro
   });
 
   const dot = await db(TABELA).where({ id }).first();
-  const fonteIds = [];
-  const problemas = [];
-
-  if (urls.length) {
-    const bibliotecaService = require('./bibliotecaService');
-    for (const url of urls) {
-      try {
-        // A comparação vive no bibliotecaService, junto da normalização: era a
-        // falta disso que fazia "pagina/" não casar com "pagina" e o dot nascer
-        // sem fonte nenhuma.
-        const existente = await bibliotecaService.encontrarFontePorUrl(userId, url);
-        if (existente) {
-          await db('biblioteca_fontes').where({ id: existente.id }).update({ monitorar: true });
-          fonteIds.push(Number(existente.id));
-          continue;
-        }
-
-        const criada = await bibliotecaService.criarFonte({
-          userId,
-          url,
-          monitorar: true,
-          intervaloMinutos: plano.intervalo_minutos,
-        });
-        const novoId = criada?.id || criada;
-        if (novoId) fonteIds.push(Number(novoId));
-      } catch (err) {
-        // "Já está na biblioteca" não é problema: é a fonte que queremos. Pode
-        // acontecer num formato de URL que a busca ainda não cobre.
-        if (err.status === 409) {
-          const achada = await bibliotecaService
-            .encontrarFontePorUrl(userId, url)
-            .catch(() => null);
-          if (achada) {
-            await db('biblioteca_fontes').where({ id: achada.id }).update({ monitorar: true });
-            fonteIds.push(Number(achada.id));
-            continue;
-          }
-        }
-        problemas.push(`${url}: ${err.message}`);
-      }
-    }
-    // O motivo ia só para o retorno da função: na tela aparecia "1 com
-    // problema" sem dizer qual nem por quê, e o dot ficava inútil em silêncio.
-    await registrarLog(dot, 'criou_fonte', {
-      detalhe: corta(
-        `${fonteIds.length} página(s) monitorada(s)` +
-          (problemas.length ? `; ${problemas.length} com problema — ${problemas.join(' | ')}` : ''),
-        600
-      ),
-    });
-  }
+  const { fonteIds, problemas } = await cadastrarFontes(dot, urls);
 
   await db(TABELA).where({ id }).update({
     fonte_ids: JSON.stringify(fonteIds),
@@ -562,6 +525,66 @@ async function criar(userId, { objetivo, nome = null, facebookPageId = null, pro
   });
 
   return { id, plano, fontes: fonteIds.length, problemas };
+}
+
+/**
+ * Cadastra (ou reaproveita) as páginas do dot na Biblioteca e liga o monitorar.
+ *
+ * Mora fora do `criar` porque editar o objetivo de um dot salvo precisa do
+ * mesmo trabalho: links novos entram, e o motivo de um link não entrar tem de
+ * aparecer na atividade.
+ */
+async function cadastrarFontes(dot, urls) {
+  const fonteIds = [];
+  const problemas = [];
+  if (!urls.length) return { fonteIds, problemas };
+
+  const bibliotecaService = require('./bibliotecaService');
+  const userId = dot.user_id;
+
+  for (const url of urls) {
+    try {
+      // A comparação vive no bibliotecaService, junto da normalização: era a
+      // falta disso que fazia "pagina/" não casar com "pagina" e o dot nascer
+      // sem fonte nenhuma.
+      const existente = await bibliotecaService.encontrarFontePorUrl(userId, url);
+      if (existente) {
+        await db('biblioteca_fontes').where({ id: existente.id }).update({ monitorar: true });
+        fonteIds.push(Number(existente.id));
+        continue;
+      }
+
+      const criada = await bibliotecaService.criarFonte({
+        userId,
+        url,
+        monitorar: true,
+        intervaloMinutos: Number(dot.scan_minutos) || 60,
+      });
+      const novoId = criada?.id || criada;
+      if (novoId) fonteIds.push(Number(novoId));
+    } catch (err) {
+      // "Já está na biblioteca" não é problema: é a fonte que queremos.
+      if (err.status === 409) {
+        const achada = await bibliotecaService.encontrarFontePorUrl(userId, url).catch(() => null);
+        if (achada) {
+          await db('biblioteca_fontes').where({ id: achada.id }).update({ monitorar: true });
+          fonteIds.push(Number(achada.id));
+          continue;
+        }
+      }
+      problemas.push(`${url}: ${err.message}`);
+    }
+  }
+
+  await registrarLog(dot, 'criou_fonte', {
+    detalhe: corta(
+      `${fonteIds.length} página(s) monitorada(s)` +
+        (problemas.length ? `; ${problemas.length} com problema — ${problemas.join(' | ')}` : ''),
+      600
+    ),
+  });
+
+  return { fonteIds, problemas };
 }
 
 // ------------------------------------------------------------------ ciclo
@@ -604,7 +627,19 @@ async function candidatosDoDot(dot) {
     .filter((l) => /^https?:\/\//i.test(String(l.url || '')))
     .filter(conteudoSuficiente);
 
-  const ordenados = rodiziarPorFonte(uteis, await ultimaMateriaPorFonte(dot, fonteIds));
+  // O editor pode pedir um recorte ("só o que falar de Flávio Bolsonaro").
+  // Isso vinha sendo guardado no plano e ignorado: o dot escrevia de tudo.
+  const plano = parseJson(dot.plano, {});
+  const comPalavra = filtrarPorPalavras(uteis, plano.palavras);
+  if (comPalavra.length !== uteis.length) {
+    await registrarLog(dot, 'ignorou', {
+      detalhe:
+        `${uteis.length - comPalavra.length} post(s) fora das palavras pedidas ` +
+        `(${(plano.palavras || []).slice(0, 5).join(', ')})`,
+    });
+  }
+
+  const ordenados = rodiziarPorFonte(comPalavra, await ultimaMateriaPorFonte(dot, fonteIds));
   return semRepetirAssunto(dot, ordenados);
 }
 
@@ -648,6 +683,34 @@ async function semRepetirAssunto(dot, posts) {
   }
 
   return semAssuntoRepetidoNaLista(lista);
+}
+
+/**
+ * Mantém só os posts que citam alguma palavra pedida pelo editor.
+ *
+ * Sem palavras na lista, tudo passa — o recorte é opcional. A comparação é
+ * sem acento e sem caixa, e aceita a palavra dentro de frase maior
+ * ("flavio bolsonaro" casa com "Flávio Bolsonaro cobra...").
+ */
+function filtrarPorPalavras(posts, palavras) {
+  const termos = (Array.isArray(palavras) ? palavras : [])
+    .map((p) => normalizarBusca(p))
+    .filter((p) => p.length >= 3);
+  if (!termos.length) return posts;
+
+  return posts.filter((post) => {
+    const texto = normalizarBusca(`${post.titulo || ''} ${post.resumo || ''}`);
+    return termos.some((termo) => texto.includes(termo));
+  });
+}
+
+function normalizarBusca(valor) {
+  return String(valor || '')
+    .toLocaleLowerCase('pt-BR')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /**
@@ -789,6 +852,9 @@ async function escrever(dot, post) {
       facebookPageId: dot.facebook_page_id || null,
       imagemUrl: /^https?:\/\//i.test(String(post.thumbnail || '')) ? post.thumbnail : null,
       origem: 'dots',
+      // "título mais polêmico", "texto curto" — o pedido do editor chegava a
+      // ser interpretado e guardado, mas nunca influenciava a escrita.
+      instrucaoEditorial: parseJson(dot.plano, {}).estilo || null,
     }
   ));
 
@@ -827,7 +893,20 @@ function fotoParaChecar(matter, post) {
  */
 async function resolverCapa(dot, post, matterId) {
   const modo = dot.modo_imagem || 'original';
-  if (modo === 'original' || modo === 'sem_imagem') return modo;
+  // Escolha explícita de não ter arte: respeita e sai.
+  if (modo === 'sem_imagem') return modo;
+
+  if (modo === 'original') {
+    const matter = await require('../models/AiMatters').findById(matterId).catch(() => null);
+    if (fotoParaChecar(matter, post)) return 'original';
+    // Sem foto nenhuma a matéria ia ao ar sem capa — inútil no feed. Link de
+    // site bloqueado para leitura direta cai muito aqui.
+    await registrarLog(dot, 'ignorou', {
+      detalhe: 'nenhuma foto veio da fonte — gerando ilustração com IA',
+      url: post.url,
+      matterId,
+    });
+  }
 
   if (modo === 'ia_com_texto') {
     const matter = await require('../models/AiMatters').findById(matterId).catch(() => null);
@@ -1318,9 +1397,10 @@ async function alterarEstado(userId, dotId, estado) {
 }
 
 /** Atualiza nome e/ou provedor. Campo ausente fica como está. */
-async function atualizar(userId, dotId, { nome, provedor }) {
+async function atualizar(userId, dotId, { nome, provedor, objetivo }) {
   const dot = await db(TABELA).where({ id: dotId, user_id: userId }).first();
   if (!dot) throw erro('Dot não encontrado.', 404);
+
   const dados = {};
   if (nome !== undefined) {
     const limpo = corta(nome, 160);
@@ -1328,8 +1408,39 @@ async function atualizar(userId, dotId, { nome, provedor }) {
     dados.nome = limpo;
   }
   if (provedor !== undefined) dados.provedor = normalizarProvedor(provedor);
+
+  // Mudar o que o dot deve fazer exigia apagar e recriar, perdendo o histórico
+  // e a contagem do dia. Aqui o pedido é reinterpretado e as páginas novas
+  // entram, mantendo o resto da configuração como está.
+  let resumoFontes = null;
+  if (objetivo !== undefined) {
+    const texto = String(objetivo || '').trim();
+    if (!texto) throw erro('Escreva o que o dot deve fazer.');
+    if (texto.length > 8000) throw erro('O objetivo está longo demais (máximo 8000 caracteres).');
+
+    if (texto !== String(dot.objetivo || '').trim()) {
+      const plano = await interpretar(texto);
+      const anterior = parseJson(dot.plano, {});
+      dados.objetivo = texto;
+      // Só o que a IA decide é substituído; ritmo e jornada são da tela.
+      dados.plano = JSON.stringify({ ...anterior, ...plano });
+
+      const { fonteIds, problemas } = await cadastrarFontes(dot, extrairUrls(texto));
+      if (fonteIds.length) dados.fonte_ids = JSON.stringify(fonteIds);
+      resumoFontes = { fontes: fonteIds.length, problemas };
+
+      await registrarLog(dot, 'criou_fonte', {
+        detalhe: corta(
+          `Pedido atualizado: ${fonteIds.length} página(s) monitorada(s)` +
+            (problemas.length ? `; ${problemas.length} não entraram` : ''),
+          600
+        ),
+      });
+    }
+  }
+
   if (Object.keys(dados).length) await db(TABELA).where({ id: dotId }).update(dados);
-  return { ...dados };
+  return { ...dados, ...(resumoFontes || {}) };
 }
 
 async function renomear(userId, dotId, nome) {
@@ -1388,6 +1499,7 @@ module.exports = {
   semRepetirAssunto,
   semAssuntoRepetidoNaLista,
   filtrarJaPublicados,
+  filtrarPorPalavras,
   DIAS_HISTORICO_REPETIDO,
   reservarCiclo,
   dentroDaJanela,

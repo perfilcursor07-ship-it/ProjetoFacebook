@@ -2519,6 +2519,8 @@ async function responder({
   tipoConversa = 'materia',
   transcreverVideo = true,
   origem = 'chat',
+  /** Como escrever, pedido por quem chamou (ex.: o dot). Entra no pedido ao redator. */
+  instrucaoEditorial = null,
   onEvent = () => {},
 }) {
   // 'pautas': pesquisa o tema e devolve a lista de matérias para o usuário
@@ -4357,7 +4359,15 @@ async function responder({
       // Sem esse aviso o modelo responde que não sabe pesquisar.
       const buscaVazia = Boolean(usarPesquisa) && !blocoFatos;
       resposta = await deepseekService.conversarMateria({
-        pedido: instrucaoPesquisaGuardada ? `${pedido}\n\n${instrucaoPesquisaGuardada}` : pedido,
+        pedido: [
+          pedido,
+          instrucaoPesquisaGuardada || null,
+          // Sem isto o pedido do editor ("título mais polêmico") ficava
+          // guardado na configuração do dot e nunca chegava a quem escreve.
+          instrucaoEditorial ? `Instrução editorial do pedido: ${instrucaoEditorial}` : null,
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
         historico,
         fatosFontes: blocoFatos,
         tom,

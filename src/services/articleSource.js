@@ -1173,7 +1173,51 @@ async function extrairMetadadosImagemArtigo(url) {
         })(),
     };
   } catch (err) {
-    console.warn('[imagem-editorial]', err.response?.status || err.message);
+    const status = Number(err.response?.status || 0);
+    // Portal que bloqueia requisição simples (403/401/429) ainda abre no Chrome
+    // — é o mesmo caminho que já lê o TEXTO da reportagem. Sem este resgate a
+    // matéria saía sem a foto do site.
+    if ([401, 403, 405, 406, 429].includes(status)) {
+      const viaChrome = await capaViaChrome(urlReal);
+      if (viaChrome) return viaChrome;
+    }
+    console.warn('[imagem-editorial]', status || err.message);
+    return null;
+  }
+}
+
+/**
+ * Última tentativa de capa: abre a página no Chrome, que passa pelos bloqueios
+ * que derrubam a leitura direta, e tira a og:image do HTML já renderizado.
+ */
+async function capaViaChrome(urlReal) {
+  try {
+    const lido = await carregarHtmlViaChrome(urlReal, { timeoutMs: 15_000 });
+    if (!lido?.html) return null;
+
+    const imagem = extrairImagemCapa(lido.html, lido.finalUrl);
+    if (!imagem || !urlPublicaParaChrome(imagem)) return null;
+
+    console.info(`[imagem-editorial] capa recuperada pelo Chrome: ${lido.finalUrl}`);
+    return {
+      url: lido.finalUrl,
+      titulo:
+        extrairMeta(lido.html, 'og:title') ||
+        decodificarHtml(lido.html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '') ||
+        null,
+      imagem,
+      veiculo:
+        extrairMeta(lido.html, 'og:site_name') ||
+        (() => {
+          try {
+            return new URL(lido.finalUrl).hostname.replace(/^www\./i, '');
+          } catch {
+            return null;
+          }
+        })(),
+    };
+  } catch (err) {
+    console.warn('[imagem-editorial] chrome:', err.message);
     return null;
   }
 }

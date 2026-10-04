@@ -36,6 +36,10 @@ async function escreverPeloChat(
     // Marca quem pediu a matéria. A conversa que vira matéria fica no
     // histórico do editor; sem isto ela se mistura com o que ele escreveu.
     origem = 'chat',
+    // Como escrever, nas palavras do editor ("título mais polêmico"). Vai
+    // separado do texto porque instrução colada junto do link é tratada pelo
+    // chat como legenda do post.
+    instrucaoEditorial = null,
   }
 ) {
   let chatId = null;
@@ -64,6 +68,7 @@ async function escreverPeloChat(
       tipoConversa: 'materia',
       transcreverVideo: true,
       origem,
+      instrucaoEditorial,
       onEvent,
     }));
   } catch (err) {
