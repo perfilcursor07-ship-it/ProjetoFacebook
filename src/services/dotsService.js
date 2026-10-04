@@ -21,8 +21,11 @@ const TABELA = 'dots';
 const LOG = 'dots_execucoes';
 /** Posts examinados por ciclo. Mais que isso só atrasa a próxima volta. */
 const CANDIDATOS_POR_CICLO = 25;
-/** Teto de matérias por volta. O dot escolhe dentro disso. */
-const ESCRITAS_POR_CICLO_MAX = 5;
+/**
+ * Teto de matérias por volta. Acompanha o máximo que a tela oferece (10): com
+ * 5 aqui, escolher 10 na tela seria truncado em silêncio.
+ */
+const ESCRITAS_POR_CICLO_MAX = 10;
 /**
  * Páginas varridas por volta. O resto fica para as próximas voltas, girando
  * pela lista — antes a janela era fixa nas 10 primeiras e quem acompanhava
@@ -112,6 +115,132 @@ function extrairUrls(texto) {
   return [...new Set(limpos)];
 }
 
+// --------------------------------------------------------------- jornada
+
+/** O projeto todo trata horário do editor neste fuso. */
+const FUSO = 'America/Araguaina';
+const INTERVALOS_VALIDOS = [10, 15, 30, 60, 120, 180, 360, 720, 1440];
+const DIAS = Object.freeze([
+  { id: 1, curto: 'seg' },
+  { id: 2, curto: 'ter' },
+  { id: 3, curto: 'qua' },
+  { id: 4, curto: 'qui' },
+  { id: 5, curto: 'sex' },
+  { id: 6, curto: 'sáb' },
+  { id: 7, curto: 'dom' },
+]);
+
+/**
+ * Hora (0-23) e dia da semana (1=seg … 7=dom) no fuso do editor.
+ *
+ * `getHours()` daria a hora do servidor: "das 8h às 18h" viraria outra faixa
+ * sempre que o servidor não estivesse no mesmo fuso que o editor.
+ */
+function horaEDiaLocais(data = new Date()) {
+  const partes = new Intl.DateTimeFormat('en-US', {
+    timeZone: FUSO,
+    hourCycle: 'h23',
+    hour: '2-digit',
+    weekday: 'short',
+  }).formatToParts(data);
+
+  const sigla = partes.find((p) => p.type === 'weekday')?.value;
+  const porSigla = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+  return {
+    hora: Number(partes.find((p) => p.type === 'hour')?.value) || 0,
+    dia: porSigla[sigla] || 0,
+  };
+}
+
+/** "1,2,3" -> [1,2,3], descartando o que não é dia da semana. */
+function lerDias(valor) {
+  if (Array.isArray(valor)) {
+    return [...new Set(valor.map(Number).filter((d) => d >= 1 && d <= 7))].sort();
+  }
+  return [
+    ...new Set(
+      String(valor || '')
+        .split(',')
+        .map((d) => Number(String(d).trim()))
+        .filter((d) => d >= 1 && d <= 7)
+    ),
+  ].sort();
+}
+
+/**
+ * O dot pode trabalhar agora?
+ *
+ * Sem dia marcado ou sem horário, trabalha sempre — é o comportamento de quem
+ * já tem dot criado e não configurou jornada.
+ *
+ * @returns {{ ok: boolean, motivo: string|null }}
+ */
+function dentroDaJanela(dot, agora = new Date()) {
+  const { hora, dia } = horaEDiaLocais(agora);
+
+  const dias = lerDias(dot?.dias_semana);
+  if (dias.length && !dias.includes(dia)) {
+    const nomes = dias.map((d) => DIAS.find((x) => x.id === d)?.curto).filter(Boolean);
+    return { ok: false, motivo: `Fora dos dias de trabalho (${nomes.join(', ')}).` };
+  }
+
+  const inicio = Number(dot?.hora_inicio);
+  const fim = Number(dot?.hora_fim);
+  const temFaixa = Number.isFinite(inicio) && Number.isFinite(fim) && inicio !== fim;
+  if (!temFaixa) return { ok: true, motivo: null };
+
+  // Faixa que atravessa a meia-noite (22h às 6h) é válida e precisa do OR.
+  const dentro = inicio < fim ? hora >= inicio && hora < fim : hora >= inicio || hora < fim;
+  if (dentro) return { ok: true, motivo: null };
+  return {
+    ok: false,
+    motivo: `Fora do horário de trabalho (${String(inicio).padStart(2, '0')}h às ${String(fim).padStart(2, '0')}h).`,
+  };
+}
+
+/**
+ * Normaliza o que a tela mandou. Tudo aqui é escolha do editor, não palpite da
+ * IA: era a interpretação do texto livre que errava ritmo e destino.
+ */
+function normalizarJornada(entrada = {}) {
+  const inteiro = (valor, min, max, padrao) => {
+    const n = Math.trunc(Number(valor));
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : padrao;
+  };
+  const hora = (valor) => {
+    const n = Math.trunc(Number(valor));
+    return Number.isFinite(n) && n >= 0 && n <= 23 ? n : null;
+  };
+
+  const destinos = ['rascunho', 'agendar', 'publicar'];
+  const destino = destinos.includes(entrada.destino) ? entrada.destino : 'rascunho';
+  const dias = lerDias(entrada.dias_semana ?? entrada.diasSemana);
+
+  const scanPedido = Math.trunc(Number(entrada.scan_minutos ?? entrada.scanMinutos));
+  const horaInicio = hora(entrada.hora_inicio ?? entrada.horaInicio);
+  const horaFim = hora(entrada.hora_fim ?? entrada.horaFim);
+
+  return {
+    dias_semana: dias.length && dias.length < 7 ? dias.join(',') : null,
+    // Faixa igual (8h às 8h) não restringe nada: vale como "sem horário".
+    hora_inicio: horaInicio !== null && horaFim !== null && horaInicio !== horaFim ? horaInicio : null,
+    hora_fim: horaInicio !== null && horaFim !== null && horaInicio !== horaFim ? horaFim : null,
+    scan_minutos: INTERVALOS_VALIDOS.includes(scanPedido) ? scanPedido : 60,
+    destino,
+    // Rascunho não tem ritmo de saída: fica tudo esperando revisão.
+    saida_quantidade: destino === 'rascunho' ? 1 : inteiro(entrada.saida_quantidade ?? entrada.saidaQuantidade, 1, 10, 1),
+    saida_minutos: destino === 'rascunho' ? 15 : inteiro(entrada.saida_minutos ?? entrada.saidaMinutos, 5, 1440, 15),
+    limite_dia: inteiro(entrada.limite_dia ?? entrada.limiteDia, 1, 200, 20),
+    // Marcar a caixa = gerar só quando a foto do post tiver texto embutido.
+    modo_imagem:
+      entrada.gerar_imagem_com_texto === true ||
+      entrada.gerarImagemComTexto === true ||
+      entrada.modo_imagem === 'ia_com_texto'
+        ? 'ia_com_texto'
+        : 'original',
+  };
+}
+
 // ------------------------------------------------------------------ plano
 
 const SISTEMA_PLANO = [
@@ -119,49 +248,24 @@ const SISTEMA_PLANO = [
   'Converta o pedido do editor em configuração. Responda APENAS com JSON válido,',
   'sem markdown e sem texto fora do objeto.',
   '',
-  'Campos:',
+  'O editor já escolheu na tela o ritmo, a quantidade, o destino (rascunho,',
+  'agendar ou publicar), a jornada e o tratamento da imagem. NÃO tente deduzir',
+  'nada disso do texto: você decide apenas O QUE merece virar matéria.',
+  '',
+  'Campos (só estes quatro):',
   '  nome: rótulo curto (até 60 caracteres) que descreva o trabalho.',
   '  acao: "monitorar_e_escrever" ou "monitorar" (só acompanha, sem escrever).',
-  '  intervalo_minutos: de quanto em quanto tempo ele ENTREGA matéria.',
-  '      Aceita 10, 15, 30, 60, 120, 180 ou 360.',
-  '      Este é o ritmo que o editor vê acontecer. Quando ele disser dois ritmos',
-  '      ("monitore a cada 1 hora e publique a cada 15 min"), o ritmo de',
-  '      ENTREGA é o que vem para cá: intervalo_minutos 15.',
-  '  scan_minutos: de quanto em quanto tempo ele relê as páginas. Use quando o',
-  '      editor pedir um ritmo de monitoramento diferente do de entrega',
-  '      (no exemplo acima: 60). Null quando ele não separar os dois.',
-  '  materias_por_volta: quantas matérias ele escreve a cada volta (1 a 5).',
-  '  limite_dia: teto de matérias por dia (1 a 200). Quando o editor disser um',
-  '      ritmo, calcule o teto a partir dele (ex.: 1 a cada 15 min = 96 por dia)',
-  '      em vez de escolher um número qualquer — teto baixo trava o ritmo pedido.',
-  '  destino: "rascunho" (salva para revisar), "agendar" (programa a saída e',
-  '      publica na hora marcada — use quando o editor disser "agende e publique")',
-  '      ou "publicar" (vai direto para a fila).',
-  '  agendar_minutos: com destino "agendar", de quantos em quantos minutos',
-  '      cada matéria pronta sai. Null quando não for agendar.',
-  '  modo_imagem: "original" usa a foto da matéria de origem;',
-  '      "ia_todas" gera imagem com IA para toda matéria;',
-  '      "ia_com_texto" gera com IA só quando a foto original tiver texto',
-  '      embutido (print, card, montagem) — nesses casos a foto não serve;',
-  '      "sem_imagem" publica sem arte.',
-  '  criterio: uma frase dizendo o que merece virar matéria neste pedido.',
+  '  criterio: uma frase dizendo o que, nestas páginas, merece virar matéria.',
   '  palavras: lista de termos que interessam (pode ser vazia).',
   '',
-  'Traduza o jeito de falar do editor. Exemplos:',
-  '  "3 matérias por hora"        -> intervalo_minutos 60, materias_por_volta 3',
-  '  "uma a cada 15 minutos"      -> intervalo_minutos 15, materias_por_volta 1, limite_dia 96',
-  '  "monitore a cada 1 hora e publique 1 a cada 15 min, uma de cada página"',
-  '      -> intervalo_minutos 15, scan_minutos 60, materias_por_volta 1,',
-  '         limite_dia 96, destino "publicar". O dot já alterna as páginas',
-  '         sozinho: não multiplique por quantidade de página.',
-  '  "só quando a foto tiver texto" -> modo_imagem "ia_com_texto"',
-  '  "deixa no rascunho"          -> destino "rascunho"',
-  '  "vai publicando de 20 em 20 min" -> destino "agendar", agendar_minutos 20',
-  '  "agende e publique de 15 em 15 min" -> destino "agendar", agendar_minutos 15',
-  '  "publique" / "publica direto"  -> destino "publicar"',
+  'Exemplos:',
+  '  "Monitore estas páginas e crie matéria do que render"',
+  '      -> acao "monitorar_e_escrever", criterio sobre fato novo com texto suficiente.',
+  '  "Só me avise o que aparecer, não escreva" -> acao "monitorar".',
+  '  "Quero só política e bancada evangélica"',
+  '      -> palavras ["política", "bancada evangélica"].',
   '',
-  'Na dúvida: intervalo_minutos 30, materias_por_volta 1, limite_dia 10,',
-  'destino "rascunho", modo_imagem "original".',
+  'Se o editor mencionar ritmo, quantidade ou destino, ignore: já está na tela.',
   'Nunca invente link: os links vêm separados, fora do seu JSON.',
 ].join('\n');
 
@@ -192,57 +296,71 @@ function tempoPorExtenso(min) {
  * em números concretos, incluindo o ritmo por hora e por dia, que é onde o
  * editor costuma se surpreender.
  */
-function resumoDoPlano(plano, urls = []) {
+/**
+ * A frase que o editor lê antes de confirmar.
+ *
+ * Agora o resumo descreve o que ELE escolheu na tela, não o que a IA deduziu:
+ * jornada, ritmo da varredura, ritmo da saída e tratamento da imagem.
+ */
+function resumoDoPlano(plano, urls = [], config = {}) {
   const linhas = [];
-  const porVolta = plano.materias_por_volta;
-  const intervalo = plano.intervalo_minutos;
+  const quantidade = Number(config.saida_quantidade) || 1;
+  const cadaMin = Number(config.saida_minutos) || 15;
+  const scanMin = Number(config.scan_minutos) || 60;
 
-  // Dois ritmos: entregar e reler. Mostrar só um deles era o que fazia o
-  // editor pedir "publique a cada 15 min" e ler "trabalha a cada 1 hora".
-  const scan = Number(plano.scan_minutos) || 0;
   linhas.push(
-    scan && scan !== intervalo
-      ? `Acompanha ${urls.length} ${plural(urls.length, 'página', 'páginas')}: relê a cada ${tempoPorExtenso(scan)} e entrega a cada ${tempoPorExtenso(intervalo)}.`
-      : `Acompanha ${urls.length} ${plural(urls.length, 'página', 'páginas')} e trabalha a cada ${tempoPorExtenso(intervalo)}.`
+    `Acompanha ${urls.length} ${plural(urls.length, 'página', 'páginas')} e relê cada uma a cada ${tempoPorExtenso(scanMin)}.`
   );
+
+  // Jornada: sem dia nem hora marcados, trabalha sempre.
+  const dias = lerDias(config.dias_semana);
+  const temHora = config.hora_inicio !== null && config.hora_inicio !== undefined
+    && config.hora_fim !== null && config.hora_fim !== undefined;
+  if (dias.length || temHora) {
+    const nomes = dias.length
+      ? dias.map((d) => DIAS.find((x) => x.id === d)?.curto).filter(Boolean).join(', ')
+      : 'todos os dias';
+    const faixa = temHora
+      ? `das ${String(config.hora_inicio).padStart(2, '0')}h às ${String(config.hora_fim).padStart(2, '0')}h`
+      : 'a qualquer hora';
+    linhas.push(`Trabalha ${nomes}, ${faixa}.`);
+  } else {
+    linhas.push('Trabalha todos os dias, a qualquer hora.');
+  }
 
   if (plano.acao === 'monitorar') {
     linhas.push('Só acompanha e lista o que aparecer — não escreve matéria.');
-  } else {
-    const porHora = (porVolta * 60) / intervalo;
-    const porHoraTexto = Number.isInteger(porHora) ? String(porHora) : porHora.toFixed(1).replace('.', ',');
+    return linhas;
+  }
+
+  if (config.destino === 'rascunho') {
     linhas.push(
-      `Escreve ${porVolta} ${plural(porVolta, 'matéria', 'matérias')} por volta — cerca de ${porHoraTexto} por hora, no teto de ${plano.limite_dia} por dia.`
+      `Escreve do estoque de posts e salva como rascunho, no teto de ${config.limite_dia} por dia. Nada sai sozinho.`
     );
-
-    // Teto menor que o ritmo faz o dot parar no meio do dia. Dizer só "no teto
-    // de N por dia" escondia isso: o editor lia como se o ritmo valesse 24h.
-    const porDiaDoRitmo = Math.round(porVolta * (1440 / intervalo));
-    if (plano.limite_dia < porDiaDoRitmo) {
-      const horas = plano.limite_dia / porHora;
-      const horasTexto = Number.isInteger(horas) ? String(horas) : horas.toFixed(1).replace('.', ',');
+  } else {
+    const verbo = config.destino === 'publicar' ? 'publica' : 'agenda';
+    const porDia = Math.round(quantidade * (1440 / cadaMin));
+    linhas.push(
+      `${quantidade === 1 ? '1 matéria' : `${quantidade} matérias`} a cada ${tempoPorExtenso(cadaMin)} — ${verbo} até ${config.limite_dia} por dia.`
+    );
+    if (config.limite_dia < porDia) {
       linhas.push(
-        `Atenção: nesse ritmo daria ${porDiaDoRitmo} por dia, mas o teto de ${plano.limite_dia} para antes — ele trabalha cerca de ${horasTexto}h e espera a virada do dia.`
+        `Atenção: nesse ritmo daria ${porDia} por dia, mas o teto de ${config.limite_dia} para antes.`
       );
-    }
-    if (urls.length > 1) {
-      linhas.push(
-        'Alterna as páginas: a vez é sempre de quem está há mais tempo sem render matéria.'
-      );
-    }
-    linhas.push(`Imagem: ${ROTULO_IMAGEM[plano.modo_imagem] || ROTULO_IMAGEM.original}.`);
-
-    if (plano.destino === 'rascunho') {
-      linhas.push('Cada matéria fica salva como rascunho para você revisar. Nada sai sozinho.');
-    } else if (plano.destino === 'agendar') {
-      linhas.push(
-        `Cada matéria é agendada para sair a cada ${tempoPorExtenso(plano.agendar_minutos || intervalo)}, uma depois da outra.`
-      );
-    } else {
-      linhas.push('Cada matéria vai direto para a fila de publicação, sem revisão.');
     }
   }
 
+  if (urls.length > 1) {
+    linhas.push('Alterna as páginas: a vez é de quem está há mais tempo sem render matéria.');
+  }
+
+  linhas.push(
+    config.modo_imagem === 'ia_com_texto'
+      ? 'Imagem: usa a foto do post; se ela tiver texto embutido, manda limpar o texto mantendo a foto.'
+      : 'Imagem: usa a foto do post como veio.'
+  );
+
+  if (plano.criterio) linhas.push(`Critério: ${plano.criterio}`);
   return linhas;
 }
 /** Nome de reserva: primeira frase do pedido, sem link e sem cortar palavra. */
@@ -259,17 +377,9 @@ function nomeDoTexto(texto) {
  * com um padrão sensato — o objetivo e os links já bastam para trabalhar.
  */
 async function interpretar(texto) {
-  const urls = extrairUrls(texto);
   const padrao = {
     nome: nomeDoTexto(texto),
     acao: 'monitorar_e_escrever',
-    intervalo_minutos: 30,
-    scan_minutos: null,
-    materias_por_volta: 1,
-    limite_dia: 10,
-    destino: 'rascunho',
-    agendar_minutos: null,
-    modo_imagem: 'original',
     criterio: 'Post com fato novo e texto suficiente para apurar.',
     palavras: [],
   };
@@ -286,37 +396,17 @@ async function interpretar(texto) {
     const vindo = parseJson(bruto, null);
     if (!vindo || typeof vindo !== 'object') throw new Error('plano vazio');
 
-    const intervalos = [10, 15, 30, 60, 120, 180, 360];
-    const destinos = ['rascunho', 'agendar', 'publicar'];
-    const imagens = ['original', 'ia_todas', 'ia_com_texto', 'sem_imagem'];
-    const intervalo = Number(vindo.intervalo_minutos);
     return {
       nome: corta(vindo.nome, 60) || padrao.nome,
       acao: vindo.acao === 'monitorar' ? 'monitorar' : 'monitorar_e_escrever',
-      intervalo_minutos: intervalos.includes(intervalo) ? intervalo : padrao.intervalo_minutos,
-      // Reler mais devagar que entregar é o único sentido útil: varrer mais
-      // rápido que a entrega só gastaria raspagem sem gerar nada a mais.
-      scan_minutos: (() => {
-        const pedido = Number(vindo.scan_minutos);
-        if (!intervalos.includes(pedido)) return null;
-        const entrega = intervalos.includes(intervalo) ? intervalo : padrao.intervalo_minutos;
-        return pedido > entrega ? pedido : null;
-      })(),
-      materias_por_volta: Math.min(5, Math.max(1, Number(vindo.materias_por_volta) || 1)),
-      limite_dia: Math.min(200, Math.max(1, Number(vindo.limite_dia) || padrao.limite_dia)),
-      destino: destinos.includes(vindo.destino) ? vindo.destino : padrao.destino,
-      agendar_minutos:
-        vindo.destino === 'agendar'
-          ? Math.min(360, Math.max(5, Number(vindo.agendar_minutos) || intervalo || 15))
-          : null,
-      modo_imagem: imagens.includes(vindo.modo_imagem) ? vindo.modo_imagem : padrao.modo_imagem,
       criterio: corta(vindo.criterio, 400) || padrao.criterio,
       palavras: Array.isArray(vindo.palavras)
-        ? vindo.palavras.map((p) => corta(p, 60)).filter(Boolean).slice(0, 20)
+        ? vindo.palavras.map((x) => corta(x, 60)).filter(Boolean).slice(0, 20)
         : [],
     };
   } catch (err) {
-    console.warn('[dots] não consegui interpretar o pedido, usando o padrão:', err.message);
+    // Sem a IA o dot ainda nasce util: objetivo e links ja bastam para trabalhar.
+    console.warn('[dots] nao consegui interpretar o pedido, usando o padrao:', err.message);
     return padrao;
   }
 }
@@ -340,11 +430,12 @@ async function marcarAtividade(dotId, texto, { trabalhando = true } = {}) {
 }
 
 /** Só para a tela de criação mostrar o que vai acontecer antes de salvar. */
-async function previa(texto) {
+async function previa(texto, jornada = {}) {
   if (!String(texto || '').trim()) throw erro('Escreva o que o dot deve fazer.');
   const plano = await interpretar(texto);
+  const config = normalizarJornada(jornada);
   const urls = extrairUrls(texto);
-  return { plano, urls, resumo: resumoDoPlano(plano, urls) };
+  return { plano, config, urls, resumo: resumoDoPlano(plano, urls, config) };
 }
 
 // ------------------------------------------------------------------ criar
@@ -368,29 +459,38 @@ async function registrarLog(dot, acao, { detalhe = null, url = null, matterId = 
  * Cria o dot e já cadastra as páginas na Biblioteca, monitorando. A varredura
  * em si fica para o tick — criar não pode travar esperando 26 sites.
  */
-async function criar(userId, { objetivo, nome = null, facebookPageId = null, provedor = 'auto' }) {
+async function criar(userId, { objetivo, nome = null, facebookPageId = null, provedor = 'auto', ...jornada }) {
   const texto = String(objetivo || '').trim();
   if (!texto) throw erro('Escreva o que o dot deve fazer.');
   if (texto.length > 8000) throw erro('O objetivo está longo demais (máximo 8000 caracteres).');
 
+  // A IA só diz O QUE merece matéria. Ritmo, destino, jornada e imagem são
+  // escolha do editor na tela — era a dedução disso que errava toda vez.
   const plano = await interpretar(texto);
+  const config = normalizarJornada(jornada);
   const urls = extrairUrls(texto);
 
   const [id] = await db(TABELA).insert({
     user_id: userId,
     nome: corta(nome, 160) || plano.nome,
     objetivo: texto,
-    plano: JSON.stringify(plano),
+    plano: JSON.stringify({ ...plano, ...config }),
     fonte_ids: JSON.stringify([]),
     estado: 'ativo',
-    intervalo_minutos: plano.intervalo_minutos,
-    scan_minutos: plano.scan_minutos,
-    limite_dia: plano.limite_dia,
+    // O ciclo acorda no ritmo da saída; a varredura tem o seu, em scan_minutos.
+    intervalo_minutos: config.saida_minutos,
+    scan_minutos: config.scan_minutos,
+    limite_dia: config.limite_dia,
     facebook_page_id: facebookPageId || null,
-    destino: plano.destino,
-    materias_por_volta: plano.materias_por_volta,
-    modo_imagem: plano.modo_imagem,
-    agendar_minutos: plano.agendar_minutos,
+    destino: config.destino,
+    materias_por_volta: config.saida_quantidade,
+    modo_imagem: config.modo_imagem,
+    agendar_minutos: config.destino === 'agendar' ? config.saida_minutos : null,
+    dias_semana: config.dias_semana,
+    hora_inicio: config.hora_inicio,
+    hora_fim: config.hora_fim,
+    saida_quantidade: config.saida_quantidade,
+    saida_minutos: config.saida_minutos,
     provedor: normalizarProvedor(provedor),
     proxima_execucao_at: new Date(),
   });
@@ -713,6 +813,8 @@ async function resolverCapa(dot, post, matterId) {
       matterId,
       thumbnail: post.thumbnail,
       permitirSimbolica: true,
+      // "só se tiver texto" quer a foto limpa, não uma cena inventada.
+      modo: modo === 'ia_com_texto' ? 'limpar_texto' : 'recriar',
     });
     return 'ia';
   } catch (err) {
@@ -831,8 +933,23 @@ async function rodarCiclo(dot) {
     return;
   }
 
-  const plano = parseJson(dot.plano, {});
   const agora = new Date();
+
+  // Jornada: fora dos dias/horário escolhidos o dot não trabalha. Dorme até a
+  // próxima volta em vez de varrer e escrever de madrugada.
+  const jornada = dentroDaJanela(dot, agora);
+  if (!jornada.ok) {
+    await db(TABELA).where({ id: dot.id }).update({
+      trabalhando: false,
+      atividade: null,
+      proxima_execucao_at: new Date(Date.now() + Math.max(15, Number(dot.saida_minutos) || 15) * 60_000),
+      ultimo_resumo: corta(jornada.motivo, 500),
+      ultimo_erro: null,
+    });
+    return;
+  }
+
+  const plano = parseJson(dot.plano, {});
   let escritas = 0;
   let ignorados = 0;
   let cursorFonte = Number(dot.cursor_fonte) || 0;
@@ -852,7 +969,26 @@ async function rodarCiclo(dot) {
     const fonteIds = parseJson(dot.fonte_ids, []);
     const scanCada = Number(dot.scan_minutos) || 0;
     const ultimoScan = dot.ultimo_scan_at ? new Date(dot.ultimo_scan_at).getTime() : 0;
-    const vaiVarrer = !scanCada || !ultimoScan || Date.now() - ultimoScan >= scanCada * 60_000;
+    const scanVencido = !scanCada || !ultimoScan || Date.now() - ultimoScan >= scanCada * 60_000;
+
+    // Estoque vazio e a próxima varredura só daqui a uma hora deixaria o dot
+    // ocioso justamente quando há vaga para escrever. Nesse caso ele relê
+    // agora: é isso que mantém varredura e escrita em sincronia.
+    let estoqueVazio = false;
+    if (!scanVencido && fonteIds.length && plano.acao !== 'monitorar' && saldo) {
+      const [{ total = 0 } = {}] = await db('biblioteca_posts')
+        .where('user_id', dot.user_id)
+        .whereIn('fonte_id', fonteIds)
+        .whereNull('matter_id')
+        .whereIn('status', ['novo', 'visto'])
+        .count({ total: '*' });
+      estoqueVazio = Number(total) === 0;
+      if (estoqueVazio) {
+        await marcarAtividade(dot.id, 'Estoque vazio: relendo as páginas antes da hora…');
+      }
+    }
+
+    const vaiVarrer = scanVencido || estoqueVazio;
 
     const janela = vaiVarrer
       ? janelaDeFontes(fonteIds, dot.cursor_fonte)
@@ -1187,4 +1323,10 @@ module.exports = {
   semRepetirAssunto,
   semAssuntoRepetidoNaLista,
   reservarCiclo,
+  dentroDaJanela,
+  normalizarJornada,
+  horaEDiaLocais,
+  lerDias,
+  DIAS,
+  INTERVALOS_VALIDOS,
 };

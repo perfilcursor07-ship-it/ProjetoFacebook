@@ -11,6 +11,16 @@
     previaBox: $('dot-previa-box'),
     form: $('dot-form'),
     recolher: $('dot-recolher'),
+    dias: $('dot-dias'),
+    horaInicio: $('dot-hora-inicio'),
+    horaFim: $('dot-hora-fim'),
+    scan: $('dot-scan'),
+    ritmo: $('dot-ritmo'),
+    saidaQtd: $('dot-saida-qtd'),
+    saidaMin: $('dot-saida-min'),
+    saidaRotulo: $('dot-saida-rotulo'),
+    limite: $('dot-limite'),
+    imagemTexto: $('dot-imagem-texto'),
     lista: $('dots-lista'),
     pulso: $('dots-pulso'),
   };
@@ -18,6 +28,114 @@
 
   /** Log por dot, para a atualização de 3s não piscar a timeline. */
   const logs = new Map();
+
+  // ---------------------------------------------------------- configuração
+  //
+  // Tudo aqui era deduzido pela IA a partir do texto livre e errava direto.
+  // Agora é escolha explícita do editor; o texto só diz O QUE fazer.
+
+  const DIAS_SEMANA = [
+    { id: 1, curto: 'Seg' },
+    { id: 2, curto: 'Ter' },
+    { id: 3, curto: 'Qua' },
+    { id: 4, curto: 'Qui' },
+    { id: 5, curto: 'Sex' },
+    { id: 6, curto: 'Sáb' },
+    { id: 7, curto: 'Dom' },
+  ];
+  const INTERVALOS = [
+    { v: 10, t: '10 min' },
+    { v: 15, t: '15 min' },
+    { v: 30, t: '30 min' },
+    { v: 60, t: '1 hora' },
+    { v: 120, t: '2 horas' },
+    { v: 180, t: '3 horas' },
+    { v: 360, t: '6 horas' },
+    { v: 720, t: '12 horas' },
+    { v: 1440, t: '1 dia' },
+  ];
+
+  function opcao(select, valor, texto, selecionado = false) {
+    const o = new Option(texto, valor, selecionado, selecionado);
+    select.append(o);
+  }
+
+  function montarCampos() {
+    if (!el.dias) return;
+
+    // Dias: começam todos marcados = trabalha todo dia.
+    el.dias.replaceChildren();
+    for (const dia of DIAS_SEMANA) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'd-dia is-on';
+      b.dataset.dia = String(dia.id);
+      b.textContent = dia.curto;
+      b.setAttribute('aria-pressed', 'true');
+      b.addEventListener('click', () => {
+        const ligado = b.classList.toggle('is-on');
+        b.setAttribute('aria-pressed', String(ligado));
+      });
+      el.dias.append(b);
+    }
+
+    // Horário: "qualquer hora" é o padrão, com 0h–23h disponíveis.
+    for (const select of [el.horaInicio, el.horaFim]) {
+      select.replaceChildren();
+      opcao(select, '', 'qualquer hora', true);
+      for (let h = 0; h <= 23; h += 1) opcao(select, String(h), `${String(h).padStart(2, '0')}h`);
+    }
+
+    el.scan.replaceChildren();
+    for (const i of INTERVALOS) opcao(el.scan, String(i.v), i.t, i.v === 60);
+
+    el.saidaQtd.replaceChildren();
+    for (let n = 1; n <= 10; n += 1) opcao(el.saidaQtd, String(n), String(n), n === 1);
+
+    el.saidaMin.replaceChildren();
+    for (const i of INTERVALOS) opcao(el.saidaMin, String(i.v), i.t, i.v === 15);
+
+    el.saidaQtd.addEventListener('change', ajustarRotuloSaida);
+    for (const radio of document.querySelectorAll('input[name="dot-destino"]')) {
+      radio.addEventListener('change', ajustarDestino);
+    }
+    ajustarDestino();
+  }
+
+  function destinoEscolhido() {
+    return document.querySelector('input[name="dot-destino"]:checked')?.value || 'rascunho';
+  }
+
+  function ajustarRotuloSaida() {
+    const n = Number(el.saidaQtd.value) || 1;
+    el.saidaRotulo.textContent = n === 1 ? 'matéria a cada' : 'matérias a cada';
+  }
+
+  /** Rascunho não tem ritmo de saída: nada sai sozinho. */
+  function ajustarDestino() {
+    const mostrar = destinoEscolhido() !== 'rascunho';
+    el.ritmo.classList.toggle('hidden', !mostrar);
+    ajustarRotuloSaida();
+  }
+
+  /** O que a tela manda para a prévia e para a criação — os dois iguais. */
+  function configuracaoDaTela() {
+    const marcados = [...el.dias.querySelectorAll('.d-dia.is-on')].map((b) => Number(b.dataset.dia));
+    const inicio = el.horaInicio.value === '' ? null : Number(el.horaInicio.value);
+    const fim = el.horaFim.value === '' ? null : Number(el.horaFim.value);
+    return {
+      dias_semana: marcados,
+      // Só vale faixa com as duas pontas escolhidas; uma ponta só não restringe.
+      hora_inicio: inicio !== null && fim !== null ? inicio : null,
+      hora_fim: inicio !== null && fim !== null ? fim : null,
+      scan_minutos: Number(el.scan.value) || 60,
+      destino: destinoEscolhido(),
+      saida_quantidade: Number(el.saidaQtd.value) || 1,
+      saida_minutos: Number(el.saidaMin.value) || 15,
+      limite_dia: Number(el.limite.value) || 20,
+      gerar_imagem_com_texto: Boolean(el.imagemTexto.checked),
+    };
+  }
   /** Plano confirmado pelo editor. Sem ele o "Criar dot" não envia nada. */
   let planoConfirmado = null;
   const abertos = new Set();
@@ -336,7 +454,7 @@
     try {
       const { plano, urls, resumo } = await api('/api/dots/previa', {
         method: 'POST',
-        body: JSON.stringify({ objetivo }),
+        body: JSON.stringify({ objetivo, ...configuracaoDaTela() }),
       });
       if (!el.nome.value.trim()) el.nome.value = plano.nome;
       planoConfirmado = null;
@@ -390,6 +508,7 @@
           nome: el.nome.value.trim() || null,
           provedor: el.provedor?.value || 'auto',
           facebook_page_id: el.pagina.value || null,
+          ...configuracaoDaTela(),
         }),
       });
       el.objetivo.value = '';
@@ -493,6 +612,7 @@
     else carregar();
   });
 
+  montarCampos();
   carregarProvedores();
   carregarPaginas();
   carregar();

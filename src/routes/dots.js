@@ -10,7 +10,23 @@ function responder(res, next, promessa) {
 
 /** Prévia: o que a IA entendeu do pedido, antes de salvar. */
 router.post('/previa', (req, res, next) =>
-  responder(res, next, dotsService.previa(req.body?.objetivo)));
+  responder(
+    res,
+    next,
+    // A prévia precisa da mesma configuração da tela, senão mostraria um
+    // resumo diferente do que o dot vai realmente fazer.
+    dotsService.previa(req.body?.objetivo, {
+      dias_semana: req.body?.dias_semana,
+      hora_inicio: req.body?.hora_inicio,
+      hora_fim: req.body?.hora_fim,
+      scan_minutos: req.body?.scan_minutos,
+      destino: req.body?.destino,
+      saida_quantidade: req.body?.saida_quantidade,
+      saida_minutos: req.body?.saida_minutos,
+      limite_dia: req.body?.limite_dia,
+      gerar_imagem_com_texto: req.body?.gerar_imagem_com_texto === true,
+    })
+  ));
 
 /** Antes de /:id, senão o Express casaria "provedores" como id. */
 router.get('/provedores', (_req, res) => res.json({ provedores: dotsService.provedores() }));
@@ -27,6 +43,16 @@ router.post('/', (req, res, next) =>
       nome: req.body?.nome || null,
       provedor: req.body?.provedor || 'auto',
       facebookPageId: req.body?.facebook_page_id || null,
+      // Jornada e ritmo vêm da tela; o serviço normaliza e descarta o inválido.
+      dias_semana: req.body?.dias_semana,
+      hora_inicio: req.body?.hora_inicio,
+      hora_fim: req.body?.hora_fim,
+      scan_minutos: req.body?.scan_minutos,
+      destino: req.body?.destino,
+      saida_quantidade: req.body?.saida_quantidade,
+      saida_minutos: req.body?.saida_minutos,
+      limite_dia: req.body?.limite_dia,
+      gerar_imagem_com_texto: req.body?.gerar_imagem_com_texto === true,
     })
   ));
 

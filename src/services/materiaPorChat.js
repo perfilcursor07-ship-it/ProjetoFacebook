@@ -110,6 +110,30 @@ function comLimite(promise, ms, mensagem) {
   ]).finally(() => clearTimeout(timer));
 }
 
+/**
+ * Mesma foto, sem o texto embutido.
+ *
+ * Quando o editor marca "gerar só se a imagem tiver texto", o que ele quer é
+ * limpar o print/card — não uma cena nova. `promptCapaIa` recriava a imagem do
+ * zero, trocando pessoas e cenário por outros parecidos; aqui a ordem é apagar
+ * as letras e devolver o resto igual.
+ */
+function promptSemTexto(titulo) {
+  return [
+    'Reproduza a imagem de referência REMOVENDO todo o texto sobreposto.',
+    'Apague letras, legendas, títulos, placas legíveis, logotipos, marcas d’água,',
+    'selos e tarjas, reconstruindo apenas o fundo que estava atrás deles.',
+    'Mantenha TUDO o resto idêntico: as mesmas pessoas, roupas, expressões,',
+    'enquadramento, cores, iluminação e cenário. Não reinterprete a cena, não',
+    'troque o ângulo e não acrescente elementos.',
+    'Não escreva nenhum texto novo na imagem.',
+    'Composição vertical exata 4:5 (1080 × 1350 pixels), fotorrealista.',
+    `Contexto da matéria (só para entender a cena, não para escrever): ${String(titulo || '')
+      .replace(/\[\[|\]\]|\*\*/g, '')
+      .trim()}`,
+  ].join('\n\n');
+}
+
 /** Ilustração sem foto de referência: simbólica e sem pessoas reais. */
 function promptCapaSimbolica(titulo) {
   return [
@@ -124,7 +148,15 @@ function promptCapaSimbolica(titulo) {
  * Refaz a capa com o ChatGPT a partir da foto da matéria (até 8 min).
  * Sem foto de referência, `permitirSimbolica` pede uma ilustração simbólica.
  */
-async function aplicarCapaChatgpt({ userId, matterId, thumbnail, permitirSimbolica = false }) {
+async function aplicarCapaChatgpt({
+  userId,
+  matterId,
+  thumbnail,
+  permitirSimbolica = false,
+  // 'recriar' inventa uma cena nova inspirada na foto; 'limpar_texto' devolve
+  // a mesma foto sem as letras. O dot com "gerar só se tiver texto" usa a 2ª.
+  modo = 'recriar',
+}) {
   const AiMatters = require('../models/AiMatters');
   const matter = await AiMatters.findById(matterId);
   if (!matter) throw new Error('matéria não encontrada');
@@ -138,7 +170,11 @@ async function aplicarCapaChatgpt({ userId, matterId, thumbnail, permitirSimboli
   const gerada = await comLimite(
     chatgptImageService.gerarImagem({
       sourceUrl: fonte || null,
-      prompt: simbolica ? promptCapaSimbolica(matter.titulo) : promptCapaIa(matter.titulo),
+      prompt: simbolica
+        ? promptCapaSimbolica(matter.titulo)
+        : modo === 'limpar_texto'
+          ? promptSemTexto(matter.titulo)
+          : promptCapaIa(matter.titulo),
       titulo: matter.titulo || '',
       materia: matter.materia || '',
       recoveryKey: `${userId}:${matterId}`,
@@ -167,4 +203,4 @@ async function aplicarCapaChatgpt({ userId, matterId, thumbnail, permitirSimboli
   if (Object.keys(patch).length) await AiMatters.update(matterId, patch);
 }
 
-module.exports = { escreverPeloChat, aplicarCapaChatgpt, promptCapaIa };
+module.exports = { escreverPeloChat, aplicarCapaChatgpt, promptCapaIa, promptSemTexto };

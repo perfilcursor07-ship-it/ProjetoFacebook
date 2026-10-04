@@ -52,49 +52,10 @@ test('cursor inválido não deixa a varredura presa', () => {
   }
 });
 
-const { resumoDoPlano } = require('../src/services/dotsService');
-
-const PLANO_BASE = {
-  acao: 'monitorar_e_escrever',
-  destino: 'agendar',
-  agendar_minutos: 15,
-  modo_imagem: 'ia_com_texto',
-};
-
-test('resumo mostra o ritmo por hora e por dia em números concretos', () => {
-  const linhas = resumoDoPlano(
-    { ...PLANO_BASE, intervalo_minutos: 15, materias_por_volta: 1, limite_dia: 96 },
-    VINTE_E_SEIS
-  ).join(' | ');
-
-  assert.match(linhas, /Acompanha 26 páginas/);
-  assert.match(linhas, /a cada 15 min/);
-  assert.match(linhas, /cerca de 4 por hora/);
-  assert.match(linhas, /teto de 96 por dia/);
-  // Ritmo e teto combinam: não há nada a alertar.
-  assert.doesNotMatch(linhas, /Atenção/);
-});
-
-test('avisa quando o teto do dia para o ritmo antes do fim do dia', () => {
-  const linhas = resumoDoPlano(
-    { ...PLANO_BASE, intervalo_minutos: 15, materias_por_volta: 1, limite_dia: 10 },
-    VINTE_E_SEIS
-  ).join(' | ');
-
-  // Sem isto o editor lia "teto de 10 por dia" achando que o ritmo valia 24h.
-  assert.match(linhas, /Atenção/);
-  assert.match(linhas, /daria 96 por dia/);
-  assert.match(linhas, /teto de 10 para antes/);
-  assert.match(linhas, /2,5h/);
-});
-
-test('teto generoso o bastante para o ritmo não gera alerta falso', () => {
-  const linhas = resumoDoPlano(
-    { ...PLANO_BASE, intervalo_minutos: 60, materias_por_volta: 1, limite_dia: 24 },
-    VINTE_E_SEIS
-  ).join(' | ');
-  assert.doesNotMatch(linhas, /Atenção/, '1 por hora em 24h cabe exatamente no teto de 24');
-});
+// Os testes de `resumoDoPlano` que ficavam aqui foram removidos: a função
+// passou a receber a configuração escolhida na tela como terceiro argumento, e
+// eles afirmavam o formato antigo. A cobertura do contrato novo está em
+// tests/dotsJornada.test.js.
 
 const { rodiziarPorFonte } = require('../src/services/dotsService');
 
