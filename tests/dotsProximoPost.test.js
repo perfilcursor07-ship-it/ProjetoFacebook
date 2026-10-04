@@ -50,3 +50,29 @@ test('mostra qual palavra-chave o post citou', () => {
   assert.equal(palavraQueCasou(post, ['Lula', 'Flávio Bolsonaro']), 'Flávio Bolsonaro');
   assert.equal(palavraQueCasou(post, ['Moraes']), null);
 });
+
+test('post sem imagem ganha a capa de dentro da reportagem (igual ao piloto)', async () => {
+  const { capaDoPost } = require('../src/services/dotsService');
+  const original = articleSource.extrairMetadadosImagemArtigo;
+  articleSource.extrairMetadadosImagemArtigo = async (url) => {
+    assert.equal(url, 'https://www.bbc.com/portuguese/articles/c1');
+    return { imagem: 'https://ichef.bbci.co.uk/news/1024/branded_portuguese/foto.jpg' };
+  };
+  try {
+    const capa = await capaDoPost({ id: 1, url: 'https://www.bbc.com/portuguese/articles/c1', thumbnail: null });
+    assert.equal(capa, 'https://ichef.bbci.co.uk/news/1024/branded_portuguese/foto.jpg');
+  } finally {
+    articleSource.extrairMetadadosImagemArtigo = original;
+  }
+});
+
+test('logo do Google nunca vira capa do post', async () => {
+  const { capaDoPost } = require('../src/services/dotsService');
+  const original = articleSource.extrairMetadadosImagemArtigo;
+  articleSource.extrairMetadadosImagemArtigo = async () => ({ imagem: 'https://lh3.googleusercontent.com/logo=w256' });
+  try {
+    assert.equal(await capaDoPost({ id: 1, url: 'https://site.com/a', thumbnail: null }), null);
+  } finally {
+    articleSource.extrairMetadadosImagemArtigo = original;
+  }
+});

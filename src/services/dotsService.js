@@ -874,6 +874,81 @@ async function urlParaEscrever(post) {
   throw err;
 }
 
+/** Espera a promessa até `ms`; passou disso, devolve null (sem derrubar nada). */
+function comPrazo(promessa, ms) {
+  let timer;
+  return Promise.race([
+    Promise.resolve(promessa).catch(() => null),
+    new Promise((resolve) => { timer = setTimeout(() => resolve(null), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Capa de dentro da reportagem para um post que chegou sem imagem (feeds RSS
+ * e do Google não trazem foto). Mesmo caminho do Furos/piloto: link real da
+ * matéria → og:image, com o Chrome de reserva quando o site bloqueia.
+ * Grava no post e devolve a imagem (ou null).
+ */
+async function capaDoPost(post) {
+  if (require('./articleSource').imagemServeDeCapa(post?.thumbnail)) return post.thumbnail;
+  let url = String(post?.url || '').trim();
+  if (!/^https?:\/\//i.test(url)) return null;
+  if (/news\.google\.com/i.test(url)) {
+    const real = (await comPrazo(require('./newsResearch').decodificarLinksGoogle([url]), 15_000))?.get(url);
+    if (!real) return null;
+    url = real;
+    await db('biblioteca_posts').where({ id: post.id }).update({ url: corta(real, 500) }).catch(() => {});
+  }
+  const meta = await comPrazo(require('./articleSource').extrairMetadadosImagemArtigo(url), 20_000);
+  if (!require('./articleSource').imagemServeDeCapa(meta?.imagem)) return null;
+  const imagem = corta(String(meta.imagem), 1000);
+  await db('biblioteca_posts').where({ id: post.id }).update({ thumbnail: imagem }).catch(() => {});
+  return imagem;
+}
+
+const ultimaBuscaDeCapas = new Map();
+
+/**
+ * Completa em segundo plano as capas dos posts recentes do dot que ficaram
+ * sem imagem — primeiro os do assunto pedido. No máximo uma rodada a cada
+ * 10 min por dot, 3 ao mesmo tempo, para não sobrecarregar os sites.
+ */
+async function completarCapasDosPosts(dot, { limite = 12 } = {}) {
+  const ultima = ultimaBuscaDeCapas.get(dot.id) || 0;
+  if (Date.now() - ultima < 10 * 60 * 1000) return 0;
+  ultimaBuscaDeCapas.set(dot.id, Date.now());
+
+  const fonteIds = parseJson(dot.fonte_ids, []);
+  if (!fonteIds.length) return 0;
+  const plano = parseJson(dot.plano, {});
+  const linhas = await db('biblioteca_posts')
+    .where('user_id', dot.user_id)
+    .whereIn('fonte_id', fonteIds)
+    .where((q) => q.whereNull('thumbnail').orWhere('thumbnail', ''))
+    .where('created_at', '>=', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+    .orderBy('created_at', 'desc')
+    .limit(60)
+    .select('id', 'url', 'titulo', 'resumo', 'thumbnail')
+    .catch(() => []);
+  const fila = linhas
+    .map((p) => ({ p, noAssunto: palavraQueCasou(p, plano.palavras) ? 1 : 0 }))
+    .sort((a, b) => b.noAssunto - a.noAssunto)
+    .slice(0, limite)
+    .map((x) => x.p);
+
+  let feitas = 0;
+  let proximo = 0;
+  await Promise.all(Array.from({ length: Math.min(3, fila.length) }, async () => {
+    while (proximo < fila.length) {
+      const post = fila[proximo];
+      proximo += 1;
+      if (await capaDoPost(post).catch(() => null)) feitas += 1;
+    }
+  }));
+  if (feitas) console.info(`[dots #${dot.id}] ${feitas} capa(s) de reportagem completada(s)`);
+  return feitas;
+}
+
 /** Posts que falharam neste dot nas últimas horas (não voltam já na próxima volta). */
 async function urlsQueFalharamRecentemente(dot, horas = 2) {
   return db(LOG)
@@ -914,6 +989,11 @@ async function escrever(dot, post) {
     ? null
     : await require('./iaModeloTarefaService').modeloDaTarefa('piloto').catch(() => null);
   const tokenFree = require('./tokenFreeGatewayService');
+  // Post sem foto (feed RSS/Google): busca a capa de dentro da reportagem
+  // antes de escrever, igual ao piloto, para a matéria já nascer com ela.
+  if (!require('./articleSource').imagemServeDeCapa(post.thumbnail)) {
+    post.thumbnail = (await capaDoPost(post).catch(() => null)) || post.thumbnail;
+  }
   // Link da reportagem original (não o do Google Notícias).
   const urlLeitura = await urlParaEscrever(post);
 
@@ -1367,6 +1447,8 @@ async function rodarCiclo(dot) {
       ),
       ultimo_erro: null,
     });
+    // Depois da volta, completa as capas que os feeds não trouxeram.
+    completarCapasDosPosts(dot).catch(() => {});
   } catch (err) {
     console.error(`[dots #${dot.id}]`, err.message);
     await db(TABELA).where({ id: dot.id }).update({
@@ -1467,6 +1549,9 @@ async function listar(userId) {
 async function detalhe(userId, dotId) {
   const dot = await db(TABELA).where({ id: dotId, user_id: userId }).first();
   if (!dot) throw erro('Dot não encontrado.', 404);
+  // Posts sem miniatura no painel: completa em segundo plano; a próxima
+  // atualização da tela (30 s) já mostra as capas.
+  completarCapasDosPosts(dot).catch(() => {});
   const execucoes = await db(LOG)
     .where({ dot_id: dotId })
     .orderBy('created_at', 'desc')
@@ -1690,6 +1775,7 @@ module.exports = {
   // Expostos para teste
   extrairUrls,
   urlParaEscrever,
+  capaDoPost,
   palavraQueCasou,
   fotoParaChecar,
   resolverCapa,
