@@ -4638,9 +4638,10 @@ function idDoVideoYoutube(url) {
  */
 async function imagemDaFonte({ fontesDaMateria = [], fonteSocialComImagem = null, fontePrincipal = null } = {}) {
   const lista = Array.isArray(fontesDaMateria) ? fontesDaMateria : [];
-  const social = fonteSocialComImagem ||
-    lista.find((f) => f?.ehRedeSocial && /^https?:\/\//i.test(String(f?.imagem || ''))) ||
-    null;
+  // Logo do agregador (Google Notícias), avatar ou ícone nunca viram capa.
+  const { imagemServeDeCapa } = require('./articleSource');
+  const social = [fonteSocialComImagem, ...lista.filter((f) => f?.ehRedeSocial)]
+    .find((f) => f && imagemServeDeCapa(f.imagem)) || null;
   const principal = fontePrincipal ||
     lista.find((f) => /^https?:\/\//i.test(String(f?.url || ''))) ||
     lista[0] ||
@@ -4648,7 +4649,7 @@ async function imagemDaFonte({ fontesDaMateria = [], fonteSocialComImagem = null
   // Em links sociais, a mídia extraída da própria publicação é sempre a
   // primeira opção — pesquisas complementares não podem substituí-la.
   if (social) return { url: String(social.imagem), veiculo: social.veiculo || null, origem: 'post' };
-  if (/^https?:\/\//i.test(String(principal?.imagem || ''))) {
+  if (imagemServeDeCapa(principal?.imagem)) {
     return { url: String(principal.imagem), veiculo: principal.veiculo || null, origem: 'fonte' };
   }
   const videoId = principal?.videoId || idDoVideoYoutube(principal?.url || principal?.urlOriginal);
@@ -4662,7 +4663,7 @@ async function imagemDaFonte({ fontesDaMateria = [], fonteSocialComImagem = null
     try {
       const { extrairMetadadosImagemArtigo } = require('./articleSource');
       const meta = await extrairMetadadosImagemArtigo(principal.url);
-      if (/^https?:\/\//i.test(String(meta?.imagem || ''))) {
+      if (imagemServeDeCapa(meta?.imagem)) {
         return {
           url: String(meta.imagem).slice(0, 1000),
           veiculo: meta.veiculo || principal.veiculo || null,

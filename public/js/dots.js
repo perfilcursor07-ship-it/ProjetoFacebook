@@ -29,6 +29,19 @@
 
   /** Log por dot, para a atualização de 3s não piscar a timeline. */
   const logs = new Map();
+  /** Comandos em edição (id → texto). Enquanto houver, a lista não se redesenha. */
+  const editando = new Map();
+  /** Última lista recebida, para redesenhar um cartão sem ir ao servidor. */
+  let ultimaLista = [];
+
+  function redesenharCartao(id) {
+    const dot = ultimaLista.find((d) => String(d.id) === String(id));
+    const atual = el.lista.querySelector(`[data-dot="${CSS.escape(String(id))}"]`);
+    if (!dot || !atual) return;
+    const molde = document.createElement('div');
+    molde.innerHTML = cartao(dot).trim();
+    atual.replaceWith(molde.firstElementChild);
+  }
 
   // ---------------------------------------------------------- configuração
   //
@@ -325,22 +338,118 @@
     }</span></p>`;
   }
 
+  /** Ícone e rótulo de cada passo da atividade, para ler de relance. */
+  function passoDe(e) {
+    const texto = String(e.detalhe || '');
+    if (e.acao === 'escreveu') return { icone: '✍️', rotulo: 'Escreveu a matéria', classe: 'd-passo--ok' };
+    if (e.acao === 'erro') return { icone: '⚠️', rotulo: 'Problema', classe: 'd-passo--erro' };
+    if (e.acao === 'criou_fonte') return { icone: '📡', rotulo: 'Páginas monitoradas', classe: '' };
+    if (/fora das palavras/i.test(texto)) return { icone: '🔎', rotulo: 'Filtrou pelas palavras-chave', classe: '' };
+    if (/foto|imagem|ilustra/i.test(texto)) return { icone: '🖼️', rotulo: 'Imagem', classe: '' };
+    if (/repetid|já publicad|duplicad/i.test(texto)) return { icone: '♻️', rotulo: 'Evitou repetir', classe: '' };
+    return { icone: '•', rotulo: 'Passo', classe: '' };
+  }
+
+  /** Separa "título · palavra-chave: X · foto original · sai 15:47" em partes. */
+  function partesDoEscreveu(detalhe) {
+    const partes = String(detalhe || '').split(' · ');
+    const titulo = partes.shift() || 'Matéria';
+    const palavra = (partes.find((p) => /^palavra-chave:/i.test(p)) || '').replace(/^palavra-chave:\s*/i, '');
+    const resto = partes.filter((p) => !/^palavra-chave:/i.test(p));
+    return { titulo, palavra, imagem: resto.find((p) => /foto|imagem/i.test(p)) || '', saida: resto.find((p) => !/foto|imagem/i.test(p)) || '' };
+  }
+
+  function statusDaMateria(m, saidaTexto) {
+    if (!m) return saidaTexto ? `📅 ${escapar(saidaTexto)}` : '';
+    if (m.status === 'publicado') return '✅ Publicada';
+    if (m.status === 'agendado' && m.agendada_para) {
+      return `📅 Sai ${new Date(m.agendada_para).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`;
+    }
+    if (m.status === 'erro') return '⚠️ Erro ao publicar';
+    return '📝 Rascunho';
+  }
+
+  /** Matérias que o dot rastreou e escreveu, com capa, palavra-chave e status. */
+  function rastreadas(dotId) {
+    const linhas = (logs.get(String(dotId)) || []).filter((e) => e.acao === 'escreveu');
+    if (!linhas.length) return '<p class="d-linha"><span class="d-linha-marca">·</span><span>Nenhuma matéria escrita ainda.</span></p>';
+    return linhas.slice(0, 8).map((e) => {
+      const p = partesDoEscreveu(e.detalhe);
+      const m = e.materia || null;
+      const capa = m?.imagem
+        ? `<img src="${escapar(m.imagem)}" alt="" loading="lazy" class="d-mat-capa" />`
+        : '<span class="d-mat-capa d-mat-capa--vazia">sem capa</span>';
+      const href = `/materias-ia/${e.matter_id}`;
+      return `
+        <a class="d-mat" href="${href}" target="_blank" rel="noopener">
+          ${capa}
+          <span class="d-mat-corpo">
+            <span class="d-mat-titulo">${escapar(m?.titulo || p.titulo)}</span>
+            <span class="d-mat-chips">
+              ${p.palavra ? `<span class="d-chip d-chip--palavra">🔎 ${escapar(p.palavra)}</span>` : ''}
+              ${p.imagem ? `<span class="d-chip">${/IA/.test(p.imagem) ? '🎨' : '🖼️'} ${escapar(p.imagem)}</span>` : ''}
+              <span class="d-chip">${statusDaMateria(m, p.saida)}</span>
+            </span>
+            <span class="d-quando">${haQuanto(e.created_at)}</span>
+          </span>
+        </a>`;
+    }).join('');
+  }
+
+  /** Passo a passo do que o dot fez, do mais novo para o mais antigo. */
   function concluido(dotId) {
     const linhas = logs.get(String(dotId));
     if (!linhas) return '<p class="d-linha"><span class="d-linha-marca">·</span><span>Carregando…</span></p>';
     if (!linhas.length) return '<p class="d-linha"><span class="d-linha-marca">·</span><span>Ainda não concluiu nada.</span></p>';
-    return linhas
-      .slice(0, 12)
+    return `<ol class="d-passos">${linhas
+      .slice(0, 15)
       .map((e) => {
-        const marca = { escreveu: '✓', ignorou: '·', erro: '!', criou_fonte: '+' }[e.acao] || '·';
-        const classe = e.acao === 'escreveu' ? 'd-linha--ok' : e.acao === 'erro' ? 'd-linha--erro' : '';
+        const passo = passoDe(e);
+        const texto = e.acao === 'escreveu' ? partesDoEscreveu(e.detalhe).titulo : e.detalhe || e.acao;
         const link = e.matter_id
           ? ` <a href="/materias-ia/${e.matter_id}" style="color:var(--d-acento)" class="hover:underline">ver matéria</a>`
           : '';
-        return `<p class="d-linha ${classe}"><span class="d-linha-marca">${marca}</span>
-          <span>${escapar(e.detalhe || e.acao)}${link} <span class="d-quando">${haQuanto(e.created_at)}</span></span></p>`;
+        return `<li class="d-passo ${passo.classe}">
+          <span class="d-passo-icone" aria-hidden="true">${passo.icone}</span>
+          <span class="d-passo-corpo">
+            <span class="d-passo-rotulo">${passo.rotulo}</span>
+            <span>${escapar(texto)}${link}</span>
+            <span class="d-quando">${haQuanto(e.created_at)}</span>
+          </span>
+        </li>`;
       })
-      .join('');
+      .join('')}</ol>`;
+  }
+
+  /** O que o dot entendeu do comando + edição no próprio cartão. */
+  function comando(dot) {
+    const id = String(dot.id);
+    const plano = dot.plano || {};
+    if (editando.has(id)) {
+      return `
+        <div class="d-comando d-comando--editando mt-3" data-comando-edicao>
+          <label class="d-rotulo-min" for="dot-cmd-${id}">O que ele deve fazer</label>
+          <textarea id="dot-cmd-${id}" data-comando-texto rows="6">${escapar(editando.get(id))}</textarea>
+          <p class="d-ajuda">Mude o assunto, as palavras-chave ou o estilo (ex.: “deixe o título mais polêmico”). Links novos viram páginas monitoradas.</p>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <button type="button" data-acao="salvar-comando" class="d-btn d-btn--principal">Salvar comando</button>
+            <button type="button" data-acao="cancelar-comando" class="d-btn d-btn--fantasma">Cancelar</button>
+          </div>
+        </div>`;
+    }
+    const palavras = Array.isArray(plano.palavras) ? plano.palavras : [];
+    return `
+      <div class="d-comando mt-3">
+        <div class="flex items-start justify-between gap-2">
+          <p class="d-comando-texto" title="${escapar(dot.objetivo || '')}">${escapar(dot.objetivo || 'Sem comando.')}</p>
+          <button type="button" data-acao="editar-comando" class="d-btn d-btn--fantasma shrink-0">✏️ Editar comando</button>
+        </div>
+        <div class="d-mat-chips mt-1.5">
+          ${palavras.length ? `<span class="d-chip d-chip--palavra">🔎 ${escapar(palavras.join(', '))}</span>` : '<span class="d-chip">🔎 qualquer assunto</span>'}
+          ${plano.estilo ? `<span class="d-chip">🎯 ${escapar(plano.estilo)}</span>` : ''}
+          <span class="d-chip">📡 ${dot.fontes} ${dot.fontes === 1 ? 'página' : 'páginas'}</span>
+        </div>
+      </div>`;
   }
 
   function cartao(dot) {
@@ -363,18 +472,23 @@
           </div>
         </div>
 
+        ${comando(dot)}
         ${agora(dot)}
         ${dot.ultimo_erro ? `<p class="d-linha d-linha--erro mt-2"><span class="d-linha-marca">!</span><span>${escapar(dot.ultimo_erro)}</span></p>` : ''}
 
         <details class="d-detalhes mt-3" data-atividade ${abertos.has(String(dot.id)) ? 'open' : ''}>
           <summary>Atividade</summary>
-          <div class="mt-2 space-y-3">
+          <div class="mt-2 space-y-4">
             <div>
-              <p class="d-secao">Agendado</p>
+              <p class="d-secao">⏱️ Próxima volta</p>
               <div class="mt-1">${agendado(dot)}</div>
             </div>
             <div>
-              <p class="d-secao">Concluído</p>
+              <p class="d-secao">📰 Matérias rastreadas</p>
+              <div class="d-mats mt-1.5">${rastreadas(dot.id)}</div>
+            </div>
+            <div>
+              <p class="d-secao">🧭 Passo a passo</p>
               <div class="mt-1">${concluido(dot.id)}</div>
             </div>
           </div>
@@ -403,12 +517,15 @@
   }
 
   async function carregar() {
+    // Redesenhar a lista apagaria o que o editor está digitando no comando.
+    if (editando.size) return reagendar(5000);
     try {
       const resposta = await api('/api/dots');
       // Resposta inesperada não pode quebrar a tela inteira.
       const dots = Array.isArray(resposta) ? resposta : [];
       await Promise.all([...abertos].filter((id) => dots.some((d) => String(d.id) === id)).map(carregarLog));
 
+      ultimaLista = dots;
       el.lista.innerHTML = dots.length ? dots.map(cartao).join('') : vazio();
 
       const trabalhando = dots.filter((d) => d.trabalhando).length;
@@ -549,6 +666,43 @@
     const id = botao.closest('[data-dot]')?.dataset.dot;
     if (!id) return;
     const acao = botao.dataset.acao;
+
+    // Edição do comando no próprio cartão.
+    if (acao === 'editar-comando') {
+      const dot = (ultimaLista || []).find((d) => String(d.id) === String(id));
+      editando.set(String(id), dot?.objetivo || '');
+      redesenharCartao(id);
+      botao.closest('[data-dot]')?.querySelector('[data-comando-texto]')?.focus();
+      return;
+    }
+    if (acao === 'cancelar-comando') {
+      editando.delete(String(id));
+      redesenharCartao(id);
+      return;
+    }
+    if (acao === 'salvar-comando') {
+      const texto = String(editando.get(String(id)) || '').trim();
+      if (!texto) return avisar('Escreva o que o dot deve fazer.', true);
+      botao.disabled = true;
+      botao.textContent = 'Lendo o novo comando…';
+      try {
+        const r = await api(`/api/dots/${id}`, { method: 'PATCH', body: JSON.stringify({ objetivo: texto }) });
+        editando.delete(String(id));
+        const falhas = Array.isArray(r.problemas) ? r.problemas : [];
+        avisar(
+          r.fontes !== undefined
+            ? `Comando atualizado: ${r.fontes} página(s) monitorada(s)${falhas.length ? `. Não entraram: ${falhas.slice(0, 2).join(' | ')}` : '.'}`
+            : 'Comando atualizado.'
+        );
+        await carregar();
+      } catch (err) {
+        avisar(err.message, true);
+        botao.disabled = false;
+        botao.textContent = 'Salvar comando';
+      }
+      return;
+    }
+
     if (acao === 'excluir' && !confirm('Excluir este dot? As páginas continuam na Biblioteca.')) return;
 
     botao.disabled = true;
@@ -591,6 +745,13 @@
     } catch (err) {
       avisar(err.message, true);
     }
+  });
+
+  // Guarda o texto do comando a cada tecla (sobrevive a um redesenho do cartão).
+  el.lista.addEventListener('input', (e) => {
+    if (!e.target.matches('[data-comando-texto]')) return;
+    const id = e.target.closest('[data-dot]')?.dataset.dot;
+    if (id) editando.set(String(id), e.target.value);
   });
 
   el.lista.addEventListener('blur', (e) => {

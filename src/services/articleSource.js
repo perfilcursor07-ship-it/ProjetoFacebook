@@ -207,6 +207,20 @@ async function extrairMetadadosViaJina(urlReal) {
   }
 }
 
+/**
+ * A imagem serve como capa de matéria? Rejeita logos, avatares e as imagens
+ * genéricas de agregadores. É a checagem única usada pelos leitores de
+ * artigo, pela capa do chat/rascunho e pelo Dots.
+ */
+function imagemServeDeCapa(url) {
+  const valor = String(url || '').trim();
+  if (!/^https?:\/\//i.test(valor) && !/^\/media\/fontes\//i.test(valor)) return false;
+  if (imagemPareceLogoOuAvatar(valor)) return false;
+  // Logo do Google Notícias e miniaturas do Google: nunca são a foto da reportagem.
+  if (/(?:^|\/\/)(?:[a-z0-9-]+\.)*(?:googleusercontent\.com|ggpht\.com|google\.com)\//i.test(valor)) return false;
+  return true;
+}
+
 function imagemPareceLogoOuAvatar(url, className = '') {
   const hay = `${url} ${className}`.toLowerCase();
 
@@ -966,7 +980,9 @@ function mesclarMetaMaisCompleta(base, candidata) {
     ...candidata,
     titulo: candidata.titulo || base?.titulo || null,
     resumo: candidata.resumo || base?.resumo || null,
-    imagem: base?.imagem || candidata.imagem || null,
+    // Leitores alternativos (Chrome/Jina/Tradutor) podem cair numa página do
+    // agregador e trazer o logo dele como imagem: só fica imagem que serve.
+    imagem: [base?.imagem, candidata.imagem].find((img) => imagemServeDeCapa(img)) || null,
     autor: candidata.autor || base?.autor || null,
     veiculo: candidata.veiculo || base?.veiculo || null,
     veiculoHost: candidata.veiculoHost || base?.veiculoHost || null,
@@ -1702,6 +1718,7 @@ module.exports = {
   carregarHtmlViaChrome,
   urlProxyGoogleTranslate,
   extrairImagemCapa,
+  imagemServeDeCapa,
   resolverUrlNoticia,
   buscarFontesPorTitulo,
   coletarFontesComplementares,

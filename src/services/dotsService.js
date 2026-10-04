@@ -704,6 +704,13 @@ function filtrarPorPalavras(posts, palavras) {
   });
 }
 
+/** Qual das palavras pedidas o post cita (para mostrar na atividade). */
+function palavraQueCasou(post, palavras) {
+  const texto = normalizarBusca(`${post?.titulo || ''} ${post?.resumo || ''}`);
+  return (Array.isArray(palavras) ? palavras : [])
+    .find((p) => normalizarBusca(p).length >= 3 && texto.includes(normalizarBusca(p))) || null;
+}
+
 function normalizarBusca(valor) {
   return String(valor || '')
     .toLocaleLowerCase('pt-BR')
@@ -838,19 +845,26 @@ async function escrever(dot, post) {
   const { escreverPeloChat } = require('./materiaPorChat');
   const { comProvedor } = require('./deepseekService');
   const escolhido = dot.provedor && dot.provedor !== 'auto' ? dot.provedor : null;
+  // Dot em "automático": escreve com o modelo fixado em /claude → Piloto
+  // automático (ex.: ChatGPT 5.6), igual ao piloto. Antes passava um
+  // comModelo vazio e a matéria saía pelo Claude, ignorando a escolha.
+  const modeloPiloto = escolhido
+    ? null
+    : await require('./iaModeloTarefaService').modeloDaTarefa('piloto').catch(() => null);
+  const tokenFree = require('./tokenFreeGatewayService');
 
   // comProvedor fixa a IA só nesta volta; sem escolha, roteamento normal.
   const tarefa = comProvedor(escolhido, () => escreverPeloChat(
     {
       chatService: require('./materiaChatService'),
-      // Sem fixar modelo: usa a cadeia de provedores padrão do projeto.
-      comModelo: (_modelo, fn) => fn(),
+      comModelo: modeloPiloto ? tokenFree.comModelo : (_modelo, fn) => fn(),
     },
     {
       userId: dot.user_id,
+      modelo: modeloPiloto,
       url: post.url,
       facebookPageId: dot.facebook_page_id || null,
-      imagemUrl: /^https?:\/\//i.test(String(post.thumbnail || '')) ? post.thumbnail : null,
+      imagemUrl: require('./articleSource').imagemServeDeCapa(post.thumbnail) ? post.thumbnail : null,
       origem: 'dots',
       // "título mais polêmico", "texto curto" — o pedido do editor chegava a
       // ser interpretado e guardado, mas nunca influenciava a escrita.
@@ -874,11 +888,13 @@ async function escrever(dot, post) {
  * "não consegui checar" e ganhar imagem de IA.
  */
 function fotoParaChecar(matter, post) {
+  const { imagemServeDeCapa } = require('./articleSource');
   const daMateria = String(matter?.imagem_fonte_url || matter?.imagem_url || '').trim();
   // /media/artes/ é a arte composta (com título por cima), não a foto original.
-  if (daMateria && !/\/media\/artes\//i.test(daMateria)) return daMateria;
+  // Logo do Google Notícias/agregador conta como "sem foto": aí a IA gera a capa.
+  if (daMateria && !/\/media\/artes\//i.test(daMateria) && imagemServeDeCapa(daMateria)) return daMateria;
   const thumb = String(post?.thumbnail || '').trim();
-  return /^https?:\/\//i.test(thumb) ? thumb : null;
+  return imagemServeDeCapa(thumb) ? thumb : null;
 }
 
 /**
@@ -1230,10 +1246,12 @@ async function rodarCiclo(dot) {
             publicada = Boolean(await agendarSaida(dot, matterId, indice - 1, { imediato: true }));
           }
 
+          const casou = palavraQueCasou(post, plano.palavras);
           await registrarLog(dot, 'escreveu', {
             detalhe: corta(
               [
                 post.titulo || post.fonte_nome || 'matéria',
+                ...(casou ? [`palavra-chave: ${casou}`] : []),
                 capa === 'ia' ? 'imagem IA' : capa === 'sem_imagem' ? 'sem imagem' : 'foto original',
                 agendada
                   ? `sai ${agendada.toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
@@ -1378,9 +1396,37 @@ async function detalhe(userId, dotId) {
     .where({ dot_id: dotId })
     .orderBy('created_at', 'desc')
     .limit(50);
+
+  // Matérias que o dot rastreou e escreveu, com a arte e o status atuais —
+  // a tela mostra a matéria de verdade, não só uma linha de texto.
+  const ids = [...new Set(execucoes.filter((e) => e.acao === 'escreveu' && e.matter_id).map((e) => Number(e.matter_id)))];
+  const materias = ids.length
+    ? await db('ai_matters')
+      .whereIn('id', ids)
+      .where('user_id', userId)
+      .select('id', 'titulo', 'imagem_url', 'status', 'scheduled_at', 'fb_post_url')
+      .catch(() => [])
+    : [];
+  const porId = new Map(materias.map((m) => [Number(m.id), m]));
+
   return {
     ...(await listar(userId)).find((d) => d.id === Number(dotId)),
-    execucoes,
+    execucoes: execucoes.map((e) => {
+      const m = e.matter_id ? porId.get(Number(e.matter_id)) : null;
+      return m
+        ? {
+          ...e,
+          materia: {
+            id: m.id,
+            titulo: m.titulo,
+            imagem: m.imagem_url || null,
+            status: m.status,
+            agendada_para: m.scheduled_at,
+            link: m.fb_post_url || null,
+          },
+        }
+        : e;
+    }),
   };
 }
 

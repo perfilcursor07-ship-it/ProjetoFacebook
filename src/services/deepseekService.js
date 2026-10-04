@@ -326,6 +326,14 @@ async function chatCompletion(
       tarefa: tarefaResolvida,
     });
   }
+  return chatCompletionDeepseekDireto(messages, { temperature, json, thinking, model });
+}
+
+/** Chamada direta à API oficial do DeepSeek, sem passar por gateway nem Claude. */
+async function chatCompletionDeepseekDireto(
+  messages,
+  { temperature = 0.78, json = true, thinking = false, model = DEEPSEEK_MODEL } = {}
+) {
   assertDeepseek();
   const selectedModel = String(model || DEEPSEEK_MODEL);
   await require('./iaPausaService').garantirLiberada(selectedModel);
@@ -403,7 +411,7 @@ async function chatCompletionClaudeObrigatorio(messages, options = {}) {
 
   const err = new Error(
     erroTokenFree
-      ? `Claude não está disponível para gerar os títulos: ${erroTokenFree.message}`
+      ? `A IA dos títulos não respondeu (${require('./tokenFreeGatewayService').modeloAtual?.() || 'gateway'}): ${erroTokenFree.message}`
       : 'Claude não está configurado para gerar os títulos. Ative o Token-Free Gateway ou configure ANTHROPIC_API_KEY.'
   );
   err.status = erroTokenFree?.status || 503;
@@ -412,12 +420,20 @@ async function chatCompletionClaudeObrigatorio(messages, options = {}) {
 }
 
 /**
- * Títulos (sugerir e alternativos) saem do modelo fixado pelo administrador em
- * /claude. Sem modelo fixado, segue o modelo da requisição, como antes.
+ * Gera títulos com o modelo fixado em /claude → "Modelo por tarefa".
+ *
+ * DeepSeek fixado vai pela API oficial: o DeepSeek web do gateway exige um
+ * desafio anti-robô (PoW) que falha ("PoW challenge missing in response"), e
+ * a mensagem saía como se fosse o Claude indisponível. Os demais modelos
+ * (Claude, ChatGPT) seguem pelo gateway, como antes.
  */
-async function comModeloDeTitulos(chamada) {
+async function completarComModeloDeTitulos(messages, options = {}, { somenteClaude = false } = {}) {
   const fixo = await require('./iaModeloTarefaService').modeloDaTarefa('titulos').catch(() => null);
-  return require('./tokenFreeGatewayService').comModelo(fixo, chamada);
+  if (fixo && /deepseek/i.test(fixo) && env.deepseekApiKey) {
+    return chatCompletionDeepseekDireto(messages, options);
+  }
+  const completar = somenteClaude ? chatCompletionClaudeObrigatorio : chatCompletion;
+  return require('./tokenFreeGatewayService').comModelo(fixo, () => completar(messages, options));
 }
 
 /**
@@ -2237,13 +2253,12 @@ ${attempt > 1 ? '- Tentativa anterior falhou por repetir o título. Varie bastan
         : tomKey === 'polemico'
           ? 1.2
           : 1.05;
-    const completarTitulo = somenteClaude ? chatCompletionClaudeObrigatorio : chatCompletion;
-    const raw = await comModeloDeTitulos(() => completarTitulo(baseMessages(attempt), {
+    const raw = await completarComModeloDeTitulos(baseMessages(attempt), {
       temperature: Math.min(temp, 1.3),
       json: true,
       tarefa,
-      conversationName: 'ViralizeAI — título sugerido pelo Claude',
-    }));
+      conversationName: 'ViralizeAI — título sugerido',
+    }, { somenteClaude });
     const titulo = finalizarTituloComMarca(parseTituloFromAi(raw), marcaModeloArte);
     ultimoTitulo = titulo;
     if (!titulo) continue;
@@ -2411,13 +2426,12 @@ ${
     try {
       // Temperatura menor ajuda a variar a formulação sem trocar o assunto.
       // eslint-disable-next-line no-await-in-loop
-      const completarTitulos = somenteClaude ? chatCompletionClaudeObrigatorio : chatCompletion;
-      raw = await comModeloDeTitulos(() => completarTitulos(messages, {
+      raw = await completarComModeloDeTitulos(messages, {
         temperature: tentativa === 1 ? 0.72 : 0.6,
         json: true,
         tarefa,
-        conversationName: 'ViralizeAI — títulos sugeridos pelo Claude',
-      }));
+        conversationName: 'ViralizeAI — títulos sugeridos',
+      }, { somenteClaude });
     } catch (err) {
       // IA parada em /claude: quem pediu os títulos precisa ver o aviso.
       if (err.iaPausada) throw err;
@@ -4559,6 +4573,7 @@ module.exports = {
   chatCompletionStream,
   comProvedor,
   chatCompletionClaudeObrigatorio,
+  completarComModeloDeTitulos,
   traduzirPostsParaPortugues,
   sugerirConsultasImagem,
   identificarAutorImagem,
