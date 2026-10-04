@@ -212,6 +212,65 @@ function candidatoMaisPerto(candidatos, ancoras, distanciaMaxima = Infinity) {
   return distancia <= distanciaMaxima ? melhor : null;
 }
 
+/**
+ * A imagem é de perfil, capa ou avatar — e não do post?
+ *
+ * No CDN do Facebook, foto de perfil vem em `t39.30808-1` e foto de post em
+ * `t39.30808-6`. Miniatura de avatar também é pequena (s40x40, p50x50): nenhum
+ * post usa foto desse tamanho.
+ */
+function pareceFotoDePerfil(url) {
+  const texto = String(url || '');
+  if (/t39\.30808-1\//i.test(texto)) return true;
+
+  // Miniatura de avatar vem dimensionada (s40x40, p50x50). Nenhuma foto de
+  // post é publicada nesse tamanho.
+  const medida = texto.match(/\/[sp](\d{2,4})x(\d{2,4})\//i);
+  if (medida) {
+    const lado = Math.max(Number(medida[1]) || 0, Number(medida[2]) || 0);
+    if (lado && lado <= 200) return true;
+  }
+  return false;
+}
+
+/**
+ * Imagem do post, por ordem de confiança.
+ *
+ * Antes os três padrões caíam no mesmo balde e só a proximidade decidia. O
+ * terceiro (`"uri": ...scontent...`) casa com QUALQUER imagem do CDN — inclusive
+ * a foto de perfil da página, que fica no começo do HTML. Com janela de 50 KB
+ * ela vencia a foto real do post, e a matéria saía com o avatar da página.
+ *
+ * Agora o genérico só entra se os específicos não acharem nada, e com janela
+ * bem menor.
+ */
+function escolherImagemDoPost(html, ancoras) {
+  const texto = String(html || '');
+
+  const juntar = (re) => {
+    const achados = [];
+    for (const m of texto.matchAll(re)) {
+      const url = desescapar(m[1]);
+      if (/rsrc\.php|static\.xx\.fbcdn/i.test(url)) continue;
+      if (pareceFotoDePerfil(url)) continue;
+      achados.push({ valor: url, indice: m.index ?? 0 });
+    }
+    return achados;
+  };
+
+  // 1) Campos que só existem na foto do próprio post.
+  const especificos = [
+    ...juntar(/"photo_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/gi),
+    ...juntar(/"full_width_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/gi),
+  ];
+  const doPost = candidatoMaisPerto(especificos, ancoras, 50_000)?.valor;
+  if (doPost) return doPost;
+
+  // 2) Último recurso: qualquer imagem do CDN, mas só se estiver colada no post.
+  const genericos = juntar(/"uri"\s*:\s*"(https:[^"]*scontent[^"]+)"/gi);
+  return candidatoMaisPerto(genericos, ancoras, 8_000)?.valor || null;
+}
+
 /** Texto, imagem e data ancorados no identificador do post aberto. */
 function extrairDetalhesDoPost(html, urlAlvo = null) {
   const mensagensComIndice = coletarComIndice(
@@ -241,21 +300,7 @@ function extrairDetalhesDoPost(html, urlAlvo = null) {
     }
   }
 
-  const imagem = (() => {
-    const candidatos = [];
-    for (const re of [
-      /"photo_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/gi,
-      /"full_width_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/gi,
-      /"uri"\s*:\s*"(https:[^"]*scontent[^"]+)"/gi,
-    ]) {
-      for (const m of String(html || '').matchAll(re)) {
-        const url = desescapar(m[1]);
-        if (/rsrc\.php|static\.xx\.fbcdn/i.test(url)) continue;
-        candidatos.push({ valor: url, indice: m.index ?? 0 });
-      }
-    }
-    return candidatoMaisPerto(candidatos, ancoras, 50_000)?.valor || null;
-  })();
+  const imagem = escolherImagemDoPost(html, ancoras);
 
   const tempos = coletarComIndice(
     html,
@@ -712,4 +757,6 @@ module.exports = {
   extrairPostsDoMarkupPlugin,
   ehUrlDePostValida,
   variantesDaPagina,
+  escolherImagemDoPost,
+  pareceFotoDePerfil,
 };
