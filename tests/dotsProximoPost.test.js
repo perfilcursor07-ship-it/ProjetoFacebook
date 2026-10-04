@@ -76,3 +76,17 @@ test('logo do Google nunca vira capa do post', async () => {
     articleSource.extrairMetadadosImagemArtigo = original;
   }
 });
+
+test('link de site não é descartado por "pouco texto" (a IA lê a reportagem)', () => {
+  const { postTemMaterial } = require('../src/services/dotsService');
+  // Item do feed do g1 só com título: a IA lê a matéria inteira ao escrever.
+  assert.equal(postTemMaterial({ url: 'https://g1.globo.com/politica/noticia/x.ghtml', titulo: 'Relembre a trajetória de Lula', resumo: '' }), true);
+  // Post de rede social com legenda curta continua precisando de texto.
+  assert.equal(postTemMaterial({ url: 'https://www.facebook.com/pagina/posts/123', titulo: 'Lula', resumo: '' }), false);
+});
+
+test('painel tem "Escrever agora" por post e situações reais', () => {
+  assert.match(FONTE, /async function escreverPostAgora\(/);
+  assert.match(FONTE, /situacao = 'repetido'/);
+  assert.match(FONTE, /situacao = 'falhou'/);
+});

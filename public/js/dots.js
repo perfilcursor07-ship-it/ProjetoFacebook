@@ -319,31 +319,6 @@
       <div class="d-barra ${pct >= 100 ? 'd-barra--cheia' : ''} mt-2.5"><span style="width:${pct}%"></span></div>`;
   }
 
-  function agora(dot) {
-    if (!dot.trabalhando || !dot.atividade) return '';
-    return `
-      <div class="d-agora mt-3">
-        <span class="d-luz d-luz--pulsa mt-1.5"></span>
-        <span><span class="d-reticencias">${escapar(dot.atividade)}</span>
-          <span class="d-quando">${haQuanto(dot.atividade_em)}</span></span>
-      </div>`;
-  }
-
-  function agendado(dot) {
-    if (dot.estado !== 'ativo') {
-      return '<p class="d-linha"><span class="d-linha-marca">‖</span><span>Pausado. Retome para voltar a trabalhar.</span></p>';
-    }
-    if (dot.trabalhando) {
-      return `<p class="d-linha"><span class="d-linha-marca">○</span><span>A próxima volta é marcada quando esta terminar · a cada ${dot.intervalo_minutos} min</span></p>`;
-    }
-    const resta = Math.max(0, dot.limite_dia - dot.feitas_hoje);
-    return `<p class="d-linha"><span class="d-linha-marca">○</span><span>Próxima volta ${quando(dot.proxima_execucao_at)} · ${
-      resta
-        ? `faltam <b style="color:var(--d-texto-2)">${resta}</b> de ${dot.limite_dia} hoje`
-        : `limite de ${dot.limite_dia} atingido hoje`
-    }</span></p>`;
-  }
-
   /** Ícone e rótulo de cada passo da atividade, para ler de relance. */
   function passoDe(e) {
     const texto = String(e.detalhe || '');
@@ -367,86 +342,158 @@
 
   // ------------------------------------------------------- painel de gestão
 
+  /** Situação de cada post em linguagem simples. */
   const SITUACAO_POST = {
-    materia: { icone: '✅', texto: 'Virou matéria', classe: 'd-sit--ok' },
-    aguardando: { icone: '⏳', texto: 'Na fila do dot', classe: 'd-sit--fila' },
-    fora_do_assunto: { icone: '🚫', texto: 'Fora do assunto', classe: 'd-sit--fora' },
-    pouco_texto: { icone: '✂️', texto: 'Pouco texto', classe: 'd-sit--fora' },
-    descartado: { icone: '—', texto: 'Descartado', classe: 'd-sit--fora' },
+    proximo: { icone: '⏳', texto: 'Sai na próxima volta', classe: 'd-sit--fila', pode: true },
+    repetido: { icone: '♻️', texto: 'Parecido com matéria já publicada', classe: 'd-sit--fora', pode: true },
+    falhou: { icone: '⚠️', texto: 'A IA falhou', classe: 'd-sit--erro', pode: true },
+    materia: { icone: '✅', texto: 'Virou matéria', classe: 'd-sit--ok', pode: false },
+    fora_do_assunto: { icone: '🚫', texto: 'Fora do assunto', classe: 'd-sit--fora', pode: false },
+    pouco_texto: { icone: '✂️', texto: 'Sem texto suficiente', classe: 'd-sit--fora', pode: false },
+    descartado: { icone: '—', texto: 'Descartado', classe: 'd-sit--fora', pode: false },
   };
   const FILTROS_POST = [
     { id: 'todos', texto: 'Todos', ok: () => true },
-    { id: 'assunto', texto: 'No assunto', ok: (p) => p.situacao !== 'fora_do_assunto' },
+    { id: 'assunto', texto: 'Do assunto', ok: (p) => p.situacao !== 'fora_do_assunto' },
     { id: 'materia', texto: 'Viraram matéria', ok: (p) => p.situacao === 'materia' },
-    { id: 'fila', texto: 'Na fila', ok: (p) => p.situacao === 'aguardando' },
     { id: 'fora', texto: 'Fora do assunto', ok: (p) => p.situacao === 'fora_do_assunto' },
   ];
 
   function horaCurta(iso) {
     if (!iso) return '';
+    return new Date(iso).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }
+  function diaHora(iso) {
+    if (!iso) return '';
     return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   }
 
-  /** Números que o editor precisa para decidir: o dot está rendendo ou não? */
-  function numeros(dot) {
+  /** Miniatura do post; sem imagem, a inicial do veículo (nunca um traço). */
+  function miniatura(url, fonte, classe) {
+    if (url) return `<img src="${escapar(url)}" alt="" loading="lazy" class="${classe}" />`;
+    const letra = escapar(String(fonte || '?').replace(/^www\./i, '').trim().charAt(0).toUpperCase() || '?');
+    return `<span class="${classe} d-sem-imagem" aria-hidden="true">${letra}</span>`;
+  }
+
+  /** O que o dot faz, numa frase. */
+  function frase(dot) {
+    const plano = dot.plano || {};
+    const palavras = Array.isArray(plano.palavras) && plano.palavras.length
+      ? `procura <b>${escapar(plano.palavras.join(', '))}</b>`
+      : 'pega <b>qualquer assunto</b>';
+    const destino = dot.destino === 'agendar'
+      ? `agenda 1 a cada ${dot.agendar_minutos || dot.intervalo_minutos} min`
+      : dot.destino === 'publicar' ? 'publica na hora' : 'deixa em rascunho';
+    const pagina = dot.pagina ? ` em <b>${escapar(dot.pagina)}</b>` : ' <span class="d-aviso-mini">(sem página definida)</span>';
+    return `Lê ${dot.fontes} ${dot.fontes === 1 ? 'página' : 'páginas'}, ${palavras} e ${destino}${pagina}.`;
+  }
+
+  /** Aviso principal: o que está acontecendo e o que fazer. */
+  function banner(dot) {
     const d = detalhes.get(String(dot.id));
-    const r = d?.resumo;
-    const bloco = (valor, rotulo, dica, classe = '') => `
-      <div class="d-kpi ${classe}" title="${escapar(dica)}">
-        <span class="d-kpi-valor">${r ? valor : '—'}</span>
-        <span class="d-kpi-rotulo">${rotulo}</span>
-      </div>`;
+    const r = d?.resumo || {};
+    if (dot.trabalhando) {
+      return `<div class="d-banner d-banner--trabalhando"><span class="d-luz d-luz--pulsa"></span>
+        <span><b>Trabalhando agora</b> — ${escapar(dot.atividade || 'começando…')}</span></div>`;
+    }
+    if (dot.estado !== 'ativo') {
+      return '<div class="d-banner d-banner--pausado">⏸️ <span><b>Pausado.</b> Clique em “Retomar” para ele voltar a trabalhar.</span></div>';
+    }
+    if (dot.ultimo_erro) {
+      return `<div class="d-banner d-banner--erro">⚠️ <span><b>Precisa de atenção:</b> ${escapar(dot.ultimo_erro)}</span></div>`;
+    }
+    const resta = Math.max(0, dot.limite_dia - dot.feitas_hoje);
+    const quandoVolta = dot.proxima_execucao_at ? `às ${horaCurta(dot.proxima_execucao_at)}` : 'em breve';
+    if (!resta) {
+      return `<div class="d-banner">✋ <span>Limite de <b>${dot.limite_dia}</b> matérias hoje atingido. Volta amanhã.</span></div>`;
+    }
+    if (r.proximos) {
+      return `<div class="d-banner d-banner--ok">⏳ <span><b>${r.proximos} ${r.proximos === 1 ? 'post do assunto pronto' : 'posts do assunto prontos'}</b> — sai na próxima volta (${quandoVolta}). Quer agora? Use “Escrever agora” em Próximas.</span></div>`;
+    }
+    return `<div class="d-banner">🔎 <span><b>Procurando.</b> Nenhum post novo do assunto ainda — relê as páginas ${quandoVolta}.</span></div>`;
+  }
+
+  /** Funil: do que foi lido até o que saiu. */
+  function funil(dot) {
+    const r = detalhes.get(String(dot.id))?.resumo;
+    const etapa = (valor, rotulo, classe = '') =>
+      `<div class="d-etapa ${classe}"><b>${r ? valor : '—'}</b><span>${rotulo}</span></div>`;
+    const seta = '<span class="d-seta" aria-hidden="true">›</span>';
     return `
-      <div class="d-kpis mt-3">
-        ${bloco(r?.lidos, 'Posts lidos', 'Posts que o dot leu das páginas nos últimos 7 dias')}
-        ${bloco(r?.no_assunto, 'No assunto', 'Posts que citam as palavras-chave do comando')}
-        ${bloco(r?.escritas, 'Matérias', 'Matérias que este dot escreveu')}
-        ${bloco(r?.agendadas, 'Agendadas', 'Matérias esperando o horário para sair', r?.agendadas ? 'd-kpi--alerta' : '')}
-        ${bloco(r?.publicadas, 'Publicadas', 'Matérias que já saíram', r?.publicadas ? 'd-kpi--ok' : '')}
-        ${bloco(r?.problemas_24h, 'Problemas 24h', 'Erros nas últimas 24 horas', r?.problemas_24h ? 'd-kpi--erro' : '')}
+      <div class="d-funil mt-3">
+        ${etapa(r?.lidos, 'lidos')}${seta}
+        ${etapa(r?.no_assunto, 'do assunto')}${seta}
+        ${etapa(r?.proximos, 'prontos', r?.proximos ? 'd-etapa--alerta' : '')}${seta}
+        ${etapa(r?.escritas, 'matérias')}${seta}
+        ${etapa(r?.publicadas, 'publicadas', r?.publicadas ? 'd-etapa--ok' : '')}
+      </div>
+      ${r?.agendadas || r?.problemas_24h ? `<p class="d-funil-extra">${r.agendadas ? `📅 ${r.agendadas} agendada(s)` : ''}${r.agendadas && r.problemas_24h ? ' · ' : ''}${r.problemas_24h ? `<span class="d-txt-erro">⚠️ ${r.problemas_24h} problema(s) nas últimas 24 h</span>` : ''}</p>` : ''}`;
+  }
+
+  /** Um post como linha com imagem, situação e ação. */
+  function linhaPost(p) {
+    const sit = SITUACAO_POST[p.situacao] || SITUACAO_POST.descartado;
+    const detalheSit = p.situacao === 'falhou' && p.volta_em
+      ? `${sit.texto} · tenta de novo às ${horaCurta(p.volta_em)}`
+      : sit.texto;
+    const abrir = p.matter_id ? `/materias-ia/${p.matter_id}` : p.url;
+    const acao = p.matter_id
+      ? `<a class="d-btn d-btn--neutro" href="/materias-ia/${p.matter_id}" target="_blank" rel="noopener">Ver matéria</a>`
+      : sit.pode
+        ? `<button type="button" class="d-btn d-btn--principal" data-acao="escrever-post" data-post="${p.id}">✍️ Escrever agora</button>`
+        : '';
+    return `
+      <div class="d-post">
+        <a href="${escapar(abrir)}" target="_blank" rel="noopener" class="shrink-0">${miniatura(p.thumbnail, p.fonte, 'd-post-capa')}</a>
+        <div class="d-post-corpo">
+          <a href="${escapar(abrir)}" target="_blank" rel="noopener" class="d-post-titulo">${escapar(p.titulo || '(sem título)')}</a>
+          <span class="d-post-meta">${escapar(p.fonte || '')} · ${haQuanto(p.lido_em)}${p.palavra ? ` · <span class="d-txt-acento">🔎 ${escapar(p.palavra)}</span>` : ''}</span>
+          <span class="d-sit ${sit.classe}">${sit.icone} ${escapar(detalheSit)}</span>
+        </div>
+        <div class="d-post-acao">${acao}</div>
       </div>`;
   }
 
+  /** Próximas: só o que interessa — posts do assunto ainda sem matéria. */
+  function abaProximas(d) {
+    const lista = (d?.posts || []).filter((p) => ['proximo', 'repetido', 'falhou'].includes(p.situacao));
+    if (!lista.length) {
+      const doAssunto = (d?.posts || []).filter((p) => p.situacao !== 'fora_do_assunto').length;
+      return `<div class="d-vazio-aba">🔎 Nenhum post do assunto esperando.${doAssunto ? ' Os do assunto já viraram matéria — veja em “Matérias”.' : ' Assim que as páginas publicarem algo com as palavras-chave, aparece aqui.'}</div>`;
+    }
+    const ordem = { proximo: 0, falhou: 1, repetido: 2 };
+    return `<div class="d-posts">${lista.sort((a, b) => ordem[a.situacao] - ordem[b.situacao]).map(linhaPost).join('')}</div>`;
+  }
+
+  /** Matérias: cartões com a arte grande e a situação por cima. */
   function abaMaterias(d) {
     const materias = d?.materias || [];
     if (!materias.length) {
-      return '<p class="d-vazio-aba">Nenhuma matéria escrita ainda. Quando um post do assunto aparecer, ela surge aqui.</p>';
+      return '<div class="d-vazio-aba">📰 Nenhuma matéria ainda. Quando um post do assunto virar matéria, a arte aparece aqui.</div>';
     }
-    const grupo = (titulo, lista, linhaStatus) => {
-      if (!lista.length) return '';
-      return `
-        <div>
-          <p class="d-grupo">${titulo} <span>${lista.length}</span></p>
-          <div class="d-mats mt-1.5">
-            ${lista.map((m) => `
-              <a class="d-mat" href="/materias-ia/${m.id}" target="_blank" rel="noopener">
-                ${m.imagem ? `<img src="${escapar(m.imagem)}" alt="" loading="lazy" class="d-mat-capa" />` : '<span class="d-mat-capa d-mat-capa--vazia">sem capa</span>'}
-                <span class="d-mat-corpo">
-                  <span class="d-mat-titulo">${escapar(m.titulo || 'Matéria')}</span>
-                  <span class="d-mat-chips">${linhaStatus(m)}</span>
-                </span>
-              </a>`).join('')}
-          </div>
-        </div>`;
+    const etiqueta = (m) => {
+      if (m.status === 'publicado') return '<span class="d-selo d-selo--ok">✅ Publicada</span>';
+      if (m.status === 'agendado') return `<span class="d-selo d-selo--alerta">📅 ${diaHora(m.agendada_para)}</span>`;
+      if (m.status === 'erro') return '<span class="d-selo d-selo--erro">⚠️ Erro ao publicar</span>';
+      return '<span class="d-selo">📝 Rascunho</span>';
     };
-    const agendadas = materias
-      .filter((m) => m.status === 'agendado')
-      .sort((a, b) => new Date(a.agendada_para || 0) - new Date(b.agendada_para || 0));
-    const publicadas = materias.filter((m) => m.status === 'publicado');
-    const outras = materias.filter((m) => !['agendado', 'publicado'].includes(m.status));
-    return `<div class="space-y-3">
-      ${grupo('📅 Agendadas', agendadas, (m) => `<span class="d-chip">Sai ${horaCurta(m.agendada_para)}</span>`)}
-      ${grupo('✅ Publicadas', publicadas, (m) => (m.link
-        ? `<span class="d-chip d-chip--palavra">Publicada</span><span class="d-chip" data-link="${escapar(m.link)}">ver post ↗</span>`
-        : '<span class="d-chip d-chip--palavra">Publicada</span>'))}
-      ${grupo('📝 Rascunhos e outras', outras, (m) => `<span class="d-chip">${m.status === 'erro' ? '⚠️ erro ao publicar' : 'rascunho — revisar'}</span>`)}
-    </div>`;
+    const ordem = { agendado: 0, publicado: 1 };
+    const lista = [...materias].sort((a, b) => (ordem[a.status] ?? 2) - (ordem[b.status] ?? 2));
+    return `<div class="d-grade">${lista.map((m) => `
+      <a class="d-arte" href="/materias-ia/${m.id}" target="_blank" rel="noopener">
+        <span class="d-arte-img">
+          ${m.imagem ? `<img src="${escapar(m.imagem)}" alt="" loading="lazy" />` : '<span class="d-sem-imagem">📰</span>'}
+          ${etiqueta(m)}
+        </span>
+        <span class="d-arte-titulo">${escapar(m.titulo || 'Matéria')}</span>
+      </a>`).join('')}</div>`;
   }
 
-  function abaPosts(dotId, d) {
+  /** Todos os posts lidos, com filtro (inclui os fora do assunto). */
+  function abaTodos(dotId, d) {
     const posts = d?.posts || [];
     if (!posts.length) {
-      return '<p class="d-vazio-aba">Nenhum post lido nos últimos 7 dias. Confira se as páginas do comando estão certas.</p>';
+      return '<div class="d-vazio-aba">Nenhum post lido nos últimos 7 dias. Confira se o link da página no comando está certo.</div>';
     }
     const filtroId = filtrosPosts.get(String(dotId)) || 'todos';
     const filtro = FILTROS_POST.find((f) => f.id === filtroId) || FILTROS_POST[0];
@@ -455,31 +502,15 @@
       const n = posts.filter(f.ok).length;
       return `<button type="button" data-acao="filtro-posts" data-filtro="${f.id}" class="d-filtro ${f.id === filtro.id ? 'is-on' : ''}">${f.texto} <span>${n}</span></button>`;
     }).join('');
-    const linhas = visiveis.slice(0, 30).map((p) => {
-      const sit = SITUACAO_POST[p.situacao] || SITUACAO_POST.descartado;
-      const destino = p.matter_id ? `/materias-ia/${p.matter_id}` : p.url;
-      return `
-        <a class="d-post" href="${escapar(destino)}" target="_blank" rel="noopener">
-          ${p.thumbnail ? `<img src="${escapar(p.thumbnail)}" alt="" loading="lazy" class="d-post-capa" />` : '<span class="d-post-capa d-mat-capa--vazia">—</span>'}
-          <span class="d-post-corpo">
-            <span class="d-post-titulo">${escapar(p.titulo || '(sem texto)')}</span>
-            <span class="d-post-meta">${escapar(p.fonte || '')} · ${haQuanto(p.lido_em)}</span>
-          </span>
-          <span class="d-post-lado">
-            <span class="d-sit ${sit.classe}">${sit.icone} ${sit.texto}</span>
-            ${p.palavra ? `<span class="d-chip d-chip--palavra">🔎 ${escapar(p.palavra)}</span>` : ''}
-          </span>
-        </a>`;
-    }).join('');
     return `
       <div class="d-filtros">${botoes}</div>
-      <div class="d-posts mt-2">${linhas || '<p class="d-vazio-aba">Nada neste filtro.</p>'}</div>`;
+      <div class="d-posts mt-2">${visiveis.slice(0, 40).map(linhaPost).join('') || '<div class="d-vazio-aba">Nada neste filtro.</div>'}</div>`;
   }
 
-  /** Histórico curto: junta linhas repetidas seguidas ("× 3") para não poluir. */
+  /** Histórico curto: junta linhas repetidas seguidas ("× 3"). */
   function abaHistorico(dotId) {
     const linhas = logs.get(String(dotId)) || [];
-    if (!linhas.length) return '<p class="d-vazio-aba">Ainda não há histórico.</p>';
+    if (!linhas.length) return '<div class="d-vazio-aba">Ainda não há histórico.</div>';
     const agrupadas = [];
     for (const e of linhas.slice(0, 40)) {
       const ultima = agrupadas[agrupadas.length - 1];
@@ -506,22 +537,26 @@
   function painelAbas(dot) {
     const id = String(dot.id);
     const d = detalhes.get(id);
-    const aba = abas.get(id) || 'materias';
-    const total = (lista) => (Array.isArray(lista) ? lista.length : 0);
+    const aba = abas.get(id) || 'proximas';
+    const qtd = (lista) => (d ? lista.length : null);
+    const posts = d?.posts || [];
     const botao = (chave, texto, n) =>
-      `<button type="button" role="tab" data-acao="aba" data-aba="${chave}" aria-selected="${aba === chave}" class="d-aba ${aba === chave ? 'is-on' : ''}">${texto}${n !== null ? ` <span>${n}</span>` : ''}</button>`;
+      `<button type="button" role="tab" data-acao="aba" data-aba="${chave}" aria-selected="${aba === chave}" class="d-aba ${aba === chave ? 'is-on' : ''}">${texto}${n !== null && n !== undefined ? ` <span>${n}</span>` : ''}</button>`;
     const conteudo = !d
-      ? '<p class="d-vazio-aba">Carregando…</p>'
-      : aba === 'posts'
-        ? abaPosts(id, d)
-        : aba === 'historico'
-          ? abaHistorico(id)
-          : abaMaterias(d);
+      ? '<div class="d-vazio-aba">Carregando…</div>'
+      : aba === 'materias'
+        ? abaMaterias(d)
+        : aba === 'todos'
+          ? abaTodos(id, d)
+          : aba === 'historico'
+            ? abaHistorico(id)
+            : abaProximas(d);
     return `
       <div class="mt-4">
         <div class="d-abas" role="tablist">
-          ${botao('materias', '📰 Matérias', d ? total(d.materias) : null)}
-          ${botao('posts', '🔎 Posts encontrados', d ? total(d.posts) : null)}
+          ${botao('proximas', '⏳ Próximas', qtd(posts.filter((p) => ['proximo', 'repetido', 'falhou'].includes(p.situacao))))}
+          ${botao('materias', '📰 Matérias', qtd(d?.materias || []))}
+          ${botao('todos', '🗂️ Todos os posts', qtd(posts))}
           ${botao('historico', '🧭 Histórico', null)}
         </div>
         <div class="d-aba-corpo mt-3">${conteudo}</div>
@@ -560,32 +595,35 @@
   }
 
   function cartao(dot) {
+    const id = String(dot.id);
     const ativo = dot.estado === 'ativo';
     const classe = dot.trabalhando ? 'd-card--trabalhando' : dot.ultimo_erro ? 'd-card--erro' : '';
     return `
-      <article class="d-card ${classe} p-4 sm:p-5" data-dot="${dot.id}">
-        <div class="flex flex-wrap items-start justify-between gap-3">
+      <article class="d-card d-dot ${classe}" data-dot="${dot.id}">
+        <header class="d-dot-topo">
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-2">
               <input class="d-nome truncate" data-nome value="${escapar(dot.nome)}" maxlength="160" aria-label="Nome do dot" />
               ${pill(dot)}
             </div>
-            ${stats(dot)}
+            <p class="d-frase">${frase(dot)}</p>
           </div>
-          <div class="flex items-center gap-1">
-            <button type="button" data-acao="rodar" class="d-btn d-btn--neutro">Trabalhar agora</button>
-            <button type="button" data-acao="${ativo ? 'pausar' : 'retomar'}" class="d-btn d-btn--fantasma">${ativo ? 'Pausar' : 'Retomar'}</button>
-            <button type="button" data-acao="excluir" class="d-btn d-btn--fantasma d-btn--perigo" title="Excluir">✕</button>
+          <div class="d-dot-acoes">
+            <button type="button" data-acao="rodar" class="d-btn d-btn--principal" ${dot.trabalhando ? 'disabled' : ''}>▶ Trabalhar agora</button>
+            <button type="button" data-acao="${ativo ? 'pausar' : 'retomar'}" class="d-btn d-btn--neutro">${ativo ? '⏸ Pausar' : '▶ Retomar'}</button>
+            <button type="button" data-acao="excluir" class="d-btn d-btn--fantasma d-btn--perigo" title="Excluir dot" aria-label="Excluir dot">✕</button>
           </div>
-        </div>
+        </header>
 
-        ${comando(dot)}
-        ${agora(dot)}
-        ${dot.ultimo_erro ? `<p class="d-linha d-linha--erro mt-2"><span class="d-linha-marca">!</span><span>${escapar(dot.ultimo_erro)}</span></p>` : ''}
-
-        ${numeros(dot)}
-        <div class="d-proxima mt-2">${agendado(dot)}</div>
+        ${banner(dot)}
+        ${funil(dot)}
         ${painelAbas(dot)}
+
+        <details class="d-config mt-4" ${editando.has(id) ? 'open' : ''}>
+          <summary>⚙️ Configuração e comando</summary>
+          ${stats(dot)}
+          ${comando(dot)}
+        </details>
       </article>`;
   }
 
@@ -765,6 +803,21 @@
     if (!id) return;
     const acao = botao.dataset.acao;
 
+    if (acao === 'escrever-post') {
+      botao.disabled = true;
+      botao.textContent = 'Escrevendo…';
+      try {
+        await api(`/api/dots/${id}/posts/${botao.dataset.post}/escrever`, { method: 'POST' });
+        avisar('Escrevendo este post agora. A matéria aparece em “Matérias” assim que ficar pronta.');
+        detalhes.delete(String(id));
+        await carregar();
+      } catch (err) {
+        avisar(err.message, true);
+        botao.disabled = false;
+        botao.textContent = '✍️ Escrever agora';
+      }
+      return;
+    }
     if (acao === 'aba') {
       abas.set(String(id), botao.dataset.aba);
       redesenharCartao(id);

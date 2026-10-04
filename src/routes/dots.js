@@ -75,6 +75,10 @@ router.post('/:id/retomar', (req, res, next) =>
 router.post('/:id/rodar', (req, res, next) =>
   responder(res, next, dotsService.rodarAgora(req.session.userId, Number(req.params.id))));
 
+/** Escreve na hora um post específico do painel. */
+router.post('/:id/posts/:postId/escrever', (req, res, next) =>
+  responder(res, next, dotsService.escreverPostAgora(req.session.userId, Number(req.params.id), Number(req.params.postId))));
+
 router.delete('/:id', (req, res, next) =>
   responder(res, next, dotsService.excluir(req.session.userId, Number(req.params.id))));
 

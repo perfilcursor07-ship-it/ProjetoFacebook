@@ -809,3 +809,168 @@
   .d-post { flex-wrap: wrap; }
   .d-post-lado { flex-direction: row; align-items: center; width: 100%; justify-content: flex-start; }
 }
+
+/* ------------------------------------------------- cartão do dot (v3) */
+
+.d-dot { padding: 1.1rem 1.15rem; }
+@media (min-width: 640px) { .d-dot { padding: 1.35rem 1.5rem; } }
+.d-dot-topo { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .75rem 1rem; }
+.d-dot-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+.d-frase { margin-top: .35rem; font-size: .82rem; line-height: 1.45; color: var(--d-texto-2); }
+.d-frase b { color: var(--d-texto); font-weight: 600; }
+.d-aviso-mini { color: var(--d-alerta); }
+
+.d-banner {
+  margin-top: .9rem;
+  display: flex;
+  align-items: flex-start;
+  gap: .55rem;
+  border: 1px solid var(--d-border);
+  border-radius: var(--d-raio);
+  background: var(--d-surface-2);
+  padding: .65rem .8rem;
+  font-size: .8rem;
+  line-height: 1.45;
+  color: var(--d-texto-2);
+}
+.d-banner b { color: var(--d-texto); }
+.d-banner .d-luz { margin-top: .4rem; flex-shrink: 0; }
+.d-banner--ok { border-color: var(--d-acento-traco); background: var(--d-acento-fundo); }
+.d-banner--trabalhando { border-color: var(--d-acento-traco); background: linear-gradient(90deg, var(--d-acento-fundo), var(--d-surface-2)); }
+.d-banner--erro { border-color: var(--d-erro); background: var(--d-erro-fundo); }
+.d-banner--pausado { border-style: dashed; }
+
+.d-funil {
+  display: flex;
+  align-items: stretch;
+  gap: .25rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.d-etapa {
+  flex: 1 0 auto;
+  min-width: 4.4rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1px solid var(--d-border);
+  border-radius: var(--d-raio);
+  background: var(--d-surface-2);
+  padding: .5rem .4rem;
+}
+.d-etapa b { font-size: 1.25rem; line-height: 1.1; color: var(--d-texto); font-variant-numeric: tabular-nums; }
+.d-etapa span { font-size: .64rem; text-transform: uppercase; letter-spacing: .05em; color: var(--d-texto-3); white-space: nowrap; }
+.d-etapa--alerta { border-color: rgba(251, 191, 36, .35); }
+.d-etapa--alerta b { color: var(--d-alerta); }
+.d-etapa--ok { border-color: var(--d-acento-traco); background: var(--d-acento-fundo); }
+.d-etapa--ok b { color: var(--d-acento-forte); }
+.d-seta { align-self: center; color: var(--d-texto-4); font-size: 1rem; }
+.d-funil-extra { margin-top: .45rem; font-size: .72rem; color: var(--d-texto-2); }
+.d-txt-erro { color: var(--d-erro); }
+.d-txt-acento { color: var(--d-acento-forte); }
+
+.d-sem-imagem {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--d-surface-hover), var(--d-bg));
+  color: var(--d-texto-3);
+  font-weight: 700;
+}
+
+.d-post { align-items: flex-start; padding: .55rem; gap: .75rem; }
+.d-post-capa { flex: 0 0 72px; width: 72px; height: 54px; border-radius: .45rem; object-fit: cover; }
+.d-post-titulo { font-size: .8rem; font-weight: 600; }
+.d-post-titulo:hover { color: var(--d-acento-forte); }
+.d-post-corpo { gap: .25rem; }
+.d-post-corpo .d-sit { align-self: flex-start; }
+.d-post-acao { align-self: center; flex-shrink: 0; }
+.d-sit--erro { color: var(--d-erro); background: var(--d-erro-fundo); }
+@media (max-width: 520px) {
+  .d-post { flex-wrap: wrap; }
+  .d-post-acao { width: 100%; }
+  .d-post-acao .d-btn { width: 100%; justify-content: center; }
+}
+
+.d-grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: .7rem;
+}
+.d-arte {
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+  border-radius: var(--d-raio);
+  transition: transform var(--d-transicao);
+}
+.d-arte:hover { transform: translateY(-2px); }
+.d-arte-img {
+  position: relative;
+  display: block;
+  aspect-ratio: 4 / 5;
+  border: 1px solid var(--d-border);
+  border-radius: var(--d-raio);
+  overflow: hidden;
+  background: var(--d-surface-2);
+}
+.d-arte-img img, .d-arte-img .d-sem-imagem { width: 100%; height: 100%; object-fit: cover; font-size: 1.6rem; }
+.d-arte:hover .d-arte-img { border-color: var(--d-acento-traco); }
+.d-selo {
+  position: absolute;
+  left: .4rem;
+  bottom: .4rem;
+  border-radius: 999px;
+  padding: .15rem .5rem;
+  font-size: .66rem;
+  font-weight: 600;
+  color: var(--d-texto);
+  background: rgba(6, 9, 16, .82);
+  backdrop-filter: blur(4px);
+}
+.d-selo--ok { color: var(--d-acento-forte); }
+.d-selo--alerta { color: var(--d-alerta); }
+.d-selo--erro { color: var(--d-erro); }
+.d-arte-titulo {
+  font-size: .76rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--d-texto);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.d-vazio-aba {
+  border: 1px dashed var(--d-border-forte);
+  border-radius: var(--d-raio);
+  padding: 1rem;
+  text-align: center;
+  font-size: .78rem;
+  color: var(--d-texto-3);
+}
+
+.d-config {
+  border-top: 1px solid var(--d-border);
+  padding-top: .8rem;
+}
+.d-config > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: .76rem;
+  font-weight: 600;
+  color: var(--d-texto-3);
+}
+.d-config > summary::-webkit-details-marker { display: none; }
+.d-config > summary:hover { color: var(--d-texto-2); }
+.d-config[open] > summary { color: var(--d-texto-2); margin-bottom: .4rem; }
+
+/* Coluna da grade pode encolher: sem isto o funil e as abas empurravam o
+   cartão para fora da tela no celular. */
+.d-layout > * { min-width: 0; }
+.d-dot, .d-funil, .d-abas, .d-aba-corpo { min-width: 0; max-width: 100%; }
+@media (max-width: 520px) {
+  .d-dot-acoes { width: 100%; }
+  .d-dot-acoes .d-btn--principal { flex: 1; justify-content: center; }
+}

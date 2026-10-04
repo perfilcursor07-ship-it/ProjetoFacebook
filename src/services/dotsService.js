@@ -628,10 +628,10 @@ async function candidatosDoDot(dot) {
       'f.nome as fonte_nome'
     );
 
-  const { conteudoSuficiente } = require('./furosSociais');
+  // Texto mínimo só vale para post de rede social; link de site a IA lê inteiro.
   const uteis = linhas
     .filter((l) => /^https?:\/\//i.test(String(l.url || '')))
-    .filter(conteudoSuficiente);
+    .filter(postTemMaterial);
 
   // O editor pode pedir um recorte ("só o que falar de Flávio Bolsonaro").
   // Isso vinha sendo guardado no plano e ignorado: o dot escrevia de tudo.
@@ -906,20 +906,28 @@ async function capaDoPost(post) {
   return imagem;
 }
 
-const ultimaBuscaDeCapas = new Map();
+// Uma busca por dot de cada vez; post já tentado não é tentado de novo.
+const capasEmAndamento = new Set();
+const capasTentadas = new Set();
 
 /**
  * Completa em segundo plano as capas dos posts recentes do dot que ficaram
- * sem imagem — primeiro os do assunto pedido. No máximo uma rodada a cada
- * 10 min por dot, 3 ao mesmo tempo, para não sobrecarregar os sites.
+ * sem imagem — primeiro os do assunto pedido. 3 ao mesmo tempo, para não
+ * sobrecarregar os sites; cada post é tentado uma vez por processo.
  */
 async function completarCapasDosPosts(dot, { limite = 12 } = {}) {
-  const ultima = ultimaBuscaDeCapas.get(dot.id) || 0;
-  if (Date.now() - ultima < 10 * 60 * 1000) return 0;
-  ultimaBuscaDeCapas.set(dot.id, Date.now());
-
+  if (capasEmAndamento.has(dot.id)) return 0;
   const fonteIds = parseJson(dot.fonte_ids, []);
   if (!fonteIds.length) return 0;
+  capasEmAndamento.add(dot.id);
+  try {
+    return await completarCapasAgora(dot, fonteIds, limite);
+  } finally {
+    capasEmAndamento.delete(dot.id);
+  }
+}
+
+async function completarCapasAgora(dot, fonteIds, limite) {
   const plano = parseJson(dot.plano, {});
   const linhas = await db('biblioteca_posts')
     .where('user_id', dot.user_id)
@@ -931,6 +939,7 @@ async function completarCapasDosPosts(dot, { limite = 12 } = {}) {
     .select('id', 'url', 'titulo', 'resumo', 'thumbnail')
     .catch(() => []);
   const fila = linhas
+    .filter((p) => !capasTentadas.has(p.id))
     .map((p) => ({ p, noAssunto: palavraQueCasou(p, plano.palavras) ? 1 : 0 }))
     .sort((a, b) => b.noAssunto - a.noAssunto)
     .slice(0, limite)
@@ -942,11 +951,32 @@ async function completarCapasDosPosts(dot, { limite = 12 } = {}) {
     while (proximo < fila.length) {
       const post = fila[proximo];
       proximo += 1;
+      capasTentadas.add(post.id);
+      if (capasTentadas.size > 5000) capasTentadas.delete(capasTentadas.values().next().value);
       if (await capaDoPost(post).catch(() => null)) feitas += 1;
     }
   }));
   if (feitas) console.info(`[dots #${dot.id}] ${feitas} capa(s) de reportagem completada(s)`);
   return feitas;
+}
+
+const HOST_SOCIAL = /(?:^|\.)(?:facebook\.com|fb\.watch|instagram\.com|tiktok\.com|x\.com|twitter\.com|youtube\.com|youtu\.be|threads\.net)$/i;
+
+/**
+ * O post tem material para virar matéria? A regra de texto mínimo é para post
+ * de rede social (a legenda é tudo o que existe). Link de site de notícia vem
+ * do feed só com título/resumo, mas a IA lê a reportagem inteira ao escrever —
+ * descartar por "pouco texto" jogava fora matéria boa do g1, BBC etc.
+ */
+function postTemMaterial(post) {
+  let host = '';
+  try {
+    host = new URL(String(post?.url || '')).hostname.replace(/^www\./i, '');
+  } catch {
+    host = '';
+  }
+  if (host && !HOST_SOCIAL.test(host) && !/news\.google\.com$/i.test(host)) return true;
+  return require('./furosSociais').conteudoSuficiente(post);
 }
 
 /** Posts que falharam neste dot nas últimas horas (não voltam já na próxima volta). */
@@ -1230,6 +1260,75 @@ async function reservarCiclo(dotId) {
   return Number(linhas) > 0;
 }
 
+/**
+ * Escreve UM post: matéria, capa, agenda/publicação e registro. Usada pela
+ * volta automática e pelo botão "Escrever agora" do painel. Nunca lança:
+ * falha tira o post da fila e devolve false.
+ */
+async function processarPost(dot, post, { indice = 1, total = 1, plano = parseJson(dot.plano, {}) } = {}) {
+  await marcarAtividade(
+    dot.id,
+    `Escrevendo ${indice}/${total}: ${corta(post.titulo || post.fonte_nome, 120) || post.url}`
+  );
+  try {
+    const matterId = await escrever(dot, post);
+    if (matterId) {
+      await db('biblioteca_posts').where({ id: post.id }).update({ matter_id: matterId });
+
+      await marcarAtividade(dot.id, `Resolvendo a imagem de ${indice}/${total}…`);
+      const capa = await resolverCapa(dot, post, matterId);
+
+      // 'publicar' só escrevia "na fila" no log e não enfileirava nada: a
+      // matéria ficava parada como rascunho enquanto a tela dizia que saiu.
+      let agendada = null;
+      let publicada = false;
+      if (dot.destino === 'agendar') {
+        agendada = await agendarSaida(dot, matterId, indice - 1);
+      } else if (dot.destino === 'publicar') {
+        publicada = Boolean(await agendarSaida(dot, matterId, indice - 1, { imediato: true }));
+      }
+
+      const casou = palavraQueCasou(post, plano.palavras);
+      await registrarLog(dot, 'escreveu', {
+        detalhe: corta(
+          [
+            post.titulo || post.fonte_nome || 'matéria',
+            ...(casou ? [`palavra-chave: ${casou}`] : []),
+            capa === 'ia' ? 'imagem IA' : capa === 'sem_imagem' ? 'sem imagem' : 'foto original',
+            agendada
+              ? `sai ${agendada.toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+              : dot.destino === 'publicar'
+                ? publicada
+                  ? 'na fila para publicar'
+                  : 'não entrou na fila — ficou como rascunho'
+                : 'rascunho',
+          ].join(' · '),
+          600
+        ),
+        url: post.url,
+        matterId,
+      });
+      return true;
+    } else {
+      const semMateria = Object.assign(new Error('a IA não gerou matéria'), { code: 'SEM_MATERIA' });
+      await tirarPostDaFila(dot, post, semMateria);
+      await registrarLog(dot, 'ignorou', { detalhe: 'a IA não gerou matéria — post tirado da fila, vou para o próximo', url: post.url });
+    }
+  } catch (err) {
+    // Sem isto o post seguia como "novo" e era escolhido de novo na volta
+    // seguinte (ou no "Trabalhar agora"), falhando sempre no mesmo lugar.
+    const definitivo = await tirarPostDaFila(dot, post, err);
+    await registrarLog(dot, 'erro', {
+      detalhe: corta(
+        `${err.message} — ${definitivo ? 'post descartado' : 'post fica de fora por 2 h'}, vou para o próximo`,
+        600
+      ),
+      url: post.url,
+    });
+  }
+  return false;
+}
+
 async function rodarCiclo(dot) {
   // Duas voltas no mesmo dot escrevem a mesma matéria duas vezes.
   if (!(await reservarCiclo(dot.id))) {
@@ -1367,68 +1466,8 @@ async function rodarCiclo(dot) {
     let indice = 0;
     for (const post of paraEscrever) {
       indice += 1;
-      await marcarAtividade(
-        dot.id,
-        `Escrevendo ${indice}/${paraEscrever.length}: ${corta(post.titulo || post.fonte_nome, 120) || post.url}`
-      );
-      try {
-        const matterId = await escrever(dot, post);
-        if (matterId) {
-          escritas += 1;
-          await db('biblioteca_posts').where({ id: post.id }).update({ matter_id: matterId });
-
-          await marcarAtividade(dot.id, `Resolvendo a imagem de ${indice}/${paraEscrever.length}…`);
-          const capa = await resolverCapa(dot, post, matterId);
-
-          // 'publicar' só escrevia "na fila" no log e não enfileirava nada: a
-          // matéria ficava parada como rascunho enquanto a tela dizia que saiu.
-          let agendada = null;
-          let publicada = false;
-          if (dot.destino === 'agendar') {
-            agendada = await agendarSaida(dot, matterId, indice - 1);
-          } else if (dot.destino === 'publicar') {
-            publicada = Boolean(await agendarSaida(dot, matterId, indice - 1, { imediato: true }));
-          }
-
-          const casou = palavraQueCasou(post, plano.palavras);
-          await registrarLog(dot, 'escreveu', {
-            detalhe: corta(
-              [
-                post.titulo || post.fonte_nome || 'matéria',
-                ...(casou ? [`palavra-chave: ${casou}`] : []),
-                capa === 'ia' ? 'imagem IA' : capa === 'sem_imagem' ? 'sem imagem' : 'foto original',
-                agendada
-                  ? `sai ${agendada.toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
-                  : dot.destino === 'publicar'
-                    ? publicada
-                      ? 'na fila para publicar'
-                      : 'não entrou na fila — ficou como rascunho'
-                    : 'rascunho',
-              ].join(' · '),
-              600
-            ),
-            url: post.url,
-            matterId,
-          });
-        } else {
-          ignorados += 1;
-          const semMateria = Object.assign(new Error('a IA não gerou matéria'), { code: 'SEM_MATERIA' });
-          await tirarPostDaFila(dot, post, semMateria);
-          await registrarLog(dot, 'ignorou', { detalhe: 'a IA não gerou matéria — post tirado da fila, vou para o próximo', url: post.url });
-        }
-      } catch (err) {
-        ignorados += 1;
-        // Sem isto o post seguia como "novo" e era escolhido de novo na volta
-        // seguinte (ou no "Trabalhar agora"), falhando sempre no mesmo lugar.
-        const definitivo = await tirarPostDaFila(dot, post, err);
-        await registrarLog(dot, 'erro', {
-          detalhe: corta(
-            `${err.message} — ${definitivo ? 'post descartado' : 'post fica de fora por 2 h'}, vou para o próximo`,
-            600
-          ),
-          url: post.url,
-        });
-      }
+      if (await processarPost(dot, post, { indice, total: paraEscrever.length, plano })) escritas += 1;
+      else ignorados += 1;
     }
 
     await db(TABELA).where({ id: dot.id }).update({
@@ -1598,17 +1637,48 @@ async function detalhe(userId, dotId) {
       .select('p.id', 'p.titulo', 'p.resumo', 'p.url', 'p.thumbnail', 'p.status', 'p.matter_id', 'p.created_at', 'p.publicado_em', 'p.media_type', 'p.media_url', 'f.nome as fonte_nome')
       .catch(() => []);
   }
-  const { conteudoSuficiente } = require('./furosSociais');
   const temPalavras = Array.isArray(plano.palavras) && plano.palavras.length > 0;
+
+  // Mesmas regras da volta, para o painel dizer a verdade: "na fila" que
+  // nunca saía era post que o ciclo pulava (repetido ou falhou há pouco).
+  const falhas = await db(LOG)
+    .where({ dot_id: dotId, acao: 'erro' })
+    .whereNotNull('url')
+    .where('created_at', '>=', new Date(Date.now() - 2 * 60 * 60 * 1000))
+    .select('url', 'created_at')
+    .catch(() => []);
+  const falhouEm = new Map();
+  for (const f of falhas) {
+    const t = new Date(f.created_at).getTime();
+    if (!falhouEm.has(f.url) || t > falhouEm.get(f.url)) falhouEm.set(f.url, t);
+  }
+  const elegiveis = postsLidos.filter((p) =>
+    !p.matter_id && ['novo', 'visto'].includes(p.status) &&
+    (!temPalavras || palavraQueCasou(p, plano.palavras)) && postTemMaterial(p) && !falhouEm.has(p.url)
+  );
+  let novosIds = new Set(elegiveis.map((p) => p.id));
+  try {
+    const { novos } = await filtrarJaPublicados(dot, elegiveis);
+    novosIds = new Set(semAssuntoRepetidoNaLista(novos).map((p) => p.id));
+  } catch {
+    // sem a checagem, mostra como elegível
+  }
+
   const posts = postsLidos.map((p) => {
     const palavra = palavraQueCasou(p, plano.palavras);
     let situacao;
+    let voltaEm = null;
     if (p.matter_id) situacao = 'materia';
     else if (temPalavras && !palavra) situacao = 'fora_do_assunto';
-    else if (!conteudoSuficiente(p)) situacao = 'pouco_texto';
-    else if (['novo', 'visto'].includes(p.status)) situacao = 'aguardando';
-    else situacao = 'descartado';
+    else if (!postTemMaterial(p)) situacao = 'pouco_texto';
+    else if (!['novo', 'visto'].includes(p.status)) situacao = 'descartado';
+    else if (falhouEm.has(p.url)) {
+      situacao = 'falhou';
+      voltaEm = new Date(falhouEm.get(p.url) + 2 * 60 * 60 * 1000).toISOString();
+    } else if (!novosIds.has(p.id)) situacao = 'repetido';
+    else situacao = 'proximo';
     return {
+      volta_em: voltaEm,
       id: p.id,
       titulo: corta(p.titulo || p.resumo || '', 200),
       url: p.url,
@@ -1627,7 +1697,7 @@ async function detalhe(userId, dotId) {
     lidos: posts.length,
     no_assunto: posts.filter((p) => p.situacao !== 'fora_do_assunto').length,
     fora_do_assunto: posts.filter((p) => p.situacao === 'fora_do_assunto').length,
-    aguardando: posts.filter((p) => p.situacao === 'aguardando').length,
+    proximos: posts.filter((p) => p.situacao === 'proximo').length,
     escritas: materias.length,
     agendadas: contar((m) => m.status === 'agendado'),
     publicadas: contar((m) => m.status === 'publicado'),
@@ -1744,6 +1814,49 @@ async function excluir(userId, dotId) {
 }
 
 /** "Trabalhar agora", para não esperar o relógio. */
+/**
+ * "Escrever agora" de um post do painel: escreve aquele post na hora, sem
+ * esperar a volta e sem os filtros de repetido (o editor escolheu). Respeita
+ * o destino do dot (rascunho/agendar/publicar) e o limite do dia.
+ */
+async function escreverPostAgora(userId, dotId, postId) {
+  const dot = await db(TABELA).where({ id: dotId, user_id: userId }).first();
+  if (!dot) throw erro('Dot não encontrado.', 404);
+  if (dot.trabalhando) throw erro('Este dot já está trabalhando agora. Espere esta volta terminar.', 409);
+
+  const fonteIds = parseJson(dot.fonte_ids, []);
+  const post = await db('biblioteca_posts as p')
+    .join('biblioteca_fontes as f', 'f.id', 'p.fonte_id')
+    .where({ 'p.id': Number(postId), 'p.user_id': userId })
+    .whereIn('p.fonte_id', fonteIds.length ? fonteIds : [0])
+    .first('p.*', 'f.nome as fonte_nome');
+  if (!post) throw erro('Post não encontrado neste dot.', 404);
+  if (post.matter_id) throw erro('Este post já virou matéria.', 409);
+
+  const dia = hoje();
+  const feitasHoje = dot.dia_contagem === dia ? Number(dot.feitas_hoje) || 0 : 0;
+  if (feitasHoje >= Number(dot.limite_dia)) {
+    throw erro(`Limite de ${dot.limite_dia} matérias por dia atingido.`, 409);
+  }
+  if (!(await reservarCiclo(dot.id))) {
+    throw erro('Este dot já está trabalhando agora. Espere esta volta terminar.', 409);
+  }
+
+  setImmediate(async () => {
+    let escrita = false;
+    try {
+      escrita = await processarPost(dot, post);
+    } finally {
+      await db(TABELA).where({ id: dot.id }).update({
+        trabalhando: false,
+        atividade: null,
+        ...(escrita ? { feitas_hoje: feitasHoje + 1, dia_contagem: dia } : {}),
+      }).catch(() => {});
+    }
+  });
+  return { iniciado: true };
+}
+
 async function rodarAgora(userId, dotId) {
   const dot = await db(TABELA).where({ id: dotId, user_id: userId }).first();
   if (!dot) throw erro('Dot não encontrado.', 404);
@@ -1771,10 +1884,12 @@ module.exports = {
   alterarEstado,
   excluir,
   rodarAgora,
+  escreverPostAgora,
   tick,
   // Expostos para teste
   extrairUrls,
   urlParaEscrever,
+  postTemMaterial,
   capaDoPost,
   palavraQueCasou,
   fotoParaChecar,
