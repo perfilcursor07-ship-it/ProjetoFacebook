@@ -37,6 +37,11 @@ const FONTES_POR_CICLO = 10;
  * no meio). Sem esse resgate, um pm2 reload travaria o dot para sempre.
  */
 const TRAVA_CICLO_MS = 30 * 60 * 1000;
+/**
+ * Janela para considerar uma notícia repetida. Comparar com o histórico
+ * inteiro fazia uma página de um tema só rejeitar todos os candidatos.
+ */
+const DIAS_HISTORICO_REPETIDO = Math.max(1, Number(process.env.DOTS_DIAS_REPETIDO) || 7);
 const LIMITE_ESCRITA_MS = 15 * 60 * 1000;
 
 let rodando = false;
@@ -616,27 +621,87 @@ async function semRepetirAssunto(dot, posts) {
 
   let lista = posts;
   try {
-    // Histórico do usuário: matérias escritas e publicações já feitas.
-    const { marcarJaPublicados } = require('./materiaIaService');
-    const marcados = await marcarJaPublicados(dot.user_id, dot.facebook_page_id || null, posts);
-    const novos = marcados.filter((p) => !p.jaPublicado);
-    const repetidos = marcados.length - novos.length;
+    const { porUrl, porTitulo, novos } = await filtrarJaPublicados(dot, posts);
+    const repetidos = porUrl + porTitulo;
     if (repetidos) {
       await registrarLog(dot, 'ignorou', {
-        detalhe: `${repetidos} post(s) de assunto já publicado por esta conta`,
+        detalhe:
+          `${repetidos} post(s) já publicados nos últimos ${DIAS_HISTORICO_REPETIDO} dias` +
+          ` (${porUrl} pelo link, ${porTitulo} pelo título)`,
+      });
+    }
+    // Filtrar tudo é sinal de regra apertada demais, não de dia sem notícia.
+    if (!novos.length && posts.length) {
+      await registrarLog(dot, 'ignorou', {
+        detalhe:
+          `Nenhum dos ${posts.length} post(s) passou: todos já viraram matéria nos últimos ` +
+          `${DIAS_HISTORICO_REPETIDO} dias. Se isso se repetir todo dia, as páginas podem não ` +
+          'estar trazendo post novo.',
       });
     }
     lista = novos;
   } catch (err) {
-    // Falha na checagem não pode travar o dot, mas tem de aparecer: sem ela o
-    // risco é justamente publicar repetido.
     console.warn(`[dots #${dot.id}] checagem de repetido falhou: ${err.message}`);
     await registrarLog(dot, 'erro', {
-      detalhe: corta(`não consegui checar assunto repetido (${err.message})`, 600),
+      detalhe: corta(`não consegui checar repetido (${err.message})`, 600),
     });
   }
 
   return semAssuntoRepetidoNaLista(lista);
+}
+
+/**
+ * Tira o que esta conta já publicou, com critério ESTRITO.
+ *
+ * A primeira versão usava `marcarJaPublicados`, que compara com até 1000
+ * matérias de todo o histórico e aceita como repetido qualquer par com 3
+ * palavras em comum. Numa página de política, 'lula', 'bolsonaro' e 'governo'
+ * aparecem juntas em quase toda manchete: o dot rejeitava 25 de 25 candidatos
+ * e nunca escrevia nada.
+ *
+ * Aqui só conta o que indica MESMA notícia: o link idêntico, ou títulos
+ * parecidos pelo critério estrito (4 palavras ou 55% de sobreposição), e só
+ * contra o que saiu nos últimos dias — notícia da semana passada não volta.
+ */
+async function filtrarJaPublicados(dot, posts) {
+  const { titulosParecidos } = require('./editorialGuidelinesFb');
+  const desde = new Date(Date.now() - DIAS_HISTORICO_REPETIDO * 86_400_000);
+
+  const publicadas = await db('ai_matters')
+    .where('user_id', dot.user_id)
+    .where('created_at', '>=', desde)
+    .select('titulo', 'fonte_url', 'fonte_titulo')
+    .limit(500);
+
+  const semQuery = (valor) =>
+    String(valor || '')
+      .split(/[?#]/)[0]
+      .toLowerCase()
+      .replace(/\/+$/, '');
+
+  const urls = new Set(publicadas.map((m) => semQuery(m.fonte_url)).filter(Boolean));
+  const titulos = publicadas
+    .flatMap((m) => [m.titulo, m.fonte_titulo])
+    .map((t) => String(t || '').trim())
+    .filter(Boolean);
+
+  let porUrl = 0;
+  let porTitulo = 0;
+  const novos = [];
+  for (const post of posts) {
+    const link = semQuery(post.url);
+    if (link && urls.has(link)) {
+      porUrl += 1;
+      continue;
+    }
+    const titulo = String(post.titulo || '').trim();
+    if (titulo && titulos.some((t) => titulosParecidos(t, titulo))) {
+      porTitulo += 1;
+      continue;
+    }
+    novos.push(post);
+  }
+  return { porUrl, porTitulo, novos };
 }
 
 /**
@@ -1322,6 +1387,8 @@ module.exports = {
   rodiziarPorFonte,
   semRepetirAssunto,
   semAssuntoRepetidoNaLista,
+  filtrarJaPublicados,
+  DIAS_HISTORICO_REPETIDO,
   reservarCiclo,
   dentroDaJanela,
   normalizarJornada,

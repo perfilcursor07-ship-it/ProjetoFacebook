@@ -112,6 +112,36 @@ async function testarYoutube() {
   return { ok: true, detalhe: info.titulo, message: 'Sessão do YouTube respondeu normalmente.' };
 }
 
+/**
+ * O que fazer depende do motivo. Mandar "reexporte os cookies" para quem acabou
+ * de exportar é o conselho errado: numa verificação de segurança o problema
+ * está na conta, e cookies novos vão falhar igual.
+ */
+function comoResolver(motivo, site) {
+  const texto = String(motivo || '').toLowerCase();
+
+  if (texto.includes('verificacao de seguranca')) {
+    return (
+      `Abra ${site} logado nesta conta (no celular ou no navegador), resolva o aviso de ` +
+      'segurança que aparecer e só então exporte os cookies de novo. Cookies novos sem ' +
+      'resolver o aviso vão falhar igual.'
+    );
+  }
+  if (texto.includes('login_required') || texto.includes('html em vez de dados')) {
+    return `A sessão caiu. Faça login em ${site} e exporte os cookies de novo.`;
+  }
+  if (texto.includes('http 429') || texto.includes('limite de requisicoes')) {
+    return 'O servidor pediu demais e foi limitado. Espere alguns minutos e teste de novo — trocar os cookies não resolve.';
+  }
+  if (texto.includes('sem o perfil procurado') || texto.includes('respondeu vazio')) {
+    return (
+      'A sessão respondeu, mas sem o resultado esperado. Pode ser bloqueio temporário do IP ' +
+      'deste servidor ou mudança na API. Teste de novo em alguns minutos antes de trocar os cookies.'
+    );
+  }
+  return `Reexporte os cookies de uma sessão ativa em ${site}.`;
+}
+
 async function testarInstagram() {
   const {
     diagnoseInstagramCookies,
@@ -128,7 +158,7 @@ async function testarInstagram() {
       error:
         `O Instagram rejeitou a sessão: ${sessao.reason}` +
         (sessao.status ? ` (HTTP ${sessao.status})` : '') +
-        '. Reexporte os cookies de uma sessão ativa.',
+        `. ${comoResolver(sessao.reason, 'instagram.com')}`,
     };
   }
   // validateInstagramSession devolve { ok, status, reason } — sem nome de usuário.
@@ -151,7 +181,7 @@ async function testarFacebook() {
       error:
         `O Facebook rejeitou a sessão: ${sessao.reason}` +
         (sessao.status ? ` (HTTP ${sessao.status})` : '') +
-        '. Reexporte os cookies de uma sessão ativa.',
+        `. ${comoResolver(sessao.reason, 'facebook.com')}`,
     };
   }
   return { ok: true, detalhe: sessao.reason || null, message: 'Sessão do Facebook autenticada.' };
@@ -181,4 +211,4 @@ async function testar(req, res, next) {
   }
 }
 
-module.exports = { listarStatus, obterStatus, salvar, testar, remover };
+module.exports = { listarStatus, obterStatus, salvar, testar, remover, comoResolver };

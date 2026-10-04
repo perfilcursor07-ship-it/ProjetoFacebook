@@ -233,12 +233,21 @@ async function bootstrapInstagramSession(axiosClient) {
   }
 }
 
+/**
+ * Por que a sessão não serviu, em uma frase que diga o que fazer.
+ *
+ * A checagem antiga procurava a palavra solta 'challenge' em ate 200 KB do
+ * corpo da resposta. Qualquer ocorrencia casava — nome de bundle, flag de
+ * feature, legenda de post em ingles — e uma sessao boa era reportada como
+ * 'checkpoint exigido'. Aqui so marcadores inequivocos contam.
+ */
 function instagramFailureReason(data, status) {
   const message = String(
     data?.message || data?.error_title || data?.error_type || data?.status || ''
   )
     .replace(/\s+/g, ' ')
     .slice(0, 160);
+
   let raw = '';
   try {
     raw = typeof data === 'string' ? data : JSON.stringify(data || '');
@@ -246,28 +255,44 @@ function instagramFailureReason(data, status) {
     raw = '';
   }
   const normalized = `${message} ${raw.slice(0, 200000)}`.toLowerCase();
-  if (
+
+  // Marcadores que o Instagram usa de verdade para pedir verificacao.
+  const pedeVerificacao =
     normalized.includes('challenge_required') ||
     normalized.includes('checkpoint_required') ||
+    normalized.includes('"challenge_url"') ||
     normalized.includes('/challenge/') ||
-    normalized.includes('challenge') ||
-    data?.challenge
-  ) {
-    return 'checkpoint/challenge exigido';
+    Boolean(data?.challenge);
+  if (pedeVerificacao) {
+    return 'a conta precisa passar pela verificacao de seguranca do Instagram';
   }
+
   if (
     normalized.includes('login_required') ||
     normalized.includes('/accounts/login') ||
-    normalized.includes('please wait a few minutes') ||
-    normalized.includes('logged')
+    normalized.includes('not logged in')
   ) {
     return 'login_required';
   }
-  if (status === 429) return 'limite de requisições (HTTP 429)';
+
+  if (status === 429) return 'limite de requisicoes (HTTP 429)';
   if (message) return `${message} (HTTP ${status})`;
+
+  // Pagina HTML no lugar do JSON: quase sempre e a tela de login.
   if (status >= 200 && status < 300 && typeof data === 'string') {
-    return 'resposta HTML sem dados da sessão (possível challenge)';
+    return 'o Instagram devolveu HTML em vez de dados da sessao (provavel tela de login)';
   }
+
+  // 2xx com JSON valido e sem o perfil procurado: a sessao respondeu, mas a
+  // busca nao trouxe o resultado esperado. Mostrar a forma da resposta ajuda a
+  // distinguir bloqueio de mudanca de formato da API, sem expor valor nenhum.
+  if (status >= 200 && status < 300) {
+    const campos = data && typeof data === 'object' ? Object.keys(data).slice(0, 8) : [];
+    return campos.length
+      ? `o Instagram respondeu sem o perfil procurado (HTTP ${status}; campos: ${campos.join(', ')})`
+      : `o Instagram respondeu vazio (HTTP ${status})`;
+  }
+
   return `HTTP ${status}`;
 }
 
