@@ -31,6 +31,12 @@
   const logs = new Map();
   /** Comandos em edição (id → texto). Enquanto houver, a lista não se redesenha. */
   const editando = new Map();
+  /** Detalhe completo por dot (números, posts, matérias) e quando chegou. */
+  const detalhes = new Map();
+  /** Aba aberta e filtro dos posts, por dot. */
+  const abas = new Map();
+  const filtrosPosts = new Map();
+  const DETALHE_VALIDO_MS = 30000;
   /** Última lista recebida, para redesenhar um cartão sem ir ao servidor. */
   let ultimaLista = [];
 
@@ -359,66 +365,167 @@
     return { titulo, palavra, imagem: resto.find((p) => /foto|imagem/i.test(p)) || '', saida: resto.find((p) => !/foto|imagem/i.test(p)) || '' };
   }
 
-  function statusDaMateria(m, saidaTexto) {
-    if (!m) return saidaTexto ? `📅 ${escapar(saidaTexto)}` : '';
-    if (m.status === 'publicado') return '✅ Publicada';
-    if (m.status === 'agendado' && m.agendada_para) {
-      return `📅 Sai ${new Date(m.agendada_para).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`;
-    }
-    if (m.status === 'erro') return '⚠️ Erro ao publicar';
-    return '📝 Rascunho';
+  // ------------------------------------------------------- painel de gestão
+
+  const SITUACAO_POST = {
+    materia: { icone: '✅', texto: 'Virou matéria', classe: 'd-sit--ok' },
+    aguardando: { icone: '⏳', texto: 'Na fila do dot', classe: 'd-sit--fila' },
+    fora_do_assunto: { icone: '🚫', texto: 'Fora do assunto', classe: 'd-sit--fora' },
+    pouco_texto: { icone: '✂️', texto: 'Pouco texto', classe: 'd-sit--fora' },
+    descartado: { icone: '—', texto: 'Descartado', classe: 'd-sit--fora' },
+  };
+  const FILTROS_POST = [
+    { id: 'todos', texto: 'Todos', ok: () => true },
+    { id: 'assunto', texto: 'No assunto', ok: (p) => p.situacao !== 'fora_do_assunto' },
+    { id: 'materia', texto: 'Viraram matéria', ok: (p) => p.situacao === 'materia' },
+    { id: 'fila', texto: 'Na fila', ok: (p) => p.situacao === 'aguardando' },
+    { id: 'fora', texto: 'Fora do assunto', ok: (p) => p.situacao === 'fora_do_assunto' },
+  ];
+
+  function horaCurta(iso) {
+    if (!iso) return '';
+    return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   }
 
-  /** Matérias que o dot rastreou e escreveu, com capa, palavra-chave e status. */
-  function rastreadas(dotId) {
-    const linhas = (logs.get(String(dotId)) || []).filter((e) => e.acao === 'escreveu');
-    if (!linhas.length) return '<p class="d-linha"><span class="d-linha-marca">·</span><span>Nenhuma matéria escrita ainda.</span></p>';
-    return linhas.slice(0, 8).map((e) => {
-      const p = partesDoEscreveu(e.detalhe);
-      const m = e.materia || null;
-      const capa = m?.imagem
-        ? `<img src="${escapar(m.imagem)}" alt="" loading="lazy" class="d-mat-capa" />`
-        : '<span class="d-mat-capa d-mat-capa--vazia">sem capa</span>';
-      const href = `/materias-ia/${e.matter_id}`;
+  /** Números que o editor precisa para decidir: o dot está rendendo ou não? */
+  function numeros(dot) {
+    const d = detalhes.get(String(dot.id));
+    const r = d?.resumo;
+    const bloco = (valor, rotulo, dica, classe = '') => `
+      <div class="d-kpi ${classe}" title="${escapar(dica)}">
+        <span class="d-kpi-valor">${r ? valor : '—'}</span>
+        <span class="d-kpi-rotulo">${rotulo}</span>
+      </div>`;
+    return `
+      <div class="d-kpis mt-3">
+        ${bloco(r?.lidos, 'Posts lidos', 'Posts que o dot leu das páginas nos últimos 7 dias')}
+        ${bloco(r?.no_assunto, 'No assunto', 'Posts que citam as palavras-chave do comando')}
+        ${bloco(r?.escritas, 'Matérias', 'Matérias que este dot escreveu')}
+        ${bloco(r?.agendadas, 'Agendadas', 'Matérias esperando o horário para sair', r?.agendadas ? 'd-kpi--alerta' : '')}
+        ${bloco(r?.publicadas, 'Publicadas', 'Matérias que já saíram', r?.publicadas ? 'd-kpi--ok' : '')}
+        ${bloco(r?.problemas_24h, 'Problemas 24h', 'Erros nas últimas 24 horas', r?.problemas_24h ? 'd-kpi--erro' : '')}
+      </div>`;
+  }
+
+  function abaMaterias(d) {
+    const materias = d?.materias || [];
+    if (!materias.length) {
+      return '<p class="d-vazio-aba">Nenhuma matéria escrita ainda. Quando um post do assunto aparecer, ela surge aqui.</p>';
+    }
+    const grupo = (titulo, lista, linhaStatus) => {
+      if (!lista.length) return '';
       return `
-        <a class="d-mat" href="${href}" target="_blank" rel="noopener">
-          ${capa}
-          <span class="d-mat-corpo">
-            <span class="d-mat-titulo">${escapar(m?.titulo || p.titulo)}</span>
-            <span class="d-mat-chips">
-              ${p.palavra ? `<span class="d-chip d-chip--palavra">🔎 ${escapar(p.palavra)}</span>` : ''}
-              ${p.imagem ? `<span class="d-chip">${/IA/.test(p.imagem) ? '🎨' : '🖼️'} ${escapar(p.imagem)}</span>` : ''}
-              <span class="d-chip">${statusDaMateria(m, p.saida)}</span>
-            </span>
-            <span class="d-quando">${haQuanto(e.created_at)}</span>
+        <div>
+          <p class="d-grupo">${titulo} <span>${lista.length}</span></p>
+          <div class="d-mats mt-1.5">
+            ${lista.map((m) => `
+              <a class="d-mat" href="/materias-ia/${m.id}" target="_blank" rel="noopener">
+                ${m.imagem ? `<img src="${escapar(m.imagem)}" alt="" loading="lazy" class="d-mat-capa" />` : '<span class="d-mat-capa d-mat-capa--vazia">sem capa</span>'}
+                <span class="d-mat-corpo">
+                  <span class="d-mat-titulo">${escapar(m.titulo || 'Matéria')}</span>
+                  <span class="d-mat-chips">${linhaStatus(m)}</span>
+                </span>
+              </a>`).join('')}
+          </div>
+        </div>`;
+    };
+    const agendadas = materias
+      .filter((m) => m.status === 'agendado')
+      .sort((a, b) => new Date(a.agendada_para || 0) - new Date(b.agendada_para || 0));
+    const publicadas = materias.filter((m) => m.status === 'publicado');
+    const outras = materias.filter((m) => !['agendado', 'publicado'].includes(m.status));
+    return `<div class="space-y-3">
+      ${grupo('📅 Agendadas', agendadas, (m) => `<span class="d-chip">Sai ${horaCurta(m.agendada_para)}</span>`)}
+      ${grupo('✅ Publicadas', publicadas, (m) => (m.link
+        ? `<span class="d-chip d-chip--palavra">Publicada</span><span class="d-chip" data-link="${escapar(m.link)}">ver post ↗</span>`
+        : '<span class="d-chip d-chip--palavra">Publicada</span>'))}
+      ${grupo('📝 Rascunhos e outras', outras, (m) => `<span class="d-chip">${m.status === 'erro' ? '⚠️ erro ao publicar' : 'rascunho — revisar'}</span>`)}
+    </div>`;
+  }
+
+  function abaPosts(dotId, d) {
+    const posts = d?.posts || [];
+    if (!posts.length) {
+      return '<p class="d-vazio-aba">Nenhum post lido nos últimos 7 dias. Confira se as páginas do comando estão certas.</p>';
+    }
+    const filtroId = filtrosPosts.get(String(dotId)) || 'todos';
+    const filtro = FILTROS_POST.find((f) => f.id === filtroId) || FILTROS_POST[0];
+    const visiveis = posts.filter(filtro.ok);
+    const botoes = FILTROS_POST.map((f) => {
+      const n = posts.filter(f.ok).length;
+      return `<button type="button" data-acao="filtro-posts" data-filtro="${f.id}" class="d-filtro ${f.id === filtro.id ? 'is-on' : ''}">${f.texto} <span>${n}</span></button>`;
+    }).join('');
+    const linhas = visiveis.slice(0, 30).map((p) => {
+      const sit = SITUACAO_POST[p.situacao] || SITUACAO_POST.descartado;
+      const destino = p.matter_id ? `/materias-ia/${p.matter_id}` : p.url;
+      return `
+        <a class="d-post" href="${escapar(destino)}" target="_blank" rel="noopener">
+          ${p.thumbnail ? `<img src="${escapar(p.thumbnail)}" alt="" loading="lazy" class="d-post-capa" />` : '<span class="d-post-capa d-mat-capa--vazia">—</span>'}
+          <span class="d-post-corpo">
+            <span class="d-post-titulo">${escapar(p.titulo || '(sem texto)')}</span>
+            <span class="d-post-meta">${escapar(p.fonte || '')} · ${haQuanto(p.lido_em)}</span>
+          </span>
+          <span class="d-post-lado">
+            <span class="d-sit ${sit.classe}">${sit.icone} ${sit.texto}</span>
+            ${p.palavra ? `<span class="d-chip d-chip--palavra">🔎 ${escapar(p.palavra)}</span>` : ''}
           </span>
         </a>`;
     }).join('');
+    return `
+      <div class="d-filtros">${botoes}</div>
+      <div class="d-posts mt-2">${linhas || '<p class="d-vazio-aba">Nada neste filtro.</p>'}</div>`;
   }
 
-  /** Passo a passo do que o dot fez, do mais novo para o mais antigo. */
-  function concluido(dotId) {
-    const linhas = logs.get(String(dotId));
-    if (!linhas) return '<p class="d-linha"><span class="d-linha-marca">·</span><span>Carregando…</span></p>';
-    if (!linhas.length) return '<p class="d-linha"><span class="d-linha-marca">·</span><span>Ainda não concluiu nada.</span></p>';
-    return `<ol class="d-passos">${linhas
-      .slice(0, 15)
-      .map((e) => {
-        const passo = passoDe(e);
-        const texto = e.acao === 'escreveu' ? partesDoEscreveu(e.detalhe).titulo : e.detalhe || e.acao;
-        const link = e.matter_id
-          ? ` <a href="/materias-ia/${e.matter_id}" style="color:var(--d-acento)" class="hover:underline">ver matéria</a>`
-          : '';
-        return `<li class="d-passo ${passo.classe}">
-          <span class="d-passo-icone" aria-hidden="true">${passo.icone}</span>
-          <span class="d-passo-corpo">
-            <span class="d-passo-rotulo">${passo.rotulo}</span>
-            <span>${escapar(texto)}${link}</span>
-            <span class="d-quando">${haQuanto(e.created_at)}</span>
-          </span>
-        </li>`;
-      })
-      .join('')}</ol>`;
+  /** Histórico curto: junta linhas repetidas seguidas ("× 3") para não poluir. */
+  function abaHistorico(dotId) {
+    const linhas = logs.get(String(dotId)) || [];
+    if (!linhas.length) return '<p class="d-vazio-aba">Ainda não há histórico.</p>';
+    const agrupadas = [];
+    for (const e of linhas.slice(0, 40)) {
+      const ultima = agrupadas[agrupadas.length - 1];
+      if (ultima && ultima.acao === e.acao && ultima.detalhe === e.detalhe) {
+        ultima.vezes += 1;
+        continue;
+      }
+      agrupadas.push({ ...e, vezes: 1 });
+    }
+    return `<ol class="d-passos">${agrupadas.slice(0, 15).map((e) => {
+      const passo = passoDe(e);
+      const texto = e.acao === 'escreveu' ? partesDoEscreveu(e.detalhe).titulo : e.detalhe || e.acao;
+      return `<li class="d-passo ${passo.classe}">
+        <span class="d-passo-icone" aria-hidden="true">${passo.icone}</span>
+        <span class="d-passo-corpo">
+          <span class="d-passo-rotulo">${passo.rotulo}${e.vezes > 1 ? ` <b class="d-vezes">× ${e.vezes}</b>` : ''}</span>
+          <span>${escapar(texto)}</span>
+          <span class="d-quando">${haQuanto(e.created_at)}</span>
+        </span>
+      </li>`;
+    }).join('')}</ol>`;
+  }
+
+  function painelAbas(dot) {
+    const id = String(dot.id);
+    const d = detalhes.get(id);
+    const aba = abas.get(id) || 'materias';
+    const total = (lista) => (Array.isArray(lista) ? lista.length : 0);
+    const botao = (chave, texto, n) =>
+      `<button type="button" role="tab" data-acao="aba" data-aba="${chave}" aria-selected="${aba === chave}" class="d-aba ${aba === chave ? 'is-on' : ''}">${texto}${n !== null ? ` <span>${n}</span>` : ''}</button>`;
+    const conteudo = !d
+      ? '<p class="d-vazio-aba">Carregando…</p>'
+      : aba === 'posts'
+        ? abaPosts(id, d)
+        : aba === 'historico'
+          ? abaHistorico(id)
+          : abaMaterias(d);
+    return `
+      <div class="mt-4">
+        <div class="d-abas" role="tablist">
+          ${botao('materias', '📰 Matérias', d ? total(d.materias) : null)}
+          ${botao('posts', '🔎 Posts encontrados', d ? total(d.posts) : null)}
+          ${botao('historico', '🧭 Histórico', null)}
+        </div>
+        <div class="d-aba-corpo mt-3">${conteudo}</div>
+      </div>`;
   }
 
   /** O que o dot entendeu do comando + edição no próprio cartão. */
@@ -476,23 +583,9 @@
         ${agora(dot)}
         ${dot.ultimo_erro ? `<p class="d-linha d-linha--erro mt-2"><span class="d-linha-marca">!</span><span>${escapar(dot.ultimo_erro)}</span></p>` : ''}
 
-        <details class="d-detalhes mt-3" data-atividade ${abertos.has(String(dot.id)) ? 'open' : ''}>
-          <summary>Atividade</summary>
-          <div class="mt-2 space-y-4">
-            <div>
-              <p class="d-secao">⏱️ Próxima volta</p>
-              <div class="mt-1">${agendado(dot)}</div>
-            </div>
-            <div>
-              <p class="d-secao">📰 Matérias rastreadas</p>
-              <div class="d-mats mt-1.5">${rastreadas(dot.id)}</div>
-            </div>
-            <div>
-              <p class="d-secao">🧭 Passo a passo</p>
-              <div class="mt-1">${concluido(dot.id)}</div>
-            </div>
-          </div>
-        </details>
+        ${numeros(dot)}
+        <div class="d-proxima mt-2">${agendado(dot)}</div>
+        ${painelAbas(dot)}
       </article>`;
   }
 
@@ -511,6 +604,7 @@
     try {
       const dados = await api(`/api/dots/${dotId}`);
       logs.set(String(dotId), dados.execucoes || []);
+      detalhes.set(String(dotId), { ...dados, em: Date.now() });
     } catch {
       logs.set(String(dotId), []);
     }
@@ -523,7 +617,11 @@
       const resposta = await api('/api/dots');
       // Resposta inesperada não pode quebrar a tela inteira.
       const dots = Array.isArray(resposta) ? resposta : [];
-      await Promise.all([...abertos].filter((id) => dots.some((d) => String(d.id) === id)).map(carregarLog));
+      await Promise.all(
+        dots
+          .filter((d) => d.trabalhando || !detalhes.has(String(d.id)) || Date.now() - detalhes.get(String(d.id)).em > DETALHE_VALIDO_MS)
+          .map((d) => carregarLog(d.id))
+      );
 
       ultimaLista = dots;
       el.lista.innerHTML = dots.length ? dots.map(cartao).join('') : vazio();
@@ -666,6 +764,17 @@
     const id = botao.closest('[data-dot]')?.dataset.dot;
     if (!id) return;
     const acao = botao.dataset.acao;
+
+    if (acao === 'aba') {
+      abas.set(String(id), botao.dataset.aba);
+      redesenharCartao(id);
+      return;
+    }
+    if (acao === 'filtro-posts') {
+      filtrosPosts.set(String(id), botao.dataset.filtro);
+      redesenharCartao(id);
+      return;
+    }
 
     // Edição do comando no próprio cartão.
     if (acao === 'editar-comando') {

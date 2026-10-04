@@ -599,12 +599,18 @@ async function candidatosDoDot(dot) {
   const fonteIds = parseJson(dot.fonte_ids, []);
   if (!fonteIds.length) return [];
 
+  // Post que acabou de falhar não volta já: a próxima volta pega o seguinte.
+  const falharam = await urlsQueFalharamRecentemente(dot);
+
   const linhas = await db('biblioteca_posts as p')
     .join('biblioteca_fontes as f', 'f.id', 'p.fonte_id')
     .where('p.user_id', dot.user_id)
     .whereIn('p.fonte_id', fonteIds)
     .whereNull('p.matter_id')
     .whereIn('p.status', ['novo', 'visto'])
+    .modify((q) => {
+      if (falharam.length) q.whereNotIn('p.url', falharam);
+    })
     .orderByRaw('COALESCE(p.viral_score, 0) DESC, COALESCE(p.publicado_em, p.created_at) DESC')
     .limit(CANDIDATOS_POR_CICLO)
     .select(
@@ -841,6 +847,62 @@ function rodiziarPorFonte(posts, ultimaPorFonte = new Map()) {
 }
 
 /** Escreve pelo mesmo caminho do "Criar matéria" do chat. */
+/**
+ * Link que a IA vai ler. Post vindo do Google Notícias aponta para o Google,
+ * não para a reportagem: a IA recebia só o endereço do Google e respondia que
+ * não havia conteúdo. Converte para o link original; sem ele, desiste do post.
+ */
+async function urlParaEscrever(post) {
+  const url = String(post?.url || '').trim();
+  if (!/news\.google\.com/i.test(url)) return url;
+  let real = null;
+  try {
+    real = (await require('./newsResearch').decodificarLinksGoogle([url])).get(url) || null;
+  } catch {
+    real = null;
+  }
+  if (!real) {
+    real = await require('./articleSource').resolverUrlNoticia(url).catch(() => null);
+  }
+  if (real && !/news\.google\.com/i.test(real)) {
+    // Guarda o link real: a lista de posts e as próximas voltas já usam ele.
+    await db('biblioteca_posts').where({ id: post.id }).update({ url: corta(real, 500) }).catch(() => {});
+    return real;
+  }
+  const err = new Error('link do Google Notícias sem a reportagem original');
+  err.code = 'SEM_MATERIA';
+  throw err;
+}
+
+/** Posts que falharam neste dot nas últimas horas (não voltam já na próxima volta). */
+async function urlsQueFalharamRecentemente(dot, horas = 2) {
+  return db(LOG)
+    .where({ dot_id: dot.id, acao: 'erro' })
+    .whereNotNull('url')
+    .where('created_at', '>=', new Date(Date.now() - horas * 60 * 60 * 1000))
+    .distinct('url')
+    .pluck('url')
+    .catch(() => []);
+}
+
+/**
+ * Post que não virou matéria sai da fila: na 2ª falha (ou quando a IA diz que
+ * não há conteúdo) vira "ignorado" de vez. Antes ele ficava como "novo" e
+ * cada volta — e cada "Trabalhar agora" — tentava escrever o MESMO post.
+ */
+async function tirarPostDaFila(dot, post, err) {
+  const anteriores = await db(LOG)
+    .where({ dot_id: dot.id, acao: 'erro', url: post.url })
+    .count({ total: '*' })
+    .then(([r]) => Number(r?.total) || 0)
+    .catch(() => 0);
+  const definitivo = err?.code === 'SEM_MATERIA' || anteriores >= 1;
+  if (definitivo) {
+    await db('biblioteca_posts').where({ id: post.id }).update({ status: 'ignorado' }).catch(() => {});
+  }
+  return definitivo;
+}
+
 async function escrever(dot, post) {
   const { escreverPeloChat } = require('./materiaPorChat');
   const { comProvedor } = require('./deepseekService');
@@ -852,6 +914,8 @@ async function escrever(dot, post) {
     ? null
     : await require('./iaModeloTarefaService').modeloDaTarefa('piloto').catch(() => null);
   const tokenFree = require('./tokenFreeGatewayService');
+  // Link da reportagem original (não o do Google Notícias).
+  const urlLeitura = await urlParaEscrever(post);
 
   // comProvedor fixa a IA só nesta volta; sem escolha, roteamento normal.
   const tarefa = comProvedor(escolhido, () => escreverPeloChat(
@@ -862,7 +926,7 @@ async function escrever(dot, post) {
     {
       userId: dot.user_id,
       modelo: modeloPiloto,
-      url: post.url,
+      url: urlLeitura,
       facebookPageId: dot.facebook_page_id || null,
       imagemUrl: require('./articleSource').imagemServeDeCapa(post.thumbnail) ? post.thumbnail : null,
       origem: 'dots',
@@ -1268,11 +1332,22 @@ async function rodarCiclo(dot) {
           });
         } else {
           ignorados += 1;
-          await registrarLog(dot, 'ignorou', { detalhe: 'a IA não gerou matéria', url: post.url });
+          const semMateria = Object.assign(new Error('a IA não gerou matéria'), { code: 'SEM_MATERIA' });
+          await tirarPostDaFila(dot, post, semMateria);
+          await registrarLog(dot, 'ignorou', { detalhe: 'a IA não gerou matéria — post tirado da fila, vou para o próximo', url: post.url });
         }
       } catch (err) {
         ignorados += 1;
-        await registrarLog(dot, 'erro', { detalhe: corta(err.message, 600), url: post.url });
+        // Sem isto o post seguia como "novo" e era escolhido de novo na volta
+        // seguinte (ou no "Trabalhar agora"), falhando sempre no mesmo lugar.
+        const definitivo = await tirarPostDaFila(dot, post, err);
+        await registrarLog(dot, 'erro', {
+          detalhe: corta(
+            `${err.message} — ${definitivo ? 'post descartado' : 'post fica de fora por 2 h'}, vou para o próximo`,
+            600
+          ),
+          url: post.url,
+        });
       }
     }
 
@@ -1397,9 +1472,21 @@ async function detalhe(userId, dotId) {
     .orderBy('created_at', 'desc')
     .limit(50);
 
+  // Todas as matérias que este dot escreveu (não só as do log recente), para
+  // os números do painel baterem com o que existe de fato.
+  const idsEscritas = await db(LOG)
+    .where({ dot_id: dotId, acao: 'escreveu' })
+    .whereNotNull('matter_id')
+    .distinct('matter_id')
+    .pluck('matter_id')
+    .catch(() => []);
+
   // Matérias que o dot rastreou e escreveu, com a arte e o status atuais —
   // a tela mostra a matéria de verdade, não só uma linha de texto.
-  const ids = [...new Set(execucoes.filter((e) => e.acao === 'escreveu' && e.matter_id).map((e) => Number(e.matter_id)))];
+  const ids = [...new Set([
+    ...idsEscritas.map(Number),
+    ...execucoes.filter((e) => e.acao === 'escreveu' && e.matter_id).map((e) => Number(e.matter_id)),
+  ])];
   const materias = ids.length
     ? await db('ai_matters')
       .whereIn('id', ids)
@@ -1408,9 +1495,75 @@ async function detalhe(userId, dotId) {
       .catch(() => [])
     : [];
   const porId = new Map(materias.map((m) => [Number(m.id), m]));
+  const plano = parseJson(dot.plano, {});
+
+  // Posts que o dot leu das páginas dele (últimos 7 dias) e o que aconteceu
+  // com cada um — é o que o editor precisa para entender por que saiu ou não
+  // saiu matéria.
+  const fonteIds = parseJson(dot.fonte_ids, []);
+  let postsLidos = [];
+  if (fonteIds.length) {
+    postsLidos = await db('biblioteca_posts as p')
+      .join('biblioteca_fontes as f', 'f.id', 'p.fonte_id')
+      .where('p.user_id', userId)
+      .whereIn('p.fonte_id', fonteIds)
+      .where('p.created_at', '>=', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+      .orderBy('p.created_at', 'desc')
+      .limit(200)
+      .select('p.id', 'p.titulo', 'p.resumo', 'p.url', 'p.thumbnail', 'p.status', 'p.matter_id', 'p.created_at', 'p.publicado_em', 'p.media_type', 'p.media_url', 'f.nome as fonte_nome')
+      .catch(() => []);
+  }
+  const { conteudoSuficiente } = require('./furosSociais');
+  const temPalavras = Array.isArray(plano.palavras) && plano.palavras.length > 0;
+  const posts = postsLidos.map((p) => {
+    const palavra = palavraQueCasou(p, plano.palavras);
+    let situacao;
+    if (p.matter_id) situacao = 'materia';
+    else if (temPalavras && !palavra) situacao = 'fora_do_assunto';
+    else if (!conteudoSuficiente(p)) situacao = 'pouco_texto';
+    else if (['novo', 'visto'].includes(p.status)) situacao = 'aguardando';
+    else situacao = 'descartado';
+    return {
+      id: p.id,
+      titulo: corta(p.titulo || p.resumo || '', 200),
+      url: p.url,
+      thumbnail: require('./articleSource').imagemServeDeCapa(p.thumbnail) ? p.thumbnail : null,
+      fonte: p.fonte_nome,
+      lido_em: p.created_at,
+      palavra,
+      situacao,
+      matter_id: p.matter_id || null,
+    };
+  });
+
+  const desde24h = Date.now() - 24 * 60 * 60 * 1000;
+  const contar = (fn) => materias.filter(fn).length;
+  const resumo = {
+    lidos: posts.length,
+    no_assunto: posts.filter((p) => p.situacao !== 'fora_do_assunto').length,
+    fora_do_assunto: posts.filter((p) => p.situacao === 'fora_do_assunto').length,
+    aguardando: posts.filter((p) => p.situacao === 'aguardando').length,
+    escritas: materias.length,
+    agendadas: contar((m) => m.status === 'agendado'),
+    publicadas: contar((m) => m.status === 'publicado'),
+    rascunhos: contar((m) => !['agendado', 'publicado'].includes(m.status)),
+    problemas_24h: execucoes.filter((e) => e.acao === 'erro' && new Date(e.created_at).getTime() >= desde24h).length,
+  };
 
   return {
     ...(await listar(userId)).find((d) => d.id === Number(dotId)),
+    resumo,
+    posts: posts.slice(0, 60),
+    materias: materias
+      .map((m) => ({
+        id: m.id,
+        titulo: m.titulo,
+        imagem: m.imagem_url || null,
+        status: m.status,
+        agendada_para: m.scheduled_at,
+        link: m.fb_post_url || null,
+      }))
+      .sort((a, b) => b.id - a.id),
     execucoes: execucoes.map((e) => {
       const m = e.matter_id ? porId.get(Number(e.matter_id)) : null;
       return m
@@ -1536,6 +1689,8 @@ module.exports = {
   tick,
   // Expostos para teste
   extrairUrls,
+  urlParaEscrever,
+  palavraQueCasou,
   fotoParaChecar,
   resolverCapa,
   interpretar,
