@@ -735,12 +735,28 @@ function normalizarBusca(valor) {
  * aparecem juntas em quase toda manchete: o dot rejeitava 25 de 25 candidatos
  * e nunca escrevia nada.
  *
- * Aqui só conta o que indica MESMA notícia: o link idêntico, ou títulos
- * parecidos pelo critério estrito (4 palavras ou 55% de sobreposição), e só
- * contra o que saiu nos últimos dias — notícia da semana passada não volta.
+ * Aqui só conta o que indica MESMA notícia: o link idêntico, ou título
+ * praticamente igual (75% das palavras em comum — ver mesmaNoticia), e só
+ * contra o que saiu nos últimos dias. Assunto parecido pode sair.
  */
+/**
+ * Mesma notícia = título praticamente igual: pelo menos 75% das palavras do
+ * título maior em comum. Assunto PARECIDO passa (o editor quer publicar
+ * desdobramentos sobre Lula/Flávio); só a mesma manchete reescrita é barrada.
+ */
+const SOBREPOSICAO_MESMA_NOTICIA = 0.75;
+function mesmaNoticia(a, b) {
+  const { tokensAssunto } = require('./editorialGuidelinesFb');
+  const ta = [...new Set(tokensAssunto(a))];
+  const tb = [...new Set(tokensAssunto(b))];
+  if (ta.length < 3 || tb.length < 3) return false;
+  const setB = new Set(tb);
+  const comuns = ta.filter((w) => setB.has(w)).length;
+  return comuns / Math.max(ta.length, tb.length) >= SOBREPOSICAO_MESMA_NOTICIA;
+}
+
 async function filtrarJaPublicados(dot, posts) {
-  const { titulosParecidos } = require('./editorialGuidelinesFb');
+  const titulosParecidos = mesmaNoticia;
   const desde = new Date(Date.now() - DIAS_HISTORICO_REPETIDO * 86_400_000);
 
   const publicadas = await db('ai_matters')

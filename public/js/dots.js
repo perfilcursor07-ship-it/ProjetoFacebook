@@ -345,7 +345,7 @@
   /** Situação de cada post em linguagem simples. */
   const SITUACAO_POST = {
     proximo: { icone: '⏳', texto: 'Sai na próxima volta', classe: 'd-sit--fila', pode: true },
-    repetido: { icone: '♻️', texto: 'Parecido com matéria já publicada', classe: 'd-sit--fora', pode: true },
+    repetido: { icone: '♻️', texto: 'Igual a uma matéria já publicada', classe: 'd-sit--fora', pode: true },
     falhou: { icone: '⚠️', texto: 'A IA falhou', classe: 'd-sit--erro', pode: true },
     materia: { icone: '✅', texto: 'Virou matéria', classe: 'd-sit--ok', pode: false },
     fora_do_assunto: { icone: '🚫', texto: 'Fora do assunto', classe: 'd-sit--fora', pode: false },

@@ -114,3 +114,17 @@ test('a janela de comparação é curta, não o histórico inteiro', () => {
   assert.ok(DIAS_HISTORICO_REPETIDO >= 1 && DIAS_HISTORICO_REPETIDO <= 30, 'janela em dias');
   assert.equal(DIAS_HISTORICO_REPETIDO, 7, 'padrão de uma semana');
 });
+
+test('assunto parecido pode sair; só a mesma manchete é barrada', async () => {
+  publicadas = [
+    { titulo: 'Lula vence em mais países e soma mais votos que Flávio Bolsonaro no exterior', fonte_url: 'https://g1.globo.com/a' },
+  ];
+  const posts = [
+    // Outra notícia sobre o mesmo tema: tem de passar.
+    { id: 1, url: 'https://g1.globo.com/b', titulo: 'Lula vence em 17 países e Flávio em oito; veja como brasileiros votam no exterior' },
+    // A mesma manchete com poucas palavras trocadas: é a mesma notícia.
+    { id: 2, url: 'https://uol.com.br/c', titulo: 'Lula vence em mais países e soma mais votos que Flávio no exterior' },
+  ];
+  const { novos } = await filtrarJaPublicados(DOT, posts);
+  assert.deepEqual(novos.map((p) => p.id), [1]);
+});
