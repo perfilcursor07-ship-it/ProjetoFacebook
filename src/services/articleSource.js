@@ -209,6 +209,14 @@ async function extrairMetadadosViaJina(urlReal) {
 
 function imagemPareceLogoOuAvatar(url, className = '') {
   const hay = `${url} ${className}`.toLowerCase();
+
+  // Marca do próprio agregador: a og:image do Google Notícias é o logo deles,
+  // e não tem "logo" no nome do arquivo — só o domínio denuncia. Sem isto, uma
+  // matéria que chega por link do Google saía com o logo do Google como foto.
+  if (/(?:^|\/\/)(?:[a-z0-9-]+\.)*(?:gstatic\.com|news\.google\.com)\//i.test(hay)) {
+    return true;
+  }
+
   return /(?:^|[\s/_-])(?:logo|avatar|icons?|sprite|emoji|favicon|badge)(?:[\s/_.-]|$)|gravatar|wp-smiley|site-logo|cropped-logo|\/ads?\/|banner-sm|[-_]ads?[-_]/i.test(
     hay
   );
@@ -341,7 +349,10 @@ async function resolverUrlNoticia(url) {
     const canonical =
       html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)?.[1] ||
       html.match(/<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/i)?.[1];
-    if (urlValida(canonical)) return canonical;
+    // A página do Google Notícias aponta o canonical para ela mesma. Devolver
+    // isso fazia a busca de capa pegar a og:image do Google — o logo deles
+    // virava a "foto" da matéria.
+    if (urlValida(canonical) && !String(canonical).includes('news.google.com')) return canonical;
   } catch (err) {
     console.warn('resolverUrlNoticia:', err.message);
   }

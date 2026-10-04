@@ -16,6 +16,7 @@
     horaFim: $('dot-hora-fim'),
     scan: $('dot-scan'),
     ritmo: $('dot-ritmo'),
+    destinoAjuda: $('dot-destino-ajuda'),
     saidaQtd: $('dot-saida-qtd'),
     saidaMin: $('dot-saida-min'),
     saidaRotulo: $('dot-saida-rotulo'),
@@ -111,10 +112,18 @@
     el.saidaRotulo.textContent = n === 1 ? 'matéria a cada' : 'matérias a cada';
   }
 
+  /** A explicação de cada destino aparece só quando ele é o escolhido. */
+  const AJUDA_DESTINO = {
+    rascunho: 'Fica esperando você revisar. Nada sai sozinho.',
+    agendar: 'Programa o horário e publica sozinho na hora marcada.',
+    publicar: 'Vai direto para a fila, sem revisão.',
+  };
+
   /** Rascunho não tem ritmo de saída: nada sai sozinho. */
   function ajustarDestino() {
-    const mostrar = destinoEscolhido() !== 'rascunho';
-    el.ritmo.classList.toggle('hidden', !mostrar);
+    const destino = destinoEscolhido();
+    el.ritmo.classList.toggle('hidden', destino === 'rascunho');
+    if (el.destinoAjuda) el.destinoAjuda.textContent = AJUDA_DESTINO[destino] || '';
     ajustarRotuloSaida();
   }
 

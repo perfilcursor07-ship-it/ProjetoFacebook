@@ -503,3 +503,100 @@
   width: 4.5rem;
   text-align: center;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Formulário enxuto
+
+   A versão anterior abria seis blocos de uma vez, cada um com um parágrafo de
+   explicação. O essencial — o pedido e o destino — ficava perdido no meio.
+   Aqui o que se usa sempre fica à vista e o resto vai para "Ajustes finos".
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* Linha de controle: rótulo e campo lado a lado, quebrando no celular. */
+.d-linha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .45rem;
+  font-size: .75rem;
+  color: var(--d-texto-3);
+}
+
+/* Destino: três opções exclusivas numa barra só. */
+.d-segmentos {
+  display: flex;
+  gap: .25rem;
+  padding: .2rem;
+  border: 1px solid var(--d-border);
+  border-radius: 999px;
+  background: var(--d-surface-2);
+}
+
+.d-segmento {
+  flex: 1;
+  text-align: center;
+  cursor: pointer;
+}
+
+.d-segmento input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.d-segmento span {
+  display: block;
+  border-radius: 999px;
+  padding: .32rem .5rem;
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--d-texto-4);
+  transition: background var(--d-transicao), color var(--d-transicao);
+}
+
+.d-segmento:hover span { color: var(--d-texto-2); }
+
+.d-segmento input:checked + span {
+  background: var(--d-acento-fundo);
+  color: var(--d-acento-forte);
+}
+
+.d-segmento input:focus-visible + span {
+  outline: 2px solid var(--d-acento-traco);
+  outline-offset: 1px;
+}
+
+/* Ajustes finos: fechado por padrão, porque o padrão já serve. */
+.d-avancado {
+  border: 1px solid var(--d-border);
+  border-radius: var(--d-raio);
+  background: var(--d-surface-2);
+  padding: .6rem .75rem;
+}
+
+.d-avancado > summary {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  cursor: pointer;
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--d-texto-2);
+  list-style: none;
+}
+
+.d-avancado > summary::-webkit-details-marker { display: none; }
+
+.d-avancado > summary::before {
+  content: '▸';
+  color: var(--d-texto-4);
+  transition: transform var(--d-transicao);
+}
+
+.d-avancado[open] > summary::before { content: '▾'; }
+
+.d-avancado-dica {
+  font-weight: 400;
+  font-size: .6875rem;
+  color: var(--d-texto-4);
+}

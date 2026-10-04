@@ -1,5 +1,5 @@
 <%- include('partials/app-start') %>
-  <link rel="stylesheet" href="/css/dots.css?v=20261004a" />
+  <link rel="stylesheet" href="/css/dots.css?v=20261004b" />
 
   <main class="dots-pagina mx-auto max-w-8xl px-4 py-6 sm:px-6 sm:py-10">
 
@@ -27,139 +27,105 @@
           <button type="button" id="dot-recolher" class="d-btn d-btn--fantasma" aria-expanded="true">Recolher</button>
         </div>
 
-        <div id="dot-form" class="mt-4 space-y-5">
-          <div>
-            <label class="d-rotulo" for="dot-nome">Nome</label>
-            <input id="dot-nome" type="text" maxlength="160" placeholder="Radar das páginas gospel" />
-            <p class="d-ajuda">Deixe vazio que eu sugiro um a partir do que você escrever.</p>
-          </div>
+        <div id="dot-form" class="mt-4 space-y-4">
 
+          <!-- ------------------------------------------------- o pedido -->
           <div>
             <label class="d-rotulo" for="dot-objetivo">O que ele deve fazer</label>
-            <textarea id="dot-objetivo" rows="6"
-              placeholder="Monitore estas fontes e crie matéria do que render:&#10;https://www.facebook.com/pagina&#10;https://www.instagram.com/perfil&#10;https://www.youtube.com/@canal&#10;https://portaldenoticias.com.br"></textarea>
+            <textarea id="dot-objetivo" rows="5"
+              placeholder="Monitore estas fontes e crie matéria do que render.&#10;Só o que citar Flávio Bolsonaro ou Lula, com título mais polêmico.&#10;&#10;https://www.facebook.com/pagina&#10;https://portaldenoticias.com.br"></textarea>
             <p class="d-ajuda">
-              Diga só <strong>o que</strong> fazer e cole os links. Ritmo, quantidade, destino e
-              horário você escolhe nos campos abaixo — não precisa escrever nada disso aqui.
+              Diga o assunto, o recorte e o estilo. Cole os links —
+              <strong>Facebook, Instagram, YouTube ou site de notícias</strong>.
             </p>
-            <p class="d-ajuda">
-              Aceita <strong>página do Facebook</strong>, <strong>perfil do Instagram</strong>,
-              <strong>canal do YouTube</strong> e <strong>site de notícias</strong> (lê o RSS ou as
-              últimas publicadas na home). Pode misturar tipos no mesmo dot.
-            </p>
-            <div class="mt-2 flex flex-wrap gap-1.5">
-              <button type="button" class="d-exemplo" data-exemplo="monitorar">Monitorar e escrever</button>
-              <button type="button" class="d-exemplo" data-exemplo="acompanhar">Só acompanhar</button>
-            </div>
           </div>
 
-          <!-- ------------------------------------------- quando trabalhar -->
-          <fieldset class="d-bloco">
-            <legend class="d-bloco-titulo">Quando trabalhar</legend>
-
-            <p class="d-rotulo-min">Dias da semana</p>
-            <div id="dot-dias" class="d-dias" role="group" aria-label="Dias em que o dot trabalha"></div>
-
-            <div class="mt-3 flex flex-wrap items-center gap-2">
-              <label class="d-stat gap-1.5">
-                <span>Das</span>
-                <select id="dot-hora-inicio" class="d-escolha" aria-label="Hora de início"></select>
-              </label>
-              <label class="d-stat gap-1.5">
-                <span>às</span>
-                <select id="dot-hora-fim" class="d-escolha" aria-label="Hora de término"></select>
-              </label>
-            </div>
-            <p class="d-ajuda">Deixe em "qualquer hora" para ele trabalhar o dia inteiro.</p>
-          </fieldset>
-
-          <!-- ------------------------------------------------- varredura -->
-          <fieldset class="d-bloco">
-            <legend class="d-bloco-titulo">Varredura das páginas</legend>
-            <label class="d-stat gap-1.5">
-              <span>Reler cada página a cada</span>
-              <select id="dot-scan" class="d-escolha" aria-label="Intervalo da varredura"></select>
-            </label>
-            <p class="d-ajuda">
-              A varredura enche o estoque de posts. As matérias saem desse estoque no ritmo que
-              você escolher abaixo — por isso vale reler com folga, para nunca faltar conteúdo.
-            </p>
-          </fieldset>
-
-          <!-- --------------------------------------------------- destino -->
-          <fieldset class="d-bloco">
-            <legend class="d-bloco-titulo">O que fazer com a matéria pronta</legend>
-            <div class="d-opcoes">
-              <label class="d-opcao">
+          <!-- ------------------------------------------------- o destino -->
+          <div>
+            <p class="d-rotulo-min">Com a matéria pronta</p>
+            <div class="d-segmentos" role="group" aria-label="O que fazer com a matéria">
+              <label class="d-segmento">
                 <input type="radio" name="dot-destino" value="rascunho" checked />
-                <span>
-                  <span class="d-opcao-nome">Salvar como rascunho</span>
-                  <span class="d-opcao-ajuda">Fica esperando você revisar. Nada sai sozinho.</span>
-                </span>
+                <span>Rascunho</span>
               </label>
-              <label class="d-opcao">
+              <label class="d-segmento">
                 <input type="radio" name="dot-destino" value="agendar" />
-                <span>
-                  <span class="d-opcao-nome">Agendar</span>
-                  <span class="d-opcao-ajuda">Programa o horário e publica sozinho na hora marcada.</span>
-                </span>
+                <span>Agendar</span>
               </label>
-              <label class="d-opcao">
+              <label class="d-segmento">
                 <input type="radio" name="dot-destino" value="publicar" />
-                <span>
-                  <span class="d-opcao-nome">Publicar</span>
-                  <span class="d-opcao-ajuda">Vai direto para a fila, sem revisão.</span>
-                </span>
+                <span>Publicar</span>
               </label>
             </div>
+            <p id="dot-destino-ajuda" class="d-ajuda">Fica esperando você revisar. Nada sai sozinho.</p>
 
-            <div id="dot-ritmo" class="mt-3 hidden">
-              <label class="d-stat gap-1.5">
+            <div id="dot-ritmo" class="mt-2 hidden">
+              <label class="d-linha">
                 <select id="dot-saida-qtd" class="d-escolha" aria-label="Quantidade por lote"></select>
                 <span id="dot-saida-rotulo">matéria a cada</span>
                 <select id="dot-saida-min" class="d-escolha" aria-label="Intervalo entre lotes"></select>
               </label>
             </div>
+          </div>
 
-            <label class="mt-3 d-stat gap-1.5">
-              <span>No máximo</span>
-              <input id="dot-limite" type="number" min="1" max="200" value="20" class="d-escolha d-escolha--num" />
-              <span>matérias por dia</span>
-            </label>
-          </fieldset>
-
-          <!-- ---------------------------------------------------- imagem -->
-          <fieldset class="d-bloco">
-            <legend class="d-bloco-titulo">Imagem</legend>
-            <label class="d-opcao">
-              <input type="checkbox" id="dot-imagem-texto" />
-              <span>
-                <span class="d-opcao-nome">Limpar o texto da foto com IA</span>
-                <span class="d-opcao-ajuda">
-                  A foto vem do próprio post. Marcando isto, quando ela tiver texto embutido
-                  (print, card, tarja) o ChatGPT recebe a ordem de apagar só as letras e devolver
-                  a mesma foto. Sem texto, a foto original é usada como veio.
-                </span>
-              </span>
-            </label>
-          </fieldset>
-
-          <!-- ------------------------------------------------ como/onde -->
-          <div class="flex flex-wrap items-center gap-2">
-            <label class="d-stat gap-1.5">
-              <span>Escreve com</span>
-              <select id="dot-provedor" class="d-escolha">
-                <option value="auto">Carregando…</option>
-              </select>
-            </label>
-
-            <label class="d-stat gap-1.5" title="Onde as matérias vão ser publicadas. Não confundir com as páginas monitoradas, que você cola no pedido acima.">
+          <!-- -------------------------------------------- onde e com quem -->
+          <div class="d-linha">
+            <label class="d-linha gap-1.5">
               <span>Publicar em</span>
               <select id="dot-pagina" class="d-escolha">
                 <option value="">Carregando…</option>
               </select>
             </label>
           </div>
+
+          <!-- ------------------------------------------------- avançado -->
+          <details class="d-avancado">
+            <summary>Ajustes finos<span class="d-avancado-dica">jornada, varredura, limite, imagem</span></summary>
+
+            <div class="mt-3 space-y-3">
+              <div>
+                <label class="d-rotulo-min" for="dot-nome">Nome</label>
+                <input id="dot-nome" type="text" maxlength="160" placeholder="Sugiro um a partir do seu texto" />
+              </div>
+
+              <div>
+                <p class="d-rotulo-min">Dias de trabalho</p>
+                <div id="dot-dias" class="d-dias" role="group" aria-label="Dias em que o dot trabalha"></div>
+                <label class="d-linha mt-2">
+                  <span>Das</span>
+                  <select id="dot-hora-inicio" class="d-escolha" aria-label="Hora de início"></select>
+                  <span>às</span>
+                  <select id="dot-hora-fim" class="d-escolha" aria-label="Hora de término"></select>
+                </label>
+              </div>
+
+              <label class="d-linha">
+                <span>Reler as fontes a cada</span>
+                <select id="dot-scan" class="d-escolha" aria-label="Intervalo da varredura"></select>
+              </label>
+
+              <label class="d-linha">
+                <span>No máximo</span>
+                <input id="dot-limite" type="number" min="1" max="200" value="20" class="d-escolha d-escolha--num" />
+                <span>por dia</span>
+              </label>
+
+              <label class="d-linha items-start">
+                <input type="checkbox" id="dot-imagem-texto" class="mt-0.5" />
+                <span>
+                  <span class="d-opcao-nome">Limpar texto da foto com IA</span>
+                  <span class="d-opcao-ajuda">Só quando a foto do post tiver texto embutido.</span>
+                </span>
+              </label>
+
+              <label class="d-linha">
+                <span>Escreve com</span>
+                <select id="dot-provedor" class="d-escolha">
+                  <option value="auto">Carregando…</option>
+                </select>
+              </label>
+            </div>
+          </details>
 
           <div class="flex flex-wrap items-center gap-2">
             <button type="button" id="dot-previa" class="d-btn d-btn--neutro">Ver o que eu entendi</button>
@@ -181,5 +147,5 @@
     </div>
   </main>
 
-  <script src="/js/dots.js?v=20261004a"></script>
+  <script src="/js/dots.js?v=20261004b"></script>
 <%- include('partials/app-end') %>
