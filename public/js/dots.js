@@ -458,8 +458,15 @@
   function abaProximas(d) {
     const lista = (d?.posts || []).filter((p) => ['proximo', 'repetido', 'falhou'].includes(p.situacao));
     if (!lista.length) {
-      const doAssunto = (d?.posts || []).filter((p) => p.situacao !== 'fora_do_assunto').length;
-      return `<div class="d-vazio-aba">🔎 Nenhum post do assunto esperando.${doAssunto ? ' Os do assunto já viraram matéria — veja em “Matérias”.' : ' Assim que as páginas publicarem algo com as palavras-chave, aparece aqui.'}</div>`;
+      const posts = d?.posts || [];
+      const viraram = posts.filter((p) => p.situacao === 'materia').length;
+      const descartados = posts.filter((p) => ['descartado', 'pouco_texto'].includes(p.situacao)).length;
+      const motivo = viraram
+        ? ` ${viraram} já ${viraram === 1 ? 'virou' : 'viraram'} matéria — veja em “Matérias”.`
+        : descartados
+          ? ` ${descartados} do assunto ${descartados === 1 ? 'foi descartado' : 'foram descartados'} (a IA não conseguiu escrever) — veja em “Todos os posts”.`
+          : ' Assim que as páginas publicarem algo com as palavras-chave, aparece aqui.';
+      return `<div class="d-vazio-aba">🔎 Nenhum post do assunto esperando.${motivo}</div>`;
     }
     const ordem = { proximo: 0, falhou: 1, repetido: 2 };
     return `<div class="d-posts">${lista.sort((a, b) => ordem[a.situacao] - ordem[b.situacao]).map(linhaPost).join('')}</div>`;
