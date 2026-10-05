@@ -1,7 +1,7 @@
 <%- include('partials/app-start') %>
-  <link rel="stylesheet" href="/css/dots.css?v=20261004f" />
+  <link rel="stylesheet" href="/css/dots.css?v=20261004v3" />
 
-  <main class="dots-pagina mx-auto max-w-8xl px-4 py-6 sm:px-6 sm:py-10">
+  <main class="dots-pagina dots-v2 mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
 
     <!-- ------------------------------------------------------------- topo -->
     <header class="flex flex-wrap items-end justify-between gap-4">
@@ -13,53 +13,41 @@
           páginas, separa o que tem conteúdo e escreve a matéria. Você fecha a aba, ele continua.
         </p>
       </div>
-      <span id="dots-pulso" class="d-stat"></span>
+      <span id="dots-pulso" class="dv-pulso"></span>
     </header>
 
-    <!-- Em tela larga o composer fica fixo à esquerda e os dots à direita;
-         abaixo de lg os dois empilham. -->
-    <div class="d-layout mt-7">
+    <!-- -------------------------------------------------------- composer -->
+    <section class="d-composer dv-composer mt-7" aria-labelledby="dv-composer-titulo">
+      <div class="dv-composer-topo">
+        <h2 id="dv-composer-titulo">Criar um dot</h2>
+        <button type="button" id="dot-recolher" class="d-btn d-btn--fantasma" aria-expanded="true">Recolher</button>
+      </div>
 
-      <!-- ------------------------------------------------------- composer -->
-      <section class="d-card d-composer p-5">
-        <div class="flex items-center justify-between gap-3">
-          <h2 class="text-sm font-semibold" style="color: var(--d-texto)">Criar um dot</h2>
-          <button type="button" id="dot-recolher" class="d-btn d-btn--fantasma" aria-expanded="true">Recolher</button>
+      <div id="dot-form" class="mt-4 space-y-5">
+
+        <!-- ------------------------------------------------- o pedido -->
+        <div>
+          <label class="dv-rotulo" for="dot-objetivo">O que ele deve fazer</label>
+          <textarea id="dot-objetivo" rows="5"
+            placeholder="Monitore estas fontes e crie matéria do que render.&#10;Só o que citar Flávio Bolsonaro ou Lula, com título mais polêmico.&#10;&#10;https://www.facebook.com/pagina&#10;https://portaldenoticias.com.br"></textarea>
+          <p class="d-ajuda">
+            Diga o assunto, o recorte e o estilo. Cole os links —
+            <strong>Facebook, Instagram, YouTube ou site de notícias</strong>.
+          </p>
         </div>
 
-        <div id="dot-form" class="mt-4 space-y-4">
-
-          <!-- ------------------------------------------------- o pedido -->
+        <!-- ------------------------------------------------- o destino -->
+        <div class="dv-grade-campos">
           <div>
-            <label class="d-rotulo" for="dot-objetivo">O que ele deve fazer</label>
-            <textarea id="dot-objetivo" rows="5"
-              placeholder="Monitore estas fontes e crie matéria do que render.&#10;Só o que citar Flávio Bolsonaro ou Lula, com título mais polêmico.&#10;&#10;https://www.facebook.com/pagina&#10;https://portaldenoticias.com.br"></textarea>
-            <p class="d-ajuda">
-              Diga o assunto, o recorte e o estilo. Cole os links —
-              <strong>Facebook, Instagram, YouTube ou site de notícias</strong>.
-            </p>
-          </div>
-
-          <!-- ------------------------------------------------- o destino -->
-          <div>
-            <p class="d-rotulo-min">Com a matéria pronta</p>
-            <div class="d-segmentos" role="group" aria-label="O que fazer com a matéria">
-              <label class="d-segmento">
-                <input type="radio" name="dot-destino" value="rascunho" checked />
-                <span>Rascunho</span>
-              </label>
-              <label class="d-segmento">
-                <input type="radio" name="dot-destino" value="agendar" />
-                <span>Agendar</span>
-              </label>
-              <label class="d-segmento">
-                <input type="radio" name="dot-destino" value="publicar" />
-                <span>Publicar</span>
-              </label>
+            <p class="dv-rotulo">Com a matéria pronta</p>
+            <div class="d-segmentos dv-destino" role="group" aria-label="O que fazer com a matéria">
+              <label class="d-segmento"><input type="radio" name="dot-destino" value="rascunho" checked /><span>Rascunho</span></label>
+              <label class="d-segmento"><input type="radio" name="dot-destino" value="agendar" /><span>Agendar</span></label>
+              <label class="d-segmento"><input type="radio" name="dot-destino" value="publicar" /><span>Publicar</span></label>
             </div>
             <p id="dot-destino-ajuda" class="d-ajuda">Fica esperando você revisar. Nada sai sozinho.</p>
 
-            <div id="dot-ritmo" class="mt-2 hidden">
+            <div id="dot-ritmo" class="dv-ritmo hidden">
               <label class="d-linha">
                 <select id="dot-saida-qtd" class="d-escolha" aria-label="Quantidade por lote"></select>
                 <span id="dot-saida-rotulo">matéria a cada</span>
@@ -69,83 +57,82 @@
           </div>
 
           <!-- -------------------------------------------- onde e com quem -->
-          <div class="d-linha">
-            <label class="d-linha gap-1.5">
-              <span>Publicar em</span>
-              <select id="dot-pagina" class="d-escolha">
-                <option value="">Carregando…</option>
+          <div>
+            <label class="dv-rotulo" for="dot-pagina">Publicar em</label>
+            <select id="dot-pagina" class="d-escolha dv-select">
+              <option value="">Carregando…</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------- avançado -->
+        <details class="d-avancado dv-avancado">
+          <summary>Ajustes finos<span class="d-avancado-dica">jornada, varredura, limite, imagem</span></summary>
+
+          <div class="dv-ajustes">
+            <div>
+              <label class="d-rotulo-min" for="dot-nome">Nome</label>
+              <input id="dot-nome" type="text" maxlength="160" placeholder="Sugiro um a partir do seu texto" />
+            </div>
+
+            <div>
+              <p class="d-rotulo-min">Dias de trabalho</p>
+              <div id="dot-dias" class="d-dias" role="group" aria-label="Dias em que o dot trabalha"></div>
+              <label class="d-linha mt-2">
+                <span>Das</span>
+                <select id="dot-hora-inicio" class="d-escolha" aria-label="Hora de início"></select>
+                <span>às</span>
+                <select id="dot-hora-fim" class="d-escolha" aria-label="Hora de término"></select>
+              </label>
+            </div>
+
+            <label class="d-linha">
+              <span>Reler as fontes a cada</span>
+              <select id="dot-scan" class="d-escolha" aria-label="Intervalo da varredura"></select>
+            </label>
+
+            <label class="d-linha">
+              <span>No máximo</span>
+              <input id="dot-limite" type="number" min="1" max="200" value="20" class="d-escolha d-escolha--num" />
+              <span>por dia</span>
+            </label>
+
+            <label class="d-linha items-start">
+              <input type="checkbox" id="dot-imagem-texto" class="mt-0.5" />
+              <span>
+                <span class="d-opcao-nome">Limpar texto da foto com IA</span>
+                <span class="d-opcao-ajuda">Só quando a foto do post tiver texto embutido.</span>
+              </span>
+            </label>
+
+            <label class="d-linha">
+              <span>Escreve com</span>
+              <select id="dot-provedor" class="d-escolha">
+                <option value="auto">Carregando…</option>
               </select>
             </label>
           </div>
+        </details>
 
-          <!-- ------------------------------------------------- avançado -->
-          <details class="d-avancado">
-            <summary>Ajustes finos<span class="d-avancado-dica">jornada, varredura, limite, imagem</span></summary>
-
-            <div class="mt-3 space-y-3">
-              <div>
-                <label class="d-rotulo-min" for="dot-nome">Nome</label>
-                <input id="dot-nome" type="text" maxlength="160" placeholder="Sugiro um a partir do seu texto" />
-              </div>
-
-              <div>
-                <p class="d-rotulo-min">Dias de trabalho</p>
-                <div id="dot-dias" class="d-dias" role="group" aria-label="Dias em que o dot trabalha"></div>
-                <label class="d-linha mt-2">
-                  <span>Das</span>
-                  <select id="dot-hora-inicio" class="d-escolha" aria-label="Hora de início"></select>
-                  <span>às</span>
-                  <select id="dot-hora-fim" class="d-escolha" aria-label="Hora de término"></select>
-                </label>
-              </div>
-
-              <label class="d-linha">
-                <span>Reler as fontes a cada</span>
-                <select id="dot-scan" class="d-escolha" aria-label="Intervalo da varredura"></select>
-              </label>
-
-              <label class="d-linha">
-                <span>No máximo</span>
-                <input id="dot-limite" type="number" min="1" max="200" value="20" class="d-escolha d-escolha--num" />
-                <span>por dia</span>
-              </label>
-
-              <label class="d-linha items-start">
-                <input type="checkbox" id="dot-imagem-texto" class="mt-0.5" />
-                <span>
-                  <span class="d-opcao-nome">Limpar texto da foto com IA</span>
-                  <span class="d-opcao-ajuda">Só quando a foto do post tiver texto embutido.</span>
-                </span>
-              </label>
-
-              <label class="d-linha">
-                <span>Escreve com</span>
-                <select id="dot-provedor" class="d-escolha">
-                  <option value="auto">Carregando…</option>
-                </select>
-              </label>
-            </div>
-          </details>
-
-          <div class="flex flex-wrap items-center gap-2">
-            <button type="button" id="dot-previa" class="d-btn d-btn--neutro">Ver o que eu entendi</button>
-            <button type="button" id="dot-criar" class="d-btn d-btn--principal">Criar dot</button>
-          </div>
-
+        <div class="dv-acoes">
           <p id="dot-aviso" class="d-ajuda" aria-live="polite"></p>
-          <div id="dot-previa-box" class="hidden"></div>
+          <div class="dv-acoes-botoes">
+            <button type="button" id="dot-previa" class="d-btn d-btn--neutro">Ver o que eu entendi</button>
+            <button type="button" id="dot-criar" class="d-btn d-btn--principal dv-criar">Criar dot</button>
+          </div>
         </div>
-      </section>
+        <div id="dot-previa-box" class="hidden"></div>
+      </div>
+    </section>
 
-      <!-- ---------------------------------------------------------- lista -->
-      <section>
-        <h2 class="d-secao">Seus dots</h2>
-        <div id="dots-lista" class="mt-3 space-y-3">
-          <p class="d-stat">Carregando…</p>
-        </div>
-      </section>
-    </div>
+    <!-- ---------------------------------------------------------- lista -->
+    <section class="mt-10">
+      <h2 class="d-secao">Seus dots</h2>
+      <div id="dots-lista" class="mt-3 space-y-4">
+        <p class="d-stat">Carregando…</p>
+      </div>
+    </section>
   </main>
 
-  <script src="/js/dots.js?v=20261004g"></script>
+  <script src="/js/dots.js?v=20261004v3"></script>
 <%- include('partials/app-end') %>

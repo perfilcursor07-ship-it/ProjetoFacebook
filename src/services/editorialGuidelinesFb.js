@@ -427,6 +427,19 @@ function tokensAssunto(texto) {
   return [...nums, ...words];
 }
 
+/**
+ * Mesma notícia (critério estrito): 75% das palavras do título maior em
+ * comum. Assunto parecido NÃO conta — só a mesma manchete reescrita.
+ */
+function mesmaNoticiaEstrita(a, b) {
+  const ta = [...new Set(tokensAssunto(a))];
+  const tb = [...new Set(tokensAssunto(b))];
+  if (ta.length < 3 || tb.length < 3) return false;
+  const setB = new Set(tb);
+  const comuns = ta.filter((w) => setB.has(w)).length;
+  return comuns / Math.max(ta.length, tb.length) >= 0.75;
+}
+
 function titulosParecidos(a, b) {
   const na = tokensAssunto(a);
   const nb = tokensAssunto(b);
@@ -1467,6 +1480,7 @@ module.exports = {
   removerSecaoTitulosAlternativos,
   detectarCitacoesInventadas,
   titulosParecidos,
+  mesmaNoticiaEstrita,
   mesmoAssuntoNoticia,
   tokensAssunto,
   normalizarBusca,

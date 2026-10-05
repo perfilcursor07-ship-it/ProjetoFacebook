@@ -636,10 +636,10 @@
 
   function vazio() {
     return `
-      <div class="d-vazio">
-        <span class="d-vazio-icone"><i></i><i></i><i></i></span>
-        <p class="text-sm" style="color: var(--d-texto-2)">Nenhum dot ainda.</p>
-        <p class="mt-1 text-xs">Escreva acima o que você quer que ele faça — ou toque num exemplo.</p>
+      <div class="dv-vazio">
+        <span class="dv-vazio-orbita" aria-hidden="true"><i></i><i></i><i></i></span>
+        <b>Nenhum dot ainda.</b>
+        <p>Escreva acima o que você quer que ele faça.</p>
       </div>`;
   }
 

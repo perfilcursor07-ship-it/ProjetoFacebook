@@ -744,15 +744,8 @@ function normalizarBusca(valor) {
  * título maior em comum. Assunto PARECIDO passa (o editor quer publicar
  * desdobramentos sobre Lula/Flávio); só a mesma manchete reescrita é barrada.
  */
-const SOBREPOSICAO_MESMA_NOTICIA = 0.75;
 function mesmaNoticia(a, b) {
-  const { tokensAssunto } = require('./editorialGuidelinesFb');
-  const ta = [...new Set(tokensAssunto(a))];
-  const tb = [...new Set(tokensAssunto(b))];
-  if (ta.length < 3 || tb.length < 3) return false;
-  const setB = new Set(tb);
-  const comuns = ta.filter((w) => setB.has(w)).length;
-  return comuns / Math.max(ta.length, tb.length) >= SOBREPOSICAO_MESMA_NOTICIA;
+  return require('./editorialGuidelinesFb').mesmaNoticiaEstrita(a, b);
 }
 
 async function filtrarJaPublicados(dot, posts) {
@@ -1018,9 +1011,12 @@ async function tirarPostDaFila(dot, post, err) {
     .then(([r]) => Number(r?.total) || 0)
     .catch(() => 0);
   const definitivo = err?.code === 'SEM_MATERIA' || anteriores >= 1;
-  if (definitivo) {
-    await db('biblioteca_posts').where({ id: post.id }).update({ status: 'ignorado' }).catch(() => {});
-  }
+  // Não definitivo: devolve o post à fila (ele estava reservado para escrita).
+  await db('biblioteca_posts')
+    .where({ id: post.id })
+    .whereNull('matter_id')
+    .update({ status: definitivo ? 'ignorado' : 'visto' })
+    .catch(() => {});
   return definitivo;
 }
 
@@ -1282,6 +1278,19 @@ async function reservarCiclo(dotId) {
  * falha tira o post da fila e devolve false.
  */
 async function processarPost(dot, post, { indice = 1, total = 1, plano = parseJson(dot.plano, {}) } = {}) {
+  // Reserva o post antes de escrever: dois dots com a mesma página (ou a volta
+  // e o "Escrever agora") pegavam o mesmo post ao mesmo tempo e a matéria
+  // saía repetida. Só quem reservar escreve.
+  const reservou = await db('biblioteca_posts')
+    .where({ id: post.id })
+    .whereNull('matter_id')
+    .whereIn('status', ['novo', 'visto'])
+    .update({ status: 'gerado_texto' })
+    .catch(() => 0);
+  if (!reservou) {
+    await registrarLog(dot, 'ignorou', { detalhe: 'post já está sendo escrito (ou já virou matéria) — pulei', url: post.url });
+    return false;
+  }
   await marcarAtividade(
     dot.id,
     `Escrevendo ${indice}/${total}: ${corta(post.titulo || post.fonte_nome, 120) || post.url}`

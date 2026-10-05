@@ -686,7 +686,54 @@ async function publicarMateria(userId, matterId, overrides = {}) {
   }
 }
 
+/**
+ * Já saiu na mesma página, nos últimos dias, uma matéria com a MESMA notícia
+ * (mesmo link de origem ou título praticamente igual)? Ignora a própria
+ * matéria. Assunto parecido não conta.
+ */
+async function mesmaNoticiaJaNaPagina({ userId, pageId, matter, dias = 3 }) {
+  if (!pageId) return null;
+  const { mesmaNoticiaEstrita } = require('./editorialGuidelinesFb');
+  const semQuery = (v) => String(v || '').split(/[?#]/)[0].toLowerCase().replace(/\/+$/, '');
+  const inicioCorpo = (v) => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 160);
+  const outras = await db('ai_matters')
+    .where({ user_id: userId, facebook_page_id: pageId, status: 'publicado' })
+    .whereNot('id', matter.id)
+    .where('updated_at', '>=', new Date(Date.now() - dias * 86_400_000))
+    .select('id', 'titulo', 'fonte_titulo', 'fonte_url', 'materia')
+    .orderBy('updated_at', 'desc')
+    .limit(300)
+    .catch(() => []);
+  const url = semQuery(matter.fonte_url);
+  const corpo = inicioCorpo(matter.materia);
+  return outras.find((o) =>
+    (url && url === semQuery(o.fonte_url)) ||
+    mesmaNoticiaEstrita(matter.titulo, o.titulo) ||
+    (matter.fonte_titulo && o.fonte_titulo && mesmaNoticiaEstrita(matter.fonte_titulo, o.fonte_titulo)) ||
+    (corpo.length >= 120 && corpo === inicioCorpo(o.materia))
+  ) || null;
+}
+
+// Matérias sendo publicadas agora neste processo: a mesma não sai duas vezes
+// em paralelo (fila + fallback, ou dois cliques).
+const publicandoAgora = new Set();
+
 async function publicarMateriaIndividual(userId, matterId, overrides = {}) {
+  const chave = Number(matterId);
+  if (publicandoAgora.has(chave)) {
+    const err = new Error('Esta matéria já está sendo publicada agora.');
+    err.status = 409;
+    throw err;
+  }
+  publicandoAgora.add(chave);
+  try {
+    return await publicarMateriaIndividualAgora(userId, matterId, overrides);
+  } finally {
+    publicandoAgora.delete(chave);
+  }
+}
+
+async function publicarMateriaIndividualAgora(userId, matterId, overrides = {}) {
   let matter = await AiMatters.findById(matterId);
   if (!matter || matter.user_id !== userId) {
     const err = new Error('Matéria não encontrada');
@@ -694,10 +741,39 @@ async function publicarMateriaIndividual(userId, matterId, overrides = {}) {
     throw err;
   }
 
+  // Publicação automática (fila, piloto, Dots) nunca republica: só o editor,
+  // clicando em Publicar/Republicar (forcar), pode mandar de novo.
+  const automatica = !overrides.forcar;
+  if (automatica && String(matter.status) === 'publicado') {
+    const err = new Error('Matéria já publicada — a publicação automática não republica.');
+    err.status = 409;
+    throw err;
+  }
+
   const facebookPageId = overrides.facebook_page_id || matter.facebook_page_id;
   const page = matter.distribution_brand
     ? await require('./facebookPageResolver').resolvePageForUser(userId, facebookPageId)
     : await resolvePage(userId, facebookPageId);
+
+  // A mesma notícia não sai duas vezes na mesma página por publicação
+  // automática. Antes isto só gerava um aviso no log e publicava assim mesmo.
+  if (automatica && page?.id) {
+    const igual = await mesmaNoticiaJaNaPagina({ userId, pageId: page.id, matter });
+    if (igual) {
+      const motivo = `Não publicada: a página já tem a mesma notícia (matéria #${igual.id}).`;
+      console.warn(`[publicar] BLOQUEADO #${matter.id} — ${motivo}`);
+      await AiMatters.update(matter.id, { status: 'rascunho', scheduled_at: null, error_message: motivo }).catch(() => {});
+      await db('ai_fila_jobs')
+        .where({ matter_id: matter.id })
+        .whereIn('status', ['pendente'])
+        .update({ status: 'cancelado', erro: motivo })
+        .catch(() => {});
+      const err = new Error(motivo);
+      err.status = 409;
+      err.code = 'NOTICIA_REPETIDA';
+      throw err;
+    }
+  }
   if (!page) {
     const err = new Error('Conecte/selecione uma página do Facebook');
     err.status = 400;
@@ -1550,7 +1626,22 @@ function parseScheduleDate(runAt) {
   return new Date(raw);
 }
 
+// O tick do servidor roda a cada 60 s mesmo se o anterior ainda não acabou
+// (a varredura das páginas leva minutos). Duas filas ao mesmo tempo publicavam
+// a MESMA matéria: uma pelo job, outra pelo "fallback" de agendadas vencidas.
+let filaRodando = false;
+
 async function tickFilaJobs() {
+  if (filaRodando) return;
+  filaRodando = true;
+  try {
+    await tickFilaJobsAgora();
+  } finally {
+    filaRodando = false;
+  }
+}
+
+async function tickFilaJobsAgora() {
   /** Só publica se a agenda da biblioteca estiver CONFIRMADA (ou se foi agendada direto em /materias-ia). */
   async function podePublicarAgendada(matter) {
     try {
@@ -1640,10 +1731,18 @@ async function tickFilaJobs() {
     }
   }
 
-  // Fallback: matérias agendadas vencidas (sem job pendente ou job perdido)
+  // Fallback: matérias agendadas vencidas (sem job pendente ou job perdido).
+  // Matéria com job em andamento ou já feito NÃO entra: era assim que a
+  // mesma matéria saía duas vezes.
   const dueMatters = await db('ai_matters')
     .where({ status: 'agendado' })
     .andWhere('scheduled_at', '<=', new Date())
+    .whereNotExists(function jobVivo() {
+      this.select(db.raw('1'))
+        .from('ai_fila_jobs')
+        .whereRaw('ai_fila_jobs.matter_id = ai_matters.id')
+        .whereIn('ai_fila_jobs.status', ['pendente', 'processando', 'feito']);
+    })
     .orderBy('scheduled_at', 'asc')
     .limit(5);
 

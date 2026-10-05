@@ -41,7 +41,9 @@ test('link comum segue como está', async () => {
 test('post que falhou sai da fila e a escolha pula os que falharam há pouco', () => {
   // Antes o post seguia "novo" e cada volta tentava escrever o MESMO post.
   assert.match(FONTE, /tirarPostDaFila\(dot, post, err\)/);
-  assert.match(FONTE, /update\(\{ status: 'ignorado' \}\)/);
+  assert.match(FONTE, /status: definitivo \? 'ignorado' : 'visto'/);
+  // Dois dots (ou a volta e o botão) não escrevem o mesmo post: reserva atômica.
+  assert.match(FONTE, /update\(\{ status: 'gerado_texto' \}\)/);
   assert.match(FONTE, /whereNotIn\('p\.url', falharam\)/);
 });
 
