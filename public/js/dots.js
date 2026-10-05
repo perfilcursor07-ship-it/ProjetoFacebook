@@ -217,6 +217,13 @@
     play: '<path d="m7 4 13 8-13 8z"/>',
     pausa: '<path d="M8 5v14M16 5v14"/>',
     painel: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>',
+    mais: '<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>',
+    lixo: '<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/>',
+    lapis: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>',
+    jornal: '<path d="M4 4h13v16H6a2 2 0 0 1-2-2zM17 8h3v10a2 2 0 0 1-2 2"/><path d="M8 8h5M8 12h5M8 16h3"/>',
+    lista: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+    engrenagem: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+    abrir: '<path d="M7 17 17 7M9 7h8v8"/>',
   };
 
   const icone = (nome) =>
@@ -229,9 +236,135 @@
     return dados;
   }
 
+  /** Avisos curtos no canto da tela, como num app. */
   function avisar(texto, erro = false) {
-    el.aviso.textContent = texto || '';
-    el.aviso.classList.toggle('is-erro', Boolean(erro));
+    el.aviso.textContent = '';
+    if (!texto) return;
+    let pilha = document.getElementById('dc-toasts');
+    if (!pilha) {
+      pilha = document.createElement('div');
+      pilha.id = 'dc-toasts';
+      pilha.className = 'dc-toasts';
+      pilha.setAttribute('aria-live', 'polite');
+      document.body.append(pilha);
+    }
+    const toast = document.createElement('div');
+    toast.className = `dc-toast${erro ? ' dc-toast--erro' : ''}`;
+    toast.textContent = texto;
+    pilha.append(toast);
+    requestAnimationFrame(() => toast.classList.add('is-on'));
+    setTimeout(() => {
+      toast.classList.remove('is-on');
+      setTimeout(() => toast.remove(), 300);
+    }, erro ? 6500 : 3500);
+  }
+
+  // -------------------------------------------------- menu e diálogos
+
+  let menuAberto = null;
+
+  function fecharMenu() {
+    if (!menuAberto) return;
+    menuAberto.remove();
+    menuAberto = null;
+  }
+
+  /**
+   * Menu flutuante (⋯ / botão direito). `itens`: { icone, texto, acao, perigo }
+   * ou 'separador'. Posiciona junto do botão ou do ponto clicado.
+   */
+  function abrirMenu(ancora, itens, aoEscolher, ponto = null) {
+    fecharMenu();
+    const menu = document.createElement('div');
+    menu.className = 'dc-menu';
+    menu.setAttribute('role', 'menu');
+    menu.innerHTML = itens
+      .map((item) => item === 'separador'
+        ? '<div class="dc-menu-sep" role="separator"></div>'
+        : `<button type="button" role="menuitem" class="dc-menu-item${item.perigo ? ' dc-menu-item--perigo' : ''}" data-menu-acao="${item.acao}">${icone(item.icone)}<span>${escapar(item.texto)}</span></button>`)
+      .join('');
+    document.body.append(menu);
+    const caixa = ancora?.getBoundingClientRect();
+    const x = ponto ? ponto.x : caixa.right - menu.offsetWidth;
+    const y = ponto ? ponto.y : caixa.bottom + 6;
+    menu.style.left = `${Math.max(8, Math.min(x, innerWidth - menu.offsetWidth - 8))}px`;
+    menu.style.top = `${Math.max(8, Math.min(y, innerHeight - menu.offsetHeight - 8))}px`;
+    menu.addEventListener('click', (e) => {
+      const item = e.target.closest('[data-menu-acao]');
+      if (!item) return;
+      fecharMenu();
+      aoEscolher(item.dataset.menuAcao);
+    });
+    menu.addEventListener('keydown', (e) => {
+      const botoes = [...menu.querySelectorAll('button')];
+      const atual = botoes.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const passo = e.key === 'ArrowDown' ? 1 : -1;
+        botoes[(atual + passo + botoes.length) % botoes.length]?.focus();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        fecharMenu();
+      }
+    });
+    menuAberto = menu;
+    requestAnimationFrame(() => menu.classList.add('is-on'));
+    menu.querySelector('button')?.focus();
+  }
+
+  document.addEventListener('mousedown', (e) => {
+    if (menuAberto && !menuAberto.contains(e.target)) fecharMenu();
+  });
+  window.addEventListener('resize', fecharMenu);
+
+  /** Janela de confirmação/entrada no lugar do confirm()/prompt() do navegador. */
+  function dialogo({ titulo, texto = '', confirmar = 'Confirmar', perigo = false, campo = null }) {
+    return new Promise((resolve) => {
+      const fundo = document.createElement('div');
+      fundo.className = 'dc-dialogo-fundo';
+      fundo.innerHTML = `
+        <div class="dc-dialogo" role="dialog" aria-modal="true" aria-labelledby="dc-dialogo-titulo">
+          <h3 id="dc-dialogo-titulo">${escapar(titulo)}</h3>
+          ${texto ? `<p>${escapar(texto)}</p>` : ''}
+          ${campo ? `<input type="text" class="dc-dialogo-campo" maxlength="160" value="${escapar(campo.valor || '')}" aria-label="${escapar(campo.rotulo || titulo)}" />` : ''}
+          <div class="dc-dialogo-acoes">
+            <button type="button" class="dc-botao" data-resposta="nao">Cancelar</button>
+            <button type="button" class="dc-botao ${perigo ? 'dc-botao--perigo' : 'dc-botao--principal'}" data-resposta="sim">${escapar(confirmar)}</button>
+          </div>
+        </div>`;
+      document.body.append(fundo);
+      const entrada = fundo.querySelector('.dc-dialogo-campo');
+      const fechar = (sim) => {
+        fundo.classList.remove('is-on');
+        setTimeout(() => fundo.remove(), 180);
+        document.removeEventListener('keydown', teclas, true);
+        resolve(sim ? (entrada ? entrada.value.trim() : true) : entrada ? null : false);
+      };
+      const teclas = (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          fechar(false);
+        } else if (e.key === 'Enter' && entrada) {
+          e.preventDefault();
+          fechar(true);
+        }
+      };
+      document.addEventListener('keydown', teclas, true);
+      fundo.addEventListener('click', (e) => {
+        if (e.target === fundo) return fechar(false);
+        const botao = e.target.closest('[data-resposta]');
+        if (botao) fechar(botao.dataset.resposta === 'sim');
+      });
+      requestAnimationFrame(() => fundo.classList.add('is-on'));
+      if (entrada) {
+        entrada.focus();
+        entrada.select();
+      } else {
+        // Ação perigosa começa no "Cancelar": Enter sem querer não exclui.
+        fundo.querySelector(`[data-resposta="${perigo ? 'nao' : 'sim'}"]`)?.focus();
+      }
+    });
   }
 
   function escapar(texto) {
@@ -310,9 +443,16 @@
     return 'ativo';
   }
 
+  /** Cor fixa por dot (mesmo dot, mesma cor), para reconhecer na lista. */
+  function matiz(dot) {
+    let h = 0;
+    for (const c of String(dot.id ?? dot.nome ?? '')) h = (h * 31 + c.charCodeAt(0)) % 360;
+    return (h * 47) % 360;
+  }
+
   function avatar(dot, extra = '') {
     const inicial = escapar(String(dot.nome || '?').trim().charAt(0).toUpperCase() || '?');
-    return `<span class="dc-avatar dc-avatar--${estadoDoDot(dot)} ${extra}" aria-hidden="true">${inicial}<i></i></span>`;
+    return `<span class="dc-avatar dc-avatar--${estadoDoDot(dot)} ${extra}" style="--dc-hue:${matiz(dot)}" aria-hidden="true">${inicial}<i></i></span>`;
   }
 
   /** Subtítulo da conversa: o que ele está fazendo ou a última coisa que fez. */
@@ -339,13 +479,14 @@
     }
     el.lista.innerHTML = dots
       .map((dot) => `
-        <button type="button" class="dc-item ${String(dot.id) === selecionado ? 'is-on' : ''}" data-abrir="${dot.id}">
+        <div class="dc-item ${String(dot.id) === selecionado ? 'is-on' : ''}" data-abrir="${dot.id}" role="button" tabindex="0">
           ${avatar(dot)}
           <span class="dc-item-texto">
             <span class="dc-item-nome">${escapar(dot.nome)}</span>
             <span class="dc-item-sub">${escapar(subtitulo(dot))}</span>
           </span>
-        </button>`)
+          <button type="button" class="dc-item-mais" data-menu-dot="${dot.id}" title="Opções" aria-label="Opções de ${escapar(dot.nome)}">${icone('mais')}</button>
+        </div>`)
       .join('');
   }
 
@@ -759,11 +900,11 @@
     partes.push(msgDot(`${banner(dot)}${funil(dot)}`, 'dc-msg--status'));
     partes.push(`
       <div class="dc-chips dc-chips--acoes">
-        <button type="button" class="dc-chip" data-acao="rodar" ${dot.trabalhando ? 'disabled' : ''}>▶ Trabalhar agora</button>
-        <button type="button" class="dc-chip" data-acao="${dot.estado === 'ativo' ? 'pausar' : 'retomar'}">${dot.estado === 'ativo' ? '⏸ Pausar' : '▶ Retomar'}</button>
-        <button type="button" class="dc-chip" data-acao="painel" data-aba="materias">📰 Matérias${d ? ` (${(d.materias || []).length})` : ''}</button>
-        <button type="button" class="dc-chip" data-acao="painel" data-aba="todos">🗂️ Todos os posts</button>
-        <button type="button" class="dc-chip" data-acao="painel" data-aba="config">⚙️ Configuração</button>
+        <button type="button" class="dc-chip" data-acao="rodar" ${dot.trabalhando ? 'disabled' : ''}>${icone('play')}Trabalhar agora</button>
+        <button type="button" class="dc-chip" data-acao="${dot.estado === 'ativo' ? 'pausar' : 'retomar'}">${icone(dot.estado === 'ativo' ? 'pausa' : 'play')}${dot.estado === 'ativo' ? 'Pausar' : 'Retomar'}</button>
+        <button type="button" class="dc-chip" data-acao="painel" data-aba="materias">${icone('jornal')}Matérias${d ? ` <b>${(d.materias || []).length}</b>` : ''}</button>
+        <button type="button" class="dc-chip" data-acao="painel" data-aba="todos">${icone('lista')}Todos os posts</button>
+        <button type="button" class="dc-chip" data-acao="painel" data-aba="config">${icone('engrenagem')}Configuração</button>
       </div>`);
     return `<div data-dot="${dot.id}" class="dc-fio">${partes.join('')}</div>`;
   }
@@ -779,9 +920,9 @@
     el.titulo.innerHTML = `${avatar(dot)}<span class="dc-titulo-nome">${escapar(dot.nome)}</span>${pill(dot)}`;
     el.acoes.innerHTML = `
       <div data-dot="${dot.id}" class="dc-acoes-grupo">
-        <button type="button" class="dc-icone" data-acao="rodar" title="Trabalhar agora" aria-label="Trabalhar agora" ${dot.trabalhando ? 'disabled' : ''}>${icone('play')}</button>
-        <button type="button" class="dc-icone" data-acao="${dot.estado === 'ativo' ? 'pausar' : 'retomar'}" title="${dot.estado === 'ativo' ? 'Pausar' : 'Retomar'}" aria-label="${dot.estado === 'ativo' ? 'Pausar' : 'Retomar'}">${icone(dot.estado === 'ativo' ? 'pausa' : 'play')}</button>
+        <button type="button" class="dc-botao dc-botao--principal" data-acao="rodar" title="Ler as páginas e escrever agora" ${dot.trabalhando ? 'disabled' : ''}>${icone('play')}<span>${dot.trabalhando ? 'Trabalhando…' : 'Trabalhar agora'}</span></button>
         <button type="button" class="dc-icone" data-acao="painel" title="Painel do dot" aria-label="Abrir painel do dot">${icone('painel')}</button>
+        <button type="button" class="dc-icone" data-acao="menu-topo" title="Mais opções" aria-label="Mais opções do dot" aria-haspopup="menu">${icone('mais')}</button>
       </div>`;
   }
 
@@ -1136,8 +1277,28 @@
   });
   el.busca.addEventListener('input', renderLateral);
   el.lista.addEventListener('click', (e) => {
+    const mais = e.target.closest('[data-menu-dot]');
+    if (mais) {
+      e.stopPropagation();
+      return abrirMenuDot(mais.dataset.menuDot, mais);
+    }
     const item = e.target.closest('[data-abrir]');
     if (item) selecionar(item.dataset.abrir);
+  });
+  el.lista.addEventListener('contextmenu', (e) => {
+    const item = e.target.closest('[data-abrir]');
+    if (!item) return;
+    e.preventDefault();
+    abrirMenuDot(item.dataset.abrir, item, { x: e.clientX, y: e.clientY });
+  });
+  el.lista.addEventListener('scroll', fecharMenu);
+  el.lista.addEventListener('keydown', (e) => {
+    const item = e.target.closest('[data-abrir]');
+    if (!item || e.target.closest('[data-menu-dot]')) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      selecionar(item.dataset.abrir);
+    }
   });
 
   el.painelFechar.addEventListener('click', fecharPainel);
@@ -1234,26 +1395,88 @@
       }
       return;
     }
-    if (acao === 'excluir' && !confirm('Excluir este dot? As páginas continuam na Biblioteca.')) return;
+    if (acao === 'menu-topo') return abrirMenuDot(id, botao);
     if (!['rodar', 'pausar', 'retomar', 'excluir'].includes(acao)) return;
-
     botao.disabled = true;
+    const feito = await executarAcao(id, acao);
+    if (!feito && botao.isConnected) botao.disabled = false;
+  });
+
+  function itensDoMenu(dot) {
+    return [
+      { icone: 'abrir', texto: 'Abrir conversa', acao: 'abrir' },
+      { icone: 'play', texto: 'Trabalhar agora', acao: 'rodar' },
+      dot.estado === 'ativo'
+        ? { icone: 'pausa', texto: 'Pausar', acao: 'pausar' }
+        : { icone: 'play', texto: 'Retomar', acao: 'retomar' },
+      'separador',
+      { icone: 'lapis', texto: 'Renomear', acao: 'renomear' },
+      { icone: 'engrenagem', texto: 'Configuração', acao: 'configuracao' },
+      'separador',
+      { icone: 'lixo', texto: 'Excluir dot', acao: 'excluir', perigo: true },
+    ];
+  }
+
+  function abrirMenuDot(id, ancora, ponto = null) {
+    const dot = ultimaLista.find((d) => String(d.id) === String(id));
+    if (!dot) return;
+    abrirMenu(ancora, itensDoMenu(dot), (acao) => executarAcao(id, acao), ponto);
+  }
+
+  /** Executa uma ação do dot. Devolve true quando deu certo. */
+  async function executarAcao(id, acao) {
+    const dot = ultimaLista.find((d) => String(d.id) === String(id));
+    if (!dot) return false;
+    if (acao === 'abrir') {
+      selecionar(id);
+      return true;
+    }
+    if (acao === 'configuracao') {
+      if (selecionado !== String(id)) selecionar(id);
+      abrirPainel('config');
+      return true;
+    }
+    if (acao === 'renomear') {
+      const nome = await dialogo({ titulo: 'Renomear dot', confirmar: 'Salvar', campo: { valor: dot.nome, rotulo: 'Novo nome' } });
+      if (!nome || nome === dot.nome) return false;
+      try {
+        await api(`/api/dots/${id}`, { method: 'PATCH', body: JSON.stringify({ nome }) });
+        avisar('Nome salvo.');
+        await carregar();
+        return true;
+      } catch (err) {
+        avisar(err.message, true);
+        return false;
+      }
+    }
+    if (acao === 'excluir') {
+      const ok = await dialogo({
+        titulo: `Excluir “${dot.nome}”?`,
+        texto: 'O dot para de trabalhar e some da lista. As matérias já escritas e as páginas na Biblioteca continuam.',
+        confirmar: 'Excluir',
+        perigo: true,
+      });
+      if (!ok) return false;
+    }
     try {
       if (acao === 'excluir') {
         await api(`/api/dots/${id}`, { method: 'DELETE' });
         logs.delete(String(id));
         detalhes.delete(String(id));
         fecharPainel();
-        selecionado = 'novo';
+        if (selecionado === String(id)) selecionado = 'novo';
+        avisar(`“${dot.nome}” excluído.`);
       } else {
         await api(`/api/dots/${id}/${acao}`, { method: 'POST' });
+        avisar(acao === 'rodar' ? 'Começando agora…' : acao === 'pausar' ? 'Dot pausado.' : 'Dot retomado.');
       }
       await carregar();
+      return true;
     } catch (err) {
       avisar(err.message, true);
-      botao.disabled = false;
+      return false;
     }
-  });
+  }
 
   el.painelCorpo.addEventListener('change', async (e) => {
     if (!e.target.matches('[data-provedor]')) return;
