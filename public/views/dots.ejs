@@ -1,6 +1,6 @@
 <%- include('partials/app-start') %>
   <link rel="stylesheet" href="/css/dots.css?v=20261005chat1" />
-  <link rel="stylesheet" href="/css/dots-chat.css?v=20261005chat1" />
+  <link rel="stylesheet" href="/css/dots-chat.css?v=20261005para1" />
 
   <!-- Dots no formato de chat: cada dot é uma conversa. O pedido é a sua
        mensagem; o que ele lê, escreve e publica são as respostas. -->
@@ -30,7 +30,15 @@
 
     <!-- ------------------------------------------------------- conversa -->
     <section class="dc-conversa" aria-label="Conversa com o dot">
-      <header class="dc-topo">
+      <!-- "+" da lateral: escolher com quem conversar ou criar um dot novo. -->
+      <div id="dc-para" class="dc-para" hidden>
+        <label for="dc-para-busca" class="dc-para-rotulo">Para:</label>
+        <input id="dc-para-busca" class="dc-para-busca" type="text" placeholder="Comece uma conversa com…" autocomplete="off"
+          role="combobox" aria-expanded="true" aria-controls="dc-para-menu" />
+        <div id="dc-para-menu" class="dc-para-menu" role="listbox" aria-label="Escolha um dot ou crie um novo"></div>
+      </div>
+
+      <header id="dc-topo" class="dc-topo">
         <button type="button" id="dc-abrir-lateral" class="dc-icone dc-so-celular" aria-label="Abrir lista de dots">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
         </button>
@@ -44,10 +52,15 @@
         <!-- Ajustes do dot novo: abrem pelo "+" da caixa de mensagem. -->
         <div id="dc-ajustes" class="dc-ajustes" hidden>
           <div class="dc-ajustes-topo">
-            <b>Ajustes do novo dot</b>
+            <b>Novo dot</b>
             <button type="button" id="dc-ajustes-fechar" class="dc-icone" aria-label="Fechar ajustes">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
             </button>
+          </div>
+
+          <div class="dc-campo-nome">
+            <label class="dv-rotulo" for="dot-nome">Nome do dot</label>
+            <input id="dot-nome" type="text" maxlength="160" placeholder="Ex.: Política no Facebook (ou deixe que eu sugiro)" />
           </div>
 
           <div class="dv-grade-campos">
@@ -76,12 +89,8 @@
           </div>
 
           <details class="d-avancado dv-avancado">
-            <summary>Ajustes finos<span class="d-avancado-dica">nome, jornada, varredura, limite, imagem</span></summary>
+            <summary>Ajustes finos<span class="d-avancado-dica">jornada, varredura, limite, imagem, IA</span></summary>
             <div class="dv-ajustes">
-              <div>
-                <label class="d-rotulo-min" for="dot-nome">Nome</label>
-                <input id="dot-nome" type="text" maxlength="160" placeholder="Sugiro um a partir do seu texto" />
-              </div>
               <div>
                 <p class="d-rotulo-min">Dias de trabalho</p>
                 <div id="dot-dias" class="d-dias" role="group" aria-label="Dias em que o dot trabalha"></div>
@@ -146,5 +155,5 @@
     </aside>
   </main>
 
-  <script src="/js/dots.js?v=20261005chat1"></script>
+  <script src="/js/dots.js?v=20261005para1"></script>
 <%- include('partials/app-end') %>

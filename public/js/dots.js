@@ -14,6 +14,10 @@
     novo: $('dc-novo'),
     lista: $('dots-lista'),
     pulso: $('dots-pulso'),
+    para: $('dc-para'),
+    paraBusca: $('dc-para-busca'),
+    paraMenu: $('dc-para-menu'),
+    topo: $('dc-topo'),
     titulo: $('dc-titulo'),
     acoes: $('dc-acoes'),
     mensagens: $('dc-mensagens'),
@@ -767,7 +771,8 @@
   function renderTopo() {
     const dot = dotAtual();
     if (!dot) {
-      el.titulo.innerHTML = '<span class="dc-avatar dc-avatar--novo" aria-hidden="true">+</span><span class="dc-titulo-nome">Novo dot</span>';
+      const nome = String(el.nome?.value || '').trim() || 'Novo dot';
+      el.titulo.innerHTML = `<span class="dc-avatar dc-avatar--novo" aria-hidden="true">+</span><span class="dc-titulo-nome">${escapar(nome)}</span>`;
       el.acoes.innerHTML = '';
       return;
     }
@@ -1022,7 +1027,104 @@
   el.abrirLateral.addEventListener('click', abrirLateral);
   el.fecharLateral.addEventListener('click', fecharLateral);
   el.fundoLateral.addEventListener('click', fecharLateral);
-  el.novo.addEventListener('click', () => selecionar('novo'));
+  // ------------------------------------------- "+": Para: (como no Grok)
+
+  let destaquePara = 0;
+
+  function opcoesPara() {
+    const termo = String(el.paraBusca.value || '').trim();
+    const filtro = termo.toLowerCase();
+    const dots = ultimaLista.filter((d) => !filtro || String(d.nome || '').toLowerCase().includes(filtro));
+    return [{ id: 'novo', termo }, ...dots.map((d) => ({ id: String(d.id), dot: d }))];
+  }
+
+  function renderMenuPara() {
+    const opcoes = opcoesPara();
+    // Digitou algo que bate com um dot: ele vem destacado; senão, "Criar novo".
+    if (destaquePara >= opcoes.length) destaquePara = 0;
+    el.paraMenu.innerHTML = opcoes
+      .map((o, i) => {
+        const ativo = i === destaquePara ? ' is-on' : '';
+        if (o.id === 'novo') {
+          return `<button type="button" role="option" class="dc-para-item${ativo}" data-para="novo" aria-selected="${Boolean(ativo)}">
+            <span class="dc-para-icone" aria-hidden="true">+</span>
+            <span>Criar novo dot${o.termo ? ` “${escapar(o.termo)}”` : ''}</span>
+          </button>`;
+        }
+        return `<button type="button" role="option" class="dc-para-item${ativo}" data-para="${o.id}" aria-selected="${Boolean(ativo)}">
+          ${avatar(o.dot, 'dc-avatar--mini')}
+          <span>${escapar(o.dot.nome)}</span>
+        </button>`;
+      })
+      .join('');
+  }
+
+  function mostrarPara() {
+    fecharLateral();
+    fecharPainel();
+    el.para.hidden = false;
+    el.topo.hidden = true;
+    el.paraBusca.value = '';
+    destaquePara = 0;
+    renderMenuPara();
+    el.paraBusca.focus();
+  }
+
+  function esconderPara() {
+    if (el.para.hidden) return;
+    el.para.hidden = true;
+    el.topo.hidden = false;
+  }
+
+  /** "Criar novo dot": abre o nome e os ajustes; o pedido vai na caixa de baixo. */
+  function comecarNovo(nomeInicial) {
+    esconderPara();
+    selecionar('novo');
+    if (nomeInicial) el.nome.value = nomeInicial;
+    abrirAjustes();
+    renderTopo();
+    el.nome.focus();
+    if (nomeInicial) el.nome.setSelectionRange(nomeInicial.length, nomeInicial.length);
+  }
+
+  function escolherPara(id) {
+    if (id === 'novo') return comecarNovo(String(el.paraBusca.value || '').trim());
+    esconderPara();
+    selecionar(id);
+  }
+
+  el.novo.addEventListener('click', (e) => {
+    e.stopPropagation();
+    mostrarPara();
+  });
+  el.paraBusca.addEventListener('input', () => {
+    const opcoes = opcoesPara();
+    // Com texto, o 1º dot que bate fica destacado; sem dot, "Criar novo".
+    destaquePara = el.paraBusca.value.trim() && opcoes.length > 1 ? 1 : 0;
+    renderMenuPara();
+  });
+  el.paraBusca.addEventListener('keydown', (e) => {
+    const total = opcoesPara().length;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      destaquePara = (destaquePara + (e.key === 'ArrowDown' ? 1 : -1) + total) % total;
+      renderMenuPara();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      escolherPara(opcoesPara()[destaquePara]?.id || 'novo');
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      esconderPara();
+    }
+  });
+  el.paraMenu.addEventListener('click', (e) => {
+    const item = e.target.closest('[data-para]');
+    if (item) escolherPara(item.dataset.para);
+  });
+  document.addEventListener('click', (e) => {
+    if (!el.para.hidden && !el.para.contains(e.target)) esconderPara();
+  });
+  el.nome.addEventListener('input', renderTopo);
   el.buscar.addEventListener('click', () => {
     el.busca.hidden = !el.busca.hidden;
     el.buscar.setAttribute('aria-expanded', String(!el.busca.hidden));
