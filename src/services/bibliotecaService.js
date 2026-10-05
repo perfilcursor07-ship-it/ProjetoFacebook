@@ -412,6 +412,8 @@ async function coletarItensFonte(fonte) {
   const url = fonte.url;
   const erros = [];
 
+  if (plataforma === 'busca') return coletarViaBusca(fonte);
+
   if (plataforma === 'youtube' || plataforma === 'tiktok') {
     try {
       return dedupeItens(await coletarViaYtDlp(url, plataforma));
@@ -1340,6 +1342,127 @@ async function coletarLinksHomepage(pageUrl) {
   return itens;
 }
 
+// ---------------------------------------------------------------- pesquisa
+
+/**
+ * Endereço canônico de uma pesquisa por assunto. É a `url` da fonte: o mesmo
+ * termo dá sempre o mesmo endereço (a unicidade user_id+url evita duas fontes
+ * iguais), e abrir no navegador mostra exatamente o que o dot lê.
+ */
+function urlDaBusca(termo) {
+  const q = encodeURIComponent(limparTermoBusca(termo));
+  return `https://news.google.com/rss/search?q=${q}&hl=pt-BR&gl=BR&ceid=BR:pt-419`;
+}
+
+function limparTermoBusca(termo) {
+  return String(termo || '').replace(/\s+/g, ' ').trim().slice(0, 150);
+}
+
+function termoDaFonteBusca(fonte) {
+  const doHandle = limparTermoBusca(fonte?.handle);
+  if (doHandle) return doHandle;
+  try {
+    return limparTermoBusca(new URL(String(fonte?.url || '')).searchParams.get('q'));
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Notícias recentes do assunto no Google Notícias. Primeiro as das últimas
+ * 24 h — o dot quer fato novo; em dia fraco no assunto alarga para 7 dias,
+ * para a pesquisa não ficar vazia.
+ *
+ * O link vem do Google (news.google.com/rss/articles/…); quem escreve troca
+ * pelo link da reportagem antes de mandar para a IA (dotsService).
+ */
+async function coletarViaBusca(fonte) {
+  const termo = termoDaFonteBusca(fonte);
+  if (!termo) {
+    const err = new Error('Pesquisa sem assunto definido');
+    err.status = 422;
+    throw err;
+  }
+  const { buscarGoogleNewsRss } = require('./newsResearch');
+  let encontrados = await buscarGoogleNewsRss(termo, { when: '1d' });
+  if (encontrados.length < 5) {
+    encontrados = [...encontrados, ...(await buscarGoogleNewsRss(termo, { when: '7d' }))];
+  }
+
+  const itens = encontrados
+    .filter((item) => /^https?:\/\//i.test(String(item.link || '')))
+    .map((item) => ({
+      externalId: String(item.link),
+      titulo: String(item.titulo || 'Notícia').slice(0, 500),
+      url: String(item.link),
+      // O "resumo" do Google repete o título seguido do veículo. O que ajuda o
+      // editor é saber de onde veio a notícia: fica só o veículo.
+      resumo: veiculoDoItemBusca(item),
+      thumbnail: null,
+      publicadoEm: item.dataTimestamp ? new Date(item.dataTimestamp) : null,
+    }));
+
+  if (!itens.length) {
+    const err = new Error(`O Google Notícias não trouxe nada sobre "${termo}" nos últimos 7 dias.`);
+    err.status = 422;
+    throw err;
+  }
+  return dedupeItens(itens, SCAN_LIMIT_SITE);
+}
+
+function veiculoDoItemBusca(item) {
+  const veiculo = String(item?.veiculo || '').trim();
+  if (veiculo && !/^google news$/i.test(veiculo)) return veiculo.slice(0, 120);
+  // Sem <font> no RSS, o veículo é o que sobra do resumo depois do título.
+  const resto = String(item?.resumo || '')
+    .replace(/&nbsp;| /gi, ' ')
+    .replace(String(item?.titulo || ''), '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return resto ? resto.slice(0, 120) : null;
+}
+
+/**
+ * Cria (ou devolve, se já existir) a fonte de pesquisa de um assunto.
+ * Mesmo termo de novo reaproveita a fonte — o histórico de posts continua.
+ */
+async function criarFonteBusca({ userId, termo, monitorar = true, intervaloMinutos = 60 }) {
+  const db = require('../config/db');
+  const limpo = limparTermoBusca(termo);
+  if (limpo.length < 2) {
+    const err = new Error('Diga o assunto que devo pesquisar.');
+    err.status = 400;
+    throw err;
+  }
+  const url = urlDaBusca(limpo);
+  const existente = await db('biblioteca_fontes').where({ user_id: userId, url }).first();
+  if (existente) {
+    if (monitorar && !existente.monitorar) {
+      await BibliotecaFontes.update(existente.id, { monitorar: true, proxima_execucao: new Date() });
+    }
+    return BibliotecaFontes.findById(existente.id);
+  }
+  try {
+    const [id] = await BibliotecaFontes.create({
+      user_id: userId,
+      plataforma: 'busca',
+      nome: `Pesquisa: ${limpo}`.slice(0, 200),
+      url: url.slice(0, 500),
+      handle: limpo.slice(0, 200),
+      monitorar: Boolean(monitorar),
+      intervalo_minutos: Math.min(Math.max(Number(intervaloMinutos) || 60, 15), 24 * 60),
+      proxima_execucao: monitorar ? new Date() : null,
+    });
+    return BibliotecaFontes.findById(id);
+  } catch (err) {
+    // Corrida entre dois cadastros do mesmo termo: fica a que entrou primeiro.
+    if (String(err.code) === 'ER_DUP_ENTRY' || /duplicate/i.test(err.message)) {
+      return db('biblioteca_fontes').where({ user_id: userId, url }).first();
+    }
+    throw err;
+  }
+}
+
 async function criarFonte({
   userId,
   url,
@@ -1482,9 +1605,12 @@ async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) 
   // Em redes sociais, posts distintos podem ter legendas/títulos muito parecidos.
   // O link/external_id é a identidade confiável; dedupe semântico por título
   // fica restrito a sites, onde republicações são comuns.
-  const deduplicarPorTitulo = ['site', 'outro'].includes(
+  const deduplicarPorTitulo = ['site', 'outro', 'busca'].includes(
     String(fonte.plataforma || '').toLowerCase()
   );
+  // Pesquisa traz 20 notícias por volta: um alerta para cada uma inundaria a
+  // Biblioteca. Quem acompanha a pesquisa é o dot, no painel dele.
+  const criarAlerta = String(fonte.plataforma || '').toLowerCase() !== 'busca';
   // Pool recente da fonte p/ dedupe por URL normalizada e título parecido
   const recentes = await BibliotecaPosts.findByFonte(fonte.id, 120);
   const urlsVistas = new Set(
@@ -1566,6 +1692,11 @@ async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) 
     urlsVistas.add(urlNorm);
     titulosVistos.push(tituloFinal);
 
+    if (!criarAlerta) {
+      novos.push(await BibliotecaPosts.findById(postId));
+      continue;
+    }
+
     const jaTemAlerta = await BibliotecaAlertas.findByPostId(postId, fonte.user_id);
     if (!jaTemAlerta) {
       try {
@@ -1590,12 +1721,15 @@ async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) 
 async function salvarItensFonte(fonte, itens, { silentFirst = false } = {}) {
   const jaTemPosts = (await BibliotecaPosts.findByFonte(fonte.id, 1)).length > 0;
   const limite =
-    fonte.plataforma === 'site'
+    fonte.plataforma === 'site' || fonte.plataforma === 'busca'
       ? SCAN_LIMIT_SITE
       : fonte.plataforma === 'facebook'
         ? SCAN_LIMIT_FACEBOOK
         : SCAN_LIMIT;
   const lote = dedupeItens(itens, limite);
+  // Facebook e pesquisa salvam o texto como veio: o Facebook traz 40 itens e a
+  // pesquisa já vem em português, com o título do próprio veículo.
+  const semIaNoTexto = fonte.plataforma === 'facebook' || fonte.plataforma === 'busca';
 
   // Primeira varredura automática: cria uma base sem inundar os alertas.
   if (!jaTemPosts && silentFirst) {
@@ -1607,10 +1741,9 @@ async function salvarItensFonte(fonte, itens, { silentFirst = false } = {}) {
       const exists = await BibliotecaPosts.findByExternal(fonte.id, externalId);
       if (exists) continue;
       // Facebook pode trazer 40 itens: salve a base imediatamente e traduza depois.
-      const traduzido =
-        fonte.plataforma === 'facebook'
-          ? { titulo: item.titulo, resumo: item.resumo }
-          : await traduzirItemBrutoSeEstrangeiro(fonte, item);
+      const traduzido = semIaNoTexto
+        ? { titulo: item.titulo, resumo: item.resumo }
+        : await traduzirItemBrutoSeEstrangeiro(fonte, item);
       await BibliotecaPosts.create({
         fonte_id: fonte.id,
         user_id: fonte.user_id,
@@ -1643,7 +1776,7 @@ async function salvarItensFonte(fonte, itens, { silentFirst = false } = {}) {
   }
 
   const novos = await registrarItensNovos(fonte, lote, {
-    gerarResumoIa: fonte.plataforma !== 'facebook',
+    gerarResumoIa: !semIaNoTexto,
   });
   await BibliotecaFontes.update(fonte.id, {
     ultimo_scan: new Date(),
@@ -2998,6 +3131,10 @@ async function tickAutopilot() {
 module.exports = {
   detectarPlataforma,
   criarFonte,
+  criarFonteBusca,
+  urlDaBusca,
+  termoDaFonteBusca,
+  coletarViaBusca,
   encontrarFontePorUrl,
   atualizarFonte,
   escanearAgora,

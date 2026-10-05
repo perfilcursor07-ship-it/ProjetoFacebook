@@ -1,6 +1,6 @@
 <%- include('partials/app-start') %>
   <link rel="stylesheet" href="/css/dots.css?v=20261005chat1" />
-  <link rel="stylesheet" href="/css/dots-chat.css?v=20261005app1" />
+  <link rel="stylesheet" href="/css/dots-chat.css?v=20261005fontes2" />
 
   <!-- Dots no formato de chat: cada dot é uma conversa. O pedido é a sua
        mensagem; o que ele lê, escreve e publica são as respostas. -->
@@ -49,29 +49,75 @@
       <div id="dc-mensagens" class="dc-mensagens" aria-live="polite"></div>
 
       <div class="dc-rodape">
-        <!-- Ajustes do dot novo: abrem pelo "+" da caixa de mensagem. -->
-        <div id="dc-ajustes" class="dc-ajustes" hidden>
-          <div class="dc-ajustes-topo">
-            <b>Novo dot</b>
-            <button type="button" id="dc-ajustes-fechar" class="dc-icone" aria-label="Fechar ajustes">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
-            </button>
+        <button type="button" id="dc-resumo-ajustes" class="dc-resumo-ajustes" hidden></button>
+
+        <form id="dc-composer" class="dc-composer" autocomplete="off">
+          <button type="button" id="dc-mais" class="dc-icone dc-mais" aria-label="Ajustes do dot" aria-expanded="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <textarea id="dot-objetivo" rows="1" placeholder="Diga o assunto e onde procurar (nomes ou links)…" aria-label="Mensagem para o dot"></textarea>
+          <button type="submit" id="dc-enviar" class="dc-enviar" aria-label="Enviar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </form>
+        <p id="dot-aviso" class="dc-aviso" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <!-- --------------------------------------- painel completo do dot -->
+    <div id="dc-painel-fundo" class="dc-painel-fundo" hidden></div>
+    <aside id="dc-painel" class="dc-painel" hidden aria-label="Painel do dot">
+      <div class="dc-painel-topo">
+        <b id="dc-painel-titulo">Painel</b>
+        <button type="button" id="dc-painel-fechar" class="dc-icone" aria-label="Fechar painel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div id="dc-painel-corpo" class="dc-painel-corpo"></div>
+    </aside>
+    <!-- ------------------------------------------------ modal: novo dot -->
+    <!-- O fundo leva o id "dc-ajustes": o JS abre/fecha pelo atributo hidden. -->
+    <div id="dc-ajustes" class="dm-fundo" hidden>
+      <div class="dm-modal" role="dialog" aria-modal="true" aria-labelledby="dm-titulo">
+        <header class="dm-topo">
+          <span class="dm-selo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </span>
+          <h2 id="dm-titulo">Novo dot</h2>
+          <button type="button" id="dc-ajustes-fechar" class="dm-fechar" aria-label="Fechar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </header>
+
+        <div class="dm-corpo">
+          <div class="dm-campo">
+            <label class="dm-rotulo" for="dot-nome">Nome do dot</label>
+            <input id="dot-nome" class="dm-input" type="text" maxlength="160" placeholder="Ex.: Política no Facebook (ou deixe que eu sugiro)" />
           </div>
 
-          <div class="dc-campo-nome">
-            <label class="dv-rotulo" for="dot-nome">Nome do dot</label>
-            <input id="dot-nome" type="text" maxlength="160" placeholder="Ex.: Política no Facebook (ou deixe que eu sugiro)" />
+          <div class="dm-campo">
+            <div class="dm-rotulo-linha">
+              <label class="dm-rotulo" for="dm-pedido">O que ele deve fazer</label>
+              <div class="dm-exemplos" role="group" aria-label="Exemplos de pedido">
+                <button type="button" class="dm-exemplo" data-exemplo-modal="0">Pesquisar assunto</button>
+                <button type="button" class="dm-exemplo" data-exemplo-modal="1">Acompanhar páginas</button>
+                <button type="button" class="dm-exemplo" data-exemplo-modal="2">Só um tema</button>
+              </div>
+            </div>
+            <textarea id="dm-pedido" class="dm-input dm-textarea" rows="5"
+              placeholder="Pesquise notícias sobre reforma tributária e escreva com título forte.&#10;&#10;Ou: monitore o g1 e a página do Metrópoles no Facebook, só política.&#10;Ou cole os links: https://www.instagram.com/perfil"></textarea>
+            <p class="dm-ajuda">Diga o <b>assunto</b> e <b>onde procurar</b>: nome ou link de site, página do Facebook, perfil do Instagram, canal do YouTube ou TikTok. Sem fonte, eu pesquiso o assunto no Google Notícias.</p>
           </div>
 
-          <div class="dv-grade-campos">
-            <div>
-              <p class="dv-rotulo">Com a matéria pronta</p>
-              <div class="d-segmentos dv-destino" role="group" aria-label="O que fazer com a matéria">
+          <div class="dm-grade">
+            <div class="dm-campo">
+              <span class="dm-rotulo">Com a matéria pronta</span>
+              <div class="d-segmentos dv-destino dm-segmentos" role="group" aria-label="O que fazer com a matéria">
                 <label class="d-segmento"><input type="radio" name="dot-destino" value="rascunho" checked /><span>Rascunho</span></label>
                 <label class="d-segmento"><input type="radio" name="dot-destino" value="agendar" /><span>Agendar</span></label>
                 <label class="d-segmento"><input type="radio" name="dot-destino" value="publicar" /><span>Publicar</span></label>
               </div>
-              <p id="dot-destino-ajuda" class="d-ajuda">Fica esperando você revisar. Nada sai sozinho.</p>
+              <p id="dot-destino-ajuda" class="dm-ajuda">Fica esperando você revisar. Nada sai sozinho.</p>
               <div id="dot-ritmo" class="dv-ritmo hidden">
                 <label class="d-linha">
                   <select id="dot-saida-qtd" class="d-escolha" aria-label="Quantidade por lote"></select>
@@ -80,16 +126,26 @@
                 </label>
               </div>
             </div>
-            <div>
-              <label class="dv-rotulo" for="dot-pagina">Publicar em</label>
+            <div class="dm-campo">
+              <label class="dm-rotulo" for="dot-pagina">Publicar em</label>
               <select id="dot-pagina" class="d-escolha dv-select">
                 <option value="">Carregando…</option>
               </select>
             </div>
           </div>
 
-          <details class="d-avancado dv-avancado">
-            <summary>Ajustes finos<span class="d-avancado-dica">jornada, varredura, limite, imagem, IA</span></summary>
+          <div class="dm-campo">
+            <span class="dm-rotulo">Imagem da matéria</span>
+            <div class="d-segmentos dm-segmentos" role="group" aria-label="Imagem da matéria">
+              <label class="d-segmento"><input type="radio" name="dot-imagem" value="original" checked /><span>Foto da notícia</span></label>
+              <label class="d-segmento"><input type="radio" name="dot-imagem" value="ia_todas" /><span>Gerar com IA</span></label>
+              <label class="d-segmento"><input type="radio" name="dot-imagem" value="ia_com_texto" /><span>Limpar texto da foto</span></label>
+            </div>
+            <p id="dot-imagem-ajuda" class="dm-ajuda">Usa a foto da notícia. Sem foto, gera uma com IA.</p>
+          </div>
+
+          <details class="d-avancado dv-avancado dm-avancado">
+            <summary>Ajustes finos<span class="d-avancado-dica">jornada, varredura, limite, IA</span></summary>
             <div class="dv-ajustes">
               <div>
                 <p class="d-rotulo-min">Dias de trabalho</p>
@@ -110,13 +166,6 @@
                 <input id="dot-limite" type="number" min="1" max="200" value="20" class="d-escolha d-escolha--num" />
                 <span>por dia</span>
               </label>
-              <label class="d-linha items-start">
-                <input type="checkbox" id="dot-imagem-texto" class="mt-0.5" />
-                <span>
-                  <span class="d-opcao-nome">Limpar texto da foto com IA</span>
-                  <span class="d-opcao-ajuda">Só quando a foto do post tiver texto embutido.</span>
-                </span>
-              </label>
               <label class="d-linha">
                 <span>Escreve com</span>
                 <select id="dot-provedor" class="d-escolha">
@@ -125,35 +174,24 @@
               </label>
             </div>
           </details>
+
+          <div id="dm-previa" class="dm-previa" hidden></div>
+          <p id="dm-erro" class="dm-erro" role="alert" hidden></p>
         </div>
 
-        <button type="button" id="dc-resumo-ajustes" class="dc-resumo-ajustes" hidden></button>
-
-        <form id="dc-composer" class="dc-composer" autocomplete="off">
-          <button type="button" id="dc-mais" class="dc-icone dc-mais" aria-label="Ajustes do dot" aria-expanded="false">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-          </button>
-          <textarea id="dot-objetivo" rows="1" placeholder="Diga o que o dot deve fazer e cole os links…" aria-label="Mensagem para o dot"></textarea>
-          <button type="submit" id="dc-enviar" class="dc-enviar" aria-label="Enviar">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-          </button>
-        </form>
-        <p id="dot-aviso" class="dc-aviso" aria-live="polite"></p>
+        <footer class="dm-rodape">
+          <button type="button" id="dm-cancelar" class="dm-btn dm-btn--texto">Cancelar</button>
+          <div class="dm-rodape-direita">
+            <button type="button" id="dm-ver" class="dm-btn dm-btn--secundario">Ver o que eu entendi</button>
+            <button type="button" id="dm-salvar" class="dm-btn dm-btn--principal">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>Salvar</span>
+            </button>
+          </div>
+        </footer>
       </div>
-    </section>
-
-    <!-- --------------------------------------- painel completo do dot -->
-    <div id="dc-painel-fundo" class="dc-painel-fundo" hidden></div>
-    <aside id="dc-painel" class="dc-painel" hidden aria-label="Painel do dot">
-      <div class="dc-painel-topo">
-        <b id="dc-painel-titulo">Painel</b>
-        <button type="button" id="dc-painel-fechar" class="dc-icone" aria-label="Fechar painel">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
-        </button>
-      </div>
-      <div id="dc-painel-corpo" class="dc-painel-corpo"></div>
-    </aside>
+    </div>
   </main>
 
-  <script src="/js/dots.js?v=20261005app1"></script>
+  <script src="/js/dots.js?v=20261005fontes2"></script>
 <%- include('partials/app-end') %>

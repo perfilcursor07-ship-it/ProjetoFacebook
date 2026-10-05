@@ -1433,6 +1433,46 @@ async function agendarMateria({ userId, matterId, runAt }) {
   return { jobId, matterId: matter.id, runAt: slotLivre };
 }
 
+/**
+ * Tira a matéria da agenda: ela volta a rascunho e o job da fila é cancelado.
+ * Só mudar o status não bastava — o job pendente publicaria na hora marcada.
+ * A agenda da Biblioteca também é cancelada, senão o reparo de agendamentos
+ * (que a trata como fonte da verdade) remarcaria a matéria.
+ */
+async function desagendarMateria({ userId, matterId }) {
+  const matter = await AiMatters.findById(matterId);
+  if (!matter || Number(matter.user_id) !== Number(userId)) {
+    const err = new Error('Matéria não encontrada');
+    err.status = 404;
+    throw err;
+  }
+  if (matter.status === 'publicado') {
+    const err = new Error('Esta matéria já foi publicada.');
+    err.status = 409;
+    throw err;
+  }
+  const emAndamento = await db('ai_fila_jobs')
+    .where({ matter_id: matter.id, status: 'processando' })
+    .first('id');
+  if (emAndamento || publicandoAgora.has(Number(matter.id))) {
+    const err = new Error('Esta matéria está sendo publicada agora.');
+    err.status = 409;
+    throw err;
+  }
+
+  await db('ai_fila_jobs')
+    .where({ matter_id: matter.id, status: 'pendente' })
+    .update({ status: 'cancelado', erro: 'Desagendada pelo editor.', updated_at: new Date() });
+  await db('biblioteca_agenda')
+    .where({ user_id: userId, matter_id: matter.id })
+    .whereNotIn('status', ['cancelado', 'publicado'])
+    .update({ status: 'cancelado' })
+    .catch(() => {});
+  await AiMatters.update(matter.id, { status: 'rascunho', scheduled_at: null });
+  console.log(`[agendar] matéria #${matter.id} desagendada pelo editor — voltou a rascunho`);
+  return { matterId: matter.id, status: 'rascunho' };
+}
+
 async function repararAgendamentosSobrepostos(userId, { intervaloMinutos = INTERVALO_AGENDAMENTO_MINUTOS } = {}) {
   const agora = new Date();
 
@@ -4213,6 +4253,7 @@ module.exports = {
   criarMonitor,
   tickMonitores,
   agendarMateria,
+  desagendarMateria,
   repararAgendamentosSobrepostos,
   obterUltimoAgendamento,
   formatarHorarioAgendamento,

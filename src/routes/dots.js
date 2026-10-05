@@ -8,6 +8,22 @@ function responder(res, next, promessa) {
   promessa.then((dados) => res.json(dados)).catch(next);
 }
 
+/** Jornada, ritmo, destino e imagem: escolhas da tela, iguais na prévia e na criação. */
+function configuracaoDoCorpo(body = {}) {
+  return {
+    dias_semana: body.dias_semana,
+    hora_inicio: body.hora_inicio,
+    hora_fim: body.hora_fim,
+    scan_minutos: body.scan_minutos,
+    destino: body.destino,
+    saida_quantidade: body.saida_quantidade,
+    saida_minutos: body.saida_minutos,
+    limite_dia: body.limite_dia,
+    modo_imagem: body.modo_imagem,
+    gerar_imagem_com_texto: body.gerar_imagem_com_texto === true,
+  };
+}
+
 /** Prévia: o que a IA entendeu do pedido, antes de salvar. */
 router.post('/previa', (req, res, next) =>
   responder(
@@ -15,17 +31,7 @@ router.post('/previa', (req, res, next) =>
     next,
     // A prévia precisa da mesma configuração da tela, senão mostraria um
     // resumo diferente do que o dot vai realmente fazer.
-    dotsService.previa(req.body?.objetivo, {
-      dias_semana: req.body?.dias_semana,
-      hora_inicio: req.body?.hora_inicio,
-      hora_fim: req.body?.hora_fim,
-      scan_minutos: req.body?.scan_minutos,
-      destino: req.body?.destino,
-      saida_quantidade: req.body?.saida_quantidade,
-      saida_minutos: req.body?.saida_minutos,
-      limite_dia: req.body?.limite_dia,
-      gerar_imagem_com_texto: req.body?.gerar_imagem_com_texto === true,
-    })
+    dotsService.previa(req.body?.objetivo, configuracaoDoCorpo(req.body))
   ));
 
 /** Antes de /:id, senão o Express casaria "provedores" como id. */
@@ -43,16 +49,11 @@ router.post('/', (req, res, next) =>
       nome: req.body?.nome || null,
       provedor: req.body?.provedor || 'auto',
       facebookPageId: req.body?.facebook_page_id || null,
+      // O plano que a prévia mostrou (com o que o editor tirou). Sem ele, o
+      // pedido é interpretado de novo no servidor.
+      plano: req.body?.plano || null,
       // Jornada e ritmo vêm da tela; o serviço normaliza e descarta o inválido.
-      dias_semana: req.body?.dias_semana,
-      hora_inicio: req.body?.hora_inicio,
-      hora_fim: req.body?.hora_fim,
-      scan_minutos: req.body?.scan_minutos,
-      destino: req.body?.destino,
-      saida_quantidade: req.body?.saida_quantidade,
-      saida_minutos: req.body?.saida_minutos,
-      limite_dia: req.body?.limite_dia,
-      gerar_imagem_com_texto: req.body?.gerar_imagem_com_texto === true,
+      ...configuracaoDoCorpo(req.body),
     })
   ));
 
@@ -78,6 +79,26 @@ router.post('/:id/rodar', (req, res, next) =>
 /** Escreve na hora um post específico do painel. */
 router.post('/:id/posts/:postId/escrever', (req, res, next) =>
   responder(res, next, dotsService.escreverPostAgora(req.session.userId, Number(req.params.id), Number(req.params.postId))));
+
+/** Acrescenta uma fonte: assunto para pesquisar, link ou nome de página. */
+router.post('/:id/fontes', (req, res, next) =>
+  responder(res, next, dotsService.adicionarFonte(req.session.userId, Number(req.params.id), {
+    tipo: req.body?.tipo,
+    texto: req.body?.texto,
+  })));
+
+/** Tira uma fonte do dot (a Biblioteca continua com ela). */
+router.delete('/:id/fontes/:fonteId', (req, res, next) =>
+  responder(res, next, dotsService.removerFonte(req.session.userId, Number(req.params.id), Number(req.params.fonteId))));
+
+/** Gera com IA a imagem de uma matéria do dot (em segundo plano). */
+router.post('/:id/materias/:matterId/imagem', (req, res, next) =>
+  responder(res, next, dotsService.gerarImagemDaMateria(
+    req.session.userId,
+    Number(req.params.id),
+    Number(req.params.matterId),
+    { modo: req.body?.modo }
+  )));
 
 router.delete('/:id', (req, res, next) =>
   responder(res, next, dotsService.excluir(req.session.userId, Number(req.params.id))));

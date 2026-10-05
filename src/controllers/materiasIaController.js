@@ -1201,6 +1201,19 @@ async function agendar(req, res, next) {
   }
 }
 
+/** Tira a matéria da agenda (volta a rascunho e cancela a publicação marcada). */
+async function desagendar(req, res, next) {
+  try {
+    const result = await materiaIaService.desagendarMateria({
+      userId: req.session.userId,
+      matterId: Number(req.params.id),
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function monitorCriar(req, res, next) {
   try {
     const body = req.body || {};
@@ -1891,6 +1904,7 @@ module.exports = {
   listarMaterias,
   obterMateria,
   proximoSlotAgenda,
+  desagendar,
   removerMateria,
   removerMateriasLote,
   atualizarMateria,

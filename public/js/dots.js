@@ -48,7 +48,7 @@
     saidaMin: $('dot-saida-min'),
     saidaRotulo: $('dot-saida-rotulo'),
     limite: $('dot-limite'),
-    imagemTexto: $('dot-imagem-texto'),
+    imagemAjuda: $('dot-imagem-ajuda'),
   };
   if (!el.shell || !el.lista) return;
 
@@ -144,7 +144,25 @@
       });
     }
     el.pagina.addEventListener('change', atualizarResumoAjustes);
+    for (const radio of document.querySelectorAll('input[name="dot-imagem"]')) {
+      radio.addEventListener('change', ajustarImagem);
+    }
     ajustarDestino();
+    ajustarImagem();
+  }
+
+  const AJUDA_IMAGEM = {
+    original: 'Usa a foto da notícia. Sem foto, gera uma com IA.',
+    ia_todas: 'Cria uma imagem nova com IA para cada matéria.',
+    ia_com_texto: 'Usa a foto da notícia; se ela tiver texto escrito, a IA limpa o texto e mantém a foto.',
+  };
+
+  function imagemEscolhida() {
+    return document.querySelector('input[name="dot-imagem"]:checked')?.value || 'original';
+  }
+
+  function ajustarImagem() {
+    if (el.imagemAjuda) el.imagemAjuda.textContent = AJUDA_IMAGEM[imagemEscolhida()] || '';
   }
 
   function destinoEscolhido() {
@@ -184,7 +202,7 @@
       saida_quantidade: Number(el.saidaQtd.value) || 1,
       saida_minutos: Number(el.saidaMin.value) || 15,
       limite_dia: Number(el.limite.value) || 20,
-      gerar_imagem_com_texto: Boolean(el.imagemTexto.checked),
+      modo_imagem: imagemEscolhida(),
     };
   }
 
@@ -224,10 +242,114 @@
     lista: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
     engrenagem: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
     abrir: '<path d="M7 17 17 7M9 7h8v8"/>',
+    busca: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+    site: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+    facebook: '<path d="M15 3h-2.5A4.5 4.5 0 0 0 8 7.5V10H5.5v4H8v7h4v-7h3l.8-4H12V7.8c0-.6.4-.8.9-.8H15z"/>',
+    instagram: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><path d="M17.5 6.5h.01"/>',
+    youtube: '<rect x="2.5" y="5" width="19" height="14" rx="4"/><path d="m10 9 5 3-5 3z"/>',
+    tiktok: '<path d="M14 3v11.5a3.5 3.5 0 1 1-3.5-3.5"/><path d="M14 3c.6 2.6 2.4 4.4 5 5"/>',
+    enviar: '<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+    calendario: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    desagendar: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M10 14l4 4M14 14l-4 4"/>',
+    varinha: '<path d="m4 20 10-10M14 4v3M17.5 5.5l-2 2M20 10h-3M12 7l3 3"/>',
+    fechar: '<path d="M18 6 6 18M6 6l12 12"/>',
+    radar: '<circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5"/>',
   };
 
   const icone = (nome) =>
     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONES[nome]}</svg>`;
+
+  const NOME_PLATAFORMA = {
+    busca: 'Pesquisa no Google Notícias',
+    site: 'Site',
+    facebook: 'Facebook',
+    instagram: 'Instagram',
+    youtube: 'YouTube',
+    tiktok: 'TikTok',
+    outro: 'Link',
+  };
+
+  /** Ícone colorido da plataforma da fonte (pesquisa, site, Facebook…). */
+  function seloPlataforma(tipo, extra = '') {
+    const t = ['busca', 'site', 'facebook', 'instagram', 'youtube', 'tiktok'].includes(tipo) ? tipo : 'site';
+    return `<span class="d-plat d-plat--${t} ${extra}" title="${escapar(NOME_PLATAFORMA[tipo] || 'Fonte')}" aria-hidden="true">${icone(t)}</span>`;
+  }
+
+  /** "AAAA-MM-DDTHH:mm" no horário do editor (Araguaína = Brasília). */
+  function dataLocal(ms) {
+    return new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'America/Araguaina',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(new Date(ms)).replace(' ', 'T').slice(0, 16);
+  }
+
+  /** Avisos do plano calculados na tela, depois que o editor tira algo. */
+  function avisosDoPlano(plano) {
+    const fontes = Array.isArray(plano?.fontes) ? plano.fontes : [];
+    const avisos = fontes.filter((f) => !f.url || !f.verificado).map((f) => f.motivo || `Confira o link de “${f.nome}”.`);
+    if (!fontes.some((f) => f.url) && !(plano?.pesquisas || []).length) {
+      avisos.unshift('Não tenho onde procurar. Cole o link de uma página ou diga o assunto para eu pesquisar.');
+    }
+    return avisos;
+  }
+
+  /**
+   * O que o dot entendeu: onde vai procurar (pesquisas e páginas, com o
+   * endereço achado e se foi conferido), o recorte e o estilo. `editavel`
+   * põe um × em cada fonte para o editor tirar antes de salvar.
+   */
+  function htmlDoPlano(plano, { editavel = false, resumo = [] } = {}) {
+    const fontes = Array.isArray(plano?.fontes) ? plano.fontes : [];
+    const pesquisas = Array.isArray(plano?.pesquisas) ? plano.pesquisas : [];
+    const tirar = (tipo, i, nome) => (editavel
+      ? `<button type="button" class="dm-tirar" data-tirar="${tipo}" data-indice="${i}" title="Tirar" aria-label="Tirar ${escapar(nome)}">${icone('fechar')}</button>`
+      : '');
+    const itensPesquisa = pesquisas.map((p, i) => `
+      <li class="dm-fonte">
+        ${seloPlataforma('busca')}
+        <span class="dm-fonte-texto"><b>${escapar(p)}</b><small>Pesquisa no Google Notícias</small></span>
+        <span class="dm-fonte-estado is-ok">Pesquisa</span>${tirar('pesquisa', i, p)}
+      </li>`).join('');
+    const itensFonte = fontes.map((f, i) => {
+      const estado = !f.url
+        ? '<span class="dm-fonte-estado is-erro">Não achei</span>'
+        : f.verificado
+          ? `<span class="dm-fonte-estado is-ok" title="${f.via === 'link' ? 'Link colado no pedido' : 'Endereço conferido'}">${f.via === 'link' ? 'Link' : 'Conferida'}</span>`
+          : '<span class="dm-fonte-estado is-alerta">Confira</span>';
+      const sub = f.url
+        ? `<a href="${escapar(f.url)}" target="_blank" rel="noopener">${escapar(String(f.url).replace(/^https?:\/\/(www\.)?/i, ''))}</a>`
+        : escapar(f.motivo || 'Cole o link desta fonte no pedido.');
+      return `
+      <li class="dm-fonte${f.url ? '' : ' is-sem'}">
+        ${seloPlataforma(f.tipo)}
+        <span class="dm-fonte-texto"><b>${escapar(f.nome || NOME_PLATAFORMA[f.tipo] || 'Fonte')}</b><small>${sub}</small></span>
+        ${estado}${tirar('fonte', i, f.nome || '')}
+      </li>`;
+    }).join('');
+
+    const palavras = Array.isArray(plano?.palavras) ? plano.palavras : [];
+    const chips = [
+      ...palavras.map((p) => `<span class="d-chip d-chip--palavra">${icone('busca')} só se citar ${escapar(p)}</span>`),
+      plano?.recorte ? `<span class="d-chip d-chip--palavra">${icone('radar')} só ${escapar(plano.recorte)}</span>` : '',
+      plano?.estilo ? `<span class="d-chip">🎯 ${escapar(plano.estilo)}</span>` : '',
+    ].filter(Boolean).join('');
+    const avisos = avisosDoPlano(plano);
+    // As linhas de "onde procura" já estão na lista acima.
+    const linhas = (resumo || []).filter((l) => !/^(Pesquisa no Google Notícias|Acompanha \d)/.test(l));
+
+    return `
+      ${plano?.nome ? `<p class="dm-previa-titulo">${escapar(plano.nome)}</p>` : ''}
+      <p class="dm-previa-secao">Onde vou procurar</p>
+      <ul class="dm-fontes">${itensPesquisa}${itensFonte}</ul>
+      ${chips ? `<div class="d-mat-chips dm-previa-chips">${chips}</div>` : ''}
+      ${avisos.length ? `<ul class="dm-avisos">${avisos.map((a) => `<li>${escapar(a)}</li>`).join('')}</ul>` : ''}
+      ${linhas.length ? `<ul class="dm-resumo">${linhas.map((l) => `<li>${escapar(l)}</li>`).join('')}</ul>` : ''}`;
+  }
 
   async function api(url, opcoes = {}) {
     const resp = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opcoes });
@@ -525,7 +647,7 @@
     const texto = String(e.detalhe || '');
     if (e.acao === 'escreveu') return { icone: '✍️', rotulo: 'Escreveu a matéria', classe: 'd-passo--ok' };
     if (e.acao === 'erro') return { icone: '⚠️', rotulo: 'Problema', classe: 'd-passo--erro' };
-    if (e.acao === 'criou_fonte') return { icone: '📡', rotulo: 'Páginas monitoradas', classe: '' };
+    if (e.acao === 'criou_fonte') return { icone: '📡', rotulo: 'Fontes', classe: '' };
     if (/fora das palavras/i.test(texto)) return { icone: '🔎', rotulo: 'Filtrou pelas palavras-chave', classe: '' };
     if (/foto|imagem|ilustra/i.test(texto)) return { icone: '🖼️', rotulo: 'Imagem', classe: '' };
     if (/repetid|já publicad|duplicad/i.test(texto)) return { icone: '♻️', rotulo: 'Evitou repetir', classe: '' };
@@ -548,6 +670,7 @@
     fora_do_assunto: { icone: '🚫', texto: 'Fora do assunto', classe: 'd-sit--fora', pode: false },
     pouco_texto: { icone: '✂️', texto: 'Sem texto suficiente', classe: 'd-sit--fora', pode: false },
     descartado: { icone: '—', texto: 'Descartado', classe: 'd-sit--fora', pode: false },
+    escrevendo: { icone: '✍️', texto: 'Escrevendo agora…', classe: 'd-sit--fila', pode: false },
   };
   const FILTROS_POST = [
     { id: 'todos', texto: 'Todos', ok: () => true },
@@ -565,14 +688,24 @@
 
   function frase(dot) {
     const plano = dot.plano || {};
-    const palavras = Array.isArray(plano.palavras) && plano.palavras.length
-      ? `procuro <b>${escapar(plano.palavras.join(', '))}</b>`
-      : 'pego <b>qualquer assunto</b>';
+    const lista = detalhes.get(String(dot.id))?.fontes_lista;
+    const pesquisas = lista
+      ? lista.filter((f) => f.plataforma === 'busca').map((f) => f.termo || f.nome)
+      : (Array.isArray(dot.pesquisas) ? dot.pesquisas : []);
+    const paginas = lista ? lista.filter((f) => f.plataforma !== 'busca').length : Math.max(0, dot.fontes - pesquisas.length);
+    const onde = [
+      pesquisas.length ? `pesquiso ${pesquisas.map((p) => `<b>“${escapar(p)}”</b>`).join(', ')} no Google Notícias` : '',
+      paginas ? `leio ${paginas} ${paginas === 1 ? 'página' : 'páginas'}` : '',
+    ].filter(Boolean).join(' e ') || `leio ${dot.fontes} ${dot.fontes === 1 ? 'fonte' : 'fontes'}`;
+    const palavras = Array.isArray(plano.palavras) ? plano.palavras : [];
+    const recorte = palavras.length
+      ? `, só o que citar <b>${escapar(palavras.join(', '))}</b>`
+      : plano.recorte ? `, só <b>${escapar(plano.recorte)}</b>` : '';
     const destino = dot.destino === 'agendar'
       ? `agendo 1 a cada ${dot.agendar_minutos || dot.intervalo_minutos} min`
       : dot.destino === 'publicar' ? 'publico na hora' : 'deixo em rascunho';
     const pagina = dot.pagina ? ` em <b>${escapar(dot.pagina)}</b>` : ' <span class="d-aviso-mini">(sem página definida)</span>';
-    return `Leio ${dot.fontes} ${dot.fontes === 1 ? 'página' : 'páginas'}, ${palavras} e ${destino}${pagina}.`;
+    return `${onde.charAt(0).toUpperCase()}${onde.slice(1)}${recorte} e ${destino}${pagina}.`;
   }
 
   function banner(dot) {
@@ -593,7 +726,7 @@
     if (r.proximos) {
       return `<div class="d-banner d-banner--ok">⏳ <span><b>${r.proximos} ${r.proximos === 1 ? 'post do assunto pronto' : 'posts do assunto prontos'}</b> — sai na próxima volta (${quandoVolta}).</span></div>`;
     }
-    return `<div class="d-banner">🔎 <span><b>Procurando.</b> Nenhum post novo do assunto ainda — releio as páginas ${quandoVolta}.</span></div>`;
+    return `<div class="d-banner">🔎 <span><b>Procurando.</b> Nenhum post novo do assunto ainda — releio as fontes ${quandoVolta}.</span></div>`;
   }
 
   function funil(dot) {
@@ -625,7 +758,7 @@
         <a href="${escapar(abrir)}" target="_blank" rel="noopener" class="shrink-0">${miniatura(p.thumbnail, p.fonte, 'd-post-capa')}</a>
         <div class="d-post-corpo">
           <a href="${escapar(abrir)}" target="_blank" rel="noopener" class="d-post-titulo">${escapar(p.titulo || '(sem título)')}</a>
-          <span class="d-post-meta">${escapar(p.fonte || '')} · ${haQuanto(p.lido_em)}${p.palavra ? ` · <span class="d-txt-acento">🔎 ${escapar(p.palavra)}</span>` : ''}</span>
+          <span class="d-post-meta">${seloPlataforma(p.plataforma, 'd-plat--mini')}${escapar(p.fonte || '')} · ${haQuanto(p.publicado_em || p.lido_em)}${p.palavra ? ` · <span class="d-txt-acento">🔎 ${escapar(p.palavra)}</span>` : ''}</span>
           <span class="d-sit ${sit.classe}">${sit.icone} ${escapar(detalheSit)}</span>
         </div>
         <div class="d-post-acao">${acao}</div>
@@ -639,15 +772,32 @@
     return '<span class="d-selo">📝 Rascunho</span>';
   }
 
-  function cartaoMateria(m) {
+  /** Botões de cada matéria: publicar, agendar e o resto no "⋯". */
+  function acoesDaMateria(m) {
+    if (m.status === 'publicado') {
+      return m.link
+        ? `<a class="d-acao" href="${escapar(m.link)}" target="_blank" rel="noopener">${icone('abrir')}Ver no Facebook</a>`
+        : `<a class="d-acao" href="/materias-ia/${m.id}" target="_blank" rel="noopener">${icone('abrir')}Abrir matéria</a>`;
+    }
     return `
-      <a class="d-arte" href="/materias-ia/${m.id}" target="_blank" rel="noopener">
-        <span class="d-arte-img">
+      <button type="button" class="d-acao d-acao--principal" data-acao="publicar-materia" title="Publicar agora">${icone('enviar')}<span>Publicar</span></button>
+      <button type="button" class="d-acao" data-acao="agendar-materia" title="${m.status === 'agendado' ? 'Mudar o horário' : 'Escolher dia e hora'}">${icone('calendario')}<span>${m.status === 'agendado' ? 'Reagendar' : 'Agendar'}</span></button>
+      <button type="button" class="d-acao d-acao--icone" data-acao="mais-materia" title="Mais ações" aria-label="Mais ações da matéria">${icone('mais')}</button>`;
+  }
+
+  function cartaoMateria(m) {
+    const abrir = `/materias-ia/${m.id}`;
+    return `
+      <article class="d-arte d-arte--acoes" data-materia="${m.id}">
+        <a class="d-arte-img" href="${abrir}" target="_blank" rel="noopener" title="Abrir a matéria">
           ${m.imagem ? `<img src="${escapar(m.imagem)}" alt="" loading="lazy" />` : '<span class="d-sem-imagem">📰</span>'}
           ${seloMateria(m)}
-        </span>
-        <span class="d-arte-titulo">${escapar(m.titulo || 'Matéria')}</span>
-      </a>`;
+          ${m.gerando_imagem ? '<span class="d-arte-gerando"><i></i>Gerando imagem…</span>' : ''}
+        </a>
+        <a class="d-arte-titulo" href="${abrir}" target="_blank" rel="noopener">${escapar(m.titulo || 'Matéria')}</a>
+        ${m.pagina ? `<span class="d-arte-pagina">${icone('facebook')}<span>${escapar(m.pagina)}</span></span>` : ''}
+        <div class="d-arte-acoes">${acoesDaMateria(m)}</div>
+      </article>`;
   }
 
   // ------------------------------------------------------------ painel
@@ -659,12 +809,82 @@
     return `<div class="d-posts">${lista.sort((a, b) => ordem[a.situacao] - ordem[b.situacao]).map(linhaPost).join('')}</div>`;
   }
 
+  /** Matérias separadas pelo que falta fazer: revisar, já agendadas, publicadas. */
   function abaMaterias(d) {
     const materias = d?.materias || [];
-    if (!materias.length) return '<div class="d-vazio-aba">📰 Nenhuma matéria ainda.</div>';
-    const ordem = { agendado: 0, publicado: 1 };
-    const lista = [...materias].sort((a, b) => (ordem[a.status] ?? 2) - (ordem[b.status] ?? 2));
-    return `<div class="d-grade">${lista.map(cartaoMateria).join('')}</div>`;
+    if (!materias.length) {
+      return '<div class="d-vazio-aba">📰 Nenhuma matéria ainda. Use “Trabalhar agora” ou “Escrever agora” num post da aba Próximas.</div>';
+    }
+    const grupos = [
+      { titulo: 'Para revisar', ajuda: 'Rascunhos: publique, agende ou edite.', lista: materias.filter((m) => !['agendado', 'publicado'].includes(m.status)) },
+      {
+        titulo: 'Agendadas',
+        ajuda: 'Saem sozinhas no horário marcado.',
+        lista: materias
+          .filter((m) => m.status === 'agendado')
+          .sort((a, b) => new Date(a.agendada_para) - new Date(b.agendada_para)),
+      },
+      { titulo: 'Publicadas', ajuda: '', lista: materias.filter((m) => m.status === 'publicado') },
+    ].filter((g) => g.lista.length);
+    return grupos.map((g) => `
+      <section class="d-grupo-materias">
+        <p class="d-grupo-titulo">${g.titulo} <span>${g.lista.length}</span>${g.ajuda ? `<small>${g.ajuda}</small>` : ''}</p>
+        <div class="d-grade">${g.lista.map(cartaoMateria).join('')}</div>
+      </section>`).join('');
+  }
+
+  const DICA_FONTE_NOVA = {
+    busca: 'Ex.: preço da gasolina',
+    site: 'Ex.: g1, Folha ou https://site.com.br',
+    facebook: 'Ex.: Metrópoles ou o link da página',
+    instagram: 'Ex.: Nikolas Ferreira ou o link do perfil',
+    youtube: 'Ex.: Jovem Pan News ou o link do canal',
+    tiktok: 'Ex.: Poder360 ou o link do perfil',
+  };
+
+  /** Onde o dot procura: cada fonte com o estado, e o formulário para acrescentar. */
+  function abaFontes(dot, d) {
+    const lista = d?.fontes_lista || [];
+    const faltam = d?.fontes_nao_achadas || [];
+    const itens = lista.map((f) => {
+      const titulo = f.plataforma === 'busca' ? `“${f.termo || f.nome}”` : f.nome;
+      const lida = f.ultimo_scan ? `lida ${haQuanto(f.ultimo_scan)}` : 'ainda não lida';
+      return `
+        <li class="d-fonte">
+          ${seloPlataforma(f.plataforma)}
+          <span class="d-fonte-texto">
+            <b>${escapar(titulo)}</b>
+            <small>${f.plataforma === 'busca' ? 'Pesquisa no Google Notícias' : `<a href="${escapar(f.url)}" target="_blank" rel="noopener">${escapar(String(f.url).replace(/^https?:\/\/(www\.)?/i, ''))}</a>`}</small>
+            <small>${f.posts_7d} ${f.posts_7d === 1 ? 'post' : 'posts'} em 7 dias · ${lida}</small>
+            ${f.ultimo_erro ? `<small class="d-txt-erro">⚠️ ${escapar(f.ultimo_erro)}</small>` : ''}
+          </span>
+          <button type="button" class="d-acao d-acao--icone d-acao--perigo" data-acao="remover-fonte" data-fonte="${f.id}" title="Tirar desta lista" aria-label="Tirar ${escapar(titulo)}">${icone('fechar')}</button>
+        </li>`;
+    }).join('');
+    const naoAchadas = faltam.map((f) => `
+      <li class="d-fonte is-sem">
+        ${seloPlataforma(f.tipo)}
+        <span class="d-fonte-texto"><b>${escapar(f.nome)}</b><small class="d-txt-erro">${escapar(f.motivo || 'Não achei. Acrescente pelo link.')}</small></span>
+      </li>`).join('');
+    return `
+      <p class="d-fontes-ajuda">Onde ${escapar(dot.nome)} procura notícias. Cada fonte é relida a cada volta.</p>
+      <ul class="d-fontes">${itens || '<li class="d-vazio-aba">Nenhuma fonte.</li>'}${naoAchadas}</ul>
+      <form class="d-fonte-nova" data-form="adicionar-fonte">
+        <p class="d-rotulo-min">Acrescentar fonte</p>
+        <div class="d-fonte-nova-linha">
+          <select name="tipo" class="d-escolha" aria-label="Tipo de fonte">
+            <option value="busca">Pesquisar assunto</option>
+            <option value="site">Site</option>
+            <option value="facebook">Página do Facebook</option>
+            <option value="instagram">Perfil do Instagram</option>
+            <option value="youtube">Canal do YouTube</option>
+            <option value="tiktok">TikTok</option>
+          </select>
+          <input name="texto" class="d-fonte-nova-campo" type="text" maxlength="300" placeholder="${DICA_FONTE_NOVA.busca}" aria-label="Assunto, nome ou link" required />
+          <button type="submit" class="d-btn d-btn--principal">Acrescentar</button>
+        </div>
+        <p class="d-ajuda">Escreva o nome que eu procuro e confiro o endereço, ou cole o link.</p>
+      </form>`;
   }
 
   function abaTodos(dotId, d) {
@@ -754,6 +974,7 @@
   const ABAS = [
     { id: 'proximas', texto: '⏳ Próximas' },
     { id: 'materias', texto: '📰 Matérias' },
+    { id: 'fontes', texto: '📡 Fontes' },
     { id: 'todos', texto: '🗂️ Todos os posts' },
     { id: 'historico', texto: '🧭 Histórico' },
     { id: 'config', texto: '⚙️ Configuração' },
@@ -770,19 +991,25 @@
     const contagem = {
       proximas: d ? posts.filter((p) => PROXIMAS.includes(p.situacao)).length : null,
       materias: d ? (d.materias || []).length : null,
+      fontes: d ? (d.fontes_lista || []).length : null,
       todos: d ? posts.length : null,
     };
+    // O formulário de fonte nova não pode perder o que está sendo digitado.
+    const digitando = el.painelCorpo.querySelector('.d-fonte-nova-campo');
+    if (aba === 'fontes' && digitando && document.activeElement === digitando) return;
     const conteudo = aba === 'config'
       ? abaConfig(dot)
       : !d
         ? '<div class="d-vazio-aba">Carregando…</div>'
         : aba === 'materias'
           ? abaMaterias(d)
-          : aba === 'todos'
-            ? abaTodos(id, d)
-            : aba === 'historico'
-              ? abaHistorico(id)
-              : abaProximas(d);
+          : aba === 'fontes'
+            ? abaFontes(dot, d)
+            : aba === 'todos'
+              ? abaTodos(id, d)
+              : aba === 'historico'
+                ? abaHistorico(id)
+                : abaProximas(d);
     el.painelTitulo.textContent = dot.nome;
     el.painelCorpo.innerHTML = `
       <div data-dot="${dot.id}">
@@ -819,24 +1046,24 @@
 
   const EXEMPLOS = [
     {
-      rotulo: 'Monitorar páginas',
-      texto: 'Monitore estas páginas e crie matéria do que render, com título forte:\nhttps://www.facebook.com/Poder360\nhttps://www.facebook.com/plenonews',
+      rotulo: 'Pesquisar assunto',
+      texto: 'Pesquise notícias sobre reforma tributária e escreva matérias com título forte.',
     },
     {
-      rotulo: 'Só um assunto',
-      texto: 'Só o que citar Flávio Bolsonaro ou Lula, com título mais polêmico:\nhttps://www.facebook.com/jovempannews',
+      rotulo: 'Acompanhar páginas',
+      texto: 'Monitore o g1 e a página do Metrópoles no Facebook e escreva matéria do que render.',
     },
     {
-      rotulo: 'Site de notícias',
-      texto: 'Acompanhe este portal e escreva matéria das notícias de política:\nhttps://portaldenoticias.com.br',
+      rotulo: 'Só um tema',
+      texto: 'Acompanhe o Instagram do Nikolas Ferreira e o canal da Jovem Pan News no YouTube. Só o que for de política.',
     },
   ];
 
   function conversaDoNovo() {
     const boasVindas = msgDot(`
       <p><b>Diga o que você quer, do seu jeito.</b></p>
-      <p>Eu acompanho as páginas, separo o que tem conteúdo e escrevo a matéria — no servidor, mesmo com a aba fechada.</p>
-      <p class="dc-dica">Diga o assunto, o recorte e o estilo e cole os links (Facebook, Instagram, YouTube ou site de notícias). No <b>+</b> da caixa você escolhe rascunho, agendar ou publicar e a página.</p>
+      <p>Eu pesquiso o assunto, acompanho as páginas, separo o que tem conteúdo e escrevo a matéria — no servidor, mesmo com a aba fechada.</p>
+      <p class="dc-dica">Diga o <b>assunto</b> e <b>onde procurar</b>: nome ou link de site, página do Facebook, perfil do Instagram, canal do YouTube. Sem fonte, eu pesquiso no Google Notícias. No <b>+</b> você escolhe rascunho, agendar ou publicar, a página e a imagem.</p>
       <div class="dc-chips">${EXEMPLOS.map((e, i) => `<button type="button" class="dc-chip" data-acao="exemplo" data-exemplo="${i}">${escapar(e.rotulo)}</button>`).join('')}</div>`);
     return boasVindas + conversaNova.map((m) => (m.autor === 'editor' ? msgEditor(m.html) : msgDot(m.html, m.extra || ''))).join('');
   }
@@ -857,10 +1084,15 @@
 
     for (const texto of mensagensDoComando(dot.objetivo)) partes.push(msgEditor(textoRico(texto)));
     const palavras = Array.isArray(plano.palavras) ? plano.palavras : [];
+    const fontesDoDot = d?.fontes_lista || [];
+    const naoAchadas = d?.fontes_nao_achadas || [];
     partes.push(msgDot(`
       <p>Entendi. ${frase(dot)}</p>
+      ${fontesDoDot.length ? `<div class="d-mat-chips mt-1.5">${fontesDoDot.slice(0, 6).map((f) => `<span class="d-chip d-chip--fonte">${seloPlataforma(f.plataforma, 'd-plat--mini')}${escapar(f.plataforma === 'busca' ? `“${f.termo || f.nome}”` : f.nome)}</span>`).join('')}${fontesDoDot.length > 6 ? `<span class="d-chip">+${fontesDoDot.length - 6}</span>` : ''}</div>` : ''}
+      ${naoAchadas.length ? `<p class="dc-dica d-txt-erro">⚠️ ${naoAchadas.map((f) => escapar(f.motivo || `Não achei ${f.nome}.`)).join(' ')}</p>` : ''}
       <div class="d-mat-chips mt-1.5">
-        ${palavras.length ? `<span class="d-chip d-chip--palavra">🔎 ${escapar(palavras.join(', '))}</span>` : ''}
+        ${palavras.length ? `<span class="d-chip d-chip--palavra">🔎 só se citar ${escapar(palavras.join(', '))}</span>` : ''}
+        ${plano.recorte ? `<span class="d-chip d-chip--palavra">${icone('radar')} só ${escapar(plano.recorte)}</span>` : ''}
         ${plano.estilo ? `<span class="d-chip">🎯 ${escapar(plano.estilo)}</span>` : ''}
       </div>`));
 
@@ -903,6 +1135,7 @@
         <button type="button" class="dc-chip" data-acao="rodar" ${dot.trabalhando ? 'disabled' : ''}>${icone('play')}Trabalhar agora</button>
         <button type="button" class="dc-chip" data-acao="${dot.estado === 'ativo' ? 'pausar' : 'retomar'}">${icone(dot.estado === 'ativo' ? 'pausa' : 'play')}${dot.estado === 'ativo' ? 'Pausar' : 'Retomar'}</button>
         <button type="button" class="dc-chip" data-acao="painel" data-aba="materias">${icone('jornal')}Matérias${d ? ` <b>${(d.materias || []).length}</b>` : ''}</button>
+        <button type="button" class="dc-chip" data-acao="painel" data-aba="fontes">${icone('radar')}Fontes${d ? ` <b>${(d.fontes_lista || []).length}</b>` : ''}</button>
         <button type="button" class="dc-chip" data-acao="painel" data-aba="todos">${icone('lista')}Todos os posts</button>
         <button type="button" class="dc-chip" data-acao="painel" data-aba="config">${icone('engrenagem')}Configuração</button>
       </div>`);
@@ -935,7 +1168,7 @@
     renderTopo();
     el.objetivo.placeholder = dot
       ? `Mensagem para ${dot.nome}`
-      : 'Diga o que o dot deve fazer e cole os links…';
+      : 'Diga o assunto e onde procurar (nomes ou links)…';
     el.mais.hidden = Boolean(dot);
     if (dot) fecharAjustes();
     atualizarResumoAjustes();
@@ -1039,7 +1272,7 @@
     // Pedido novo substitui a prévia anterior que ainda esperava confirmação.
     conversaNova = conversaNova.filter((m) => !m.previa);
     pushNova('editor', textoRico(texto));
-    conversaNova.push({ autor: 'dot', html: '<p class="dc-digitando"><i></i><i></i><i></i> Lendo o pedido…</p>', previa: true });
+    conversaNova.push({ autor: 'dot', html: '<p class="dc-digitando"><i></i><i></i><i></i> Lendo o pedido e procurando as fontes…</p>', previa: true });
     renderConversa({ rolar: true });
     try {
       const { plano, urls, resumo } = await api('/api/dots/previa', {
@@ -1048,18 +1281,17 @@
       });
       if (!el.nome.value.trim()) el.nome.value = plano.nome;
       planoConfirmado = { plano, urls, pendente: true };
+      const temOnde = (plano.fontes || []).some((f) => f.url) || (plano.pesquisas || []).length;
       conversaNova = conversaNova.filter((m) => !m.previa);
       conversaNova.push({
         autor: 'dot',
         previa: true,
         html: `
-          <p><b>${escapar(plano.nome)}</b></p>
-          <p class="dc-dica">${escapar(plano.criterio || '')}</p>
-          <ul class="dc-lista">${(resumo || []).map((linha) => `<li>${escapar(linha)}</li>`).join('')}</ul>
+          <div class="dc-plano">${htmlDoPlano(plano, { resumo })}</div>
           <div class="dc-chips">
-            <button type="button" class="dc-chip dc-chip--principal" data-acao="confirmar-novo">É isso, pode criar</button>
+            ${temOnde ? '<button type="button" class="dc-chip dc-chip--principal" data-acao="confirmar-novo">É isso, pode criar</button>' : ''}
             <button type="button" class="dc-chip" data-acao="ajustar-novo">Quero mudar</button>
-            <button type="button" class="dc-chip" data-acao="abrir-ajustes">Ajustes (destino, página…)</button>
+            <button type="button" class="dc-chip" data-acao="abrir-ajustes">Ajustes (destino, página, imagem…)</button>
           </div>`,
       });
       renderConversa({ rolar: true });
@@ -1071,8 +1303,13 @@
 
   async function criarDot() {
     if (!pedidoNovo || !planoConfirmado) return;
+    const destino = destinoEscolhido();
+    if (destino !== 'rascunho' && !el.pagina.value) {
+      pushNova('dot', `<p>⚠️ Para ${destino === 'agendar' ? 'agendar' : 'publicar'}, escolha a página no <b>+</b> (Publicar em).</p>`, 'dc-msg--erro');
+      return abrirAjustes();
+    }
     conversaNova = conversaNova.filter((m) => !m.previa);
-    pushNova('dot', '<p class="dc-digitando"><i></i><i></i><i></i> Criando e cadastrando as páginas…</p>');
+    pushNova('dot', '<p class="dc-digitando"><i></i><i></i><i></i> Criando e cadastrando as fontes…</p>');
     try {
       const r = await api('/api/dots', {
         method: 'POST',
@@ -1081,6 +1318,8 @@
           nome: el.nome.value.trim() || null,
           provedor: el.provedor?.value || 'auto',
           facebook_page_id: el.pagina.value || null,
+          // O mesmo plano que o editor viu: a IA pode responder diferente na 2ª vez.
+          plano: planoConfirmado.plano,
           ...configuracaoDaTela(),
         }),
       });
@@ -1141,18 +1380,212 @@
 
   // ---------------------------------------------------------- ajustes
 
+  // ------------------------------------------------- modal "Novo dot"
+  //
+  // O "+" abre um modal com tudo do dot novo e o botão Salvar. O foco fica
+  // preso no modal e volta para quem o abriu ao fechar.
+
+  const modal = {
+    caixa: el.ajustes?.querySelector('.dm-modal'),
+    pedido: $('dm-pedido'),
+    salvar: $('dm-salvar'),
+    ver: $('dm-ver'),
+    cancelar: $('dm-cancelar'),
+    previa: $('dm-previa'),
+    erro: $('dm-erro'),
+  };
+  let focoAntesDoModal = null;
+
+  function erroNoModal(texto) {
+    modal.erro.textContent = texto || '';
+    modal.erro.hidden = !texto;
+  }
+
   function abrirAjustes() {
+    focoAntesDoModal = document.activeElement;
+    // O que já foi digitado na caixa do chat vira o pedido do dot novo.
+    if (selecionado === 'novo' && !modal.pedido.value.trim() && el.objetivo.value.trim()) {
+      modal.pedido.value = el.objetivo.value.trim();
+    }
+    erroNoModal('');
     el.ajustes.hidden = false;
+    document.body.classList.add('dm-aberto');
     el.mais.setAttribute('aria-expanded', 'true');
     atualizarResumoAjustes();
+    requestAnimationFrame(() => (modal.pedido.value.trim() ? el.nome : modal.pedido).focus());
   }
   function fecharAjustes() {
     el.ajustes.hidden = true;
+    document.body.classList.remove('dm-aberto');
     el.mais.setAttribute('aria-expanded', 'false');
     atualizarResumoAjustes();
+    if (focoAntesDoModal && document.contains(focoAntesDoModal)) focoAntesDoModal.focus();
   }
-  el.mais.addEventListener('click', () => (el.ajustes.hidden ? abrirAjustes() : fecharAjustes()));
+
+  /**
+   * Prévia que o editor está vendo no modal: { texto, plano, resumo }. Salvar
+   * manda ESTE plano (com o que ele tirou), não uma nova interpretação.
+   */
+  let previaModal = null;
+
+  function desenharPreviaModal() {
+    if (!previaModal) return;
+    modal.previa.hidden = false;
+    modal.previa.innerHTML = htmlDoPlano(previaModal.plano, { editavel: true, resumo: previaModal.resumo });
+  }
+
+  /** Prévia dentro do modal: o que o dot entendeu e onde vai procurar. */
+  async function verPreviaNoModal() {
+    const objetivo = modal.pedido.value.trim();
+    if (!objetivo) {
+      erroNoModal('Escreva o que o dot deve fazer.');
+      return modal.pedido.focus();
+    }
+    erroNoModal('');
+    modal.ver.disabled = true;
+    modal.previa.hidden = false;
+    modal.previa.innerHTML = '<p class="dc-digitando"><i></i><i></i><i></i> Lendo o pedido e procurando as fontes…</p>';
+    try {
+      const { plano, resumo } = await api('/api/dots/previa', {
+        method: 'POST',
+        body: JSON.stringify({ objetivo, ...configuracaoDaTela() }),
+      });
+      if (!el.nome.value.trim()) el.nome.value = plano.nome;
+      previaModal = { texto: objetivo, plano, resumo };
+      desenharPreviaModal();
+      renderTopo();
+    } catch (err) {
+      previaModal = null;
+      modal.previa.hidden = true;
+      erroNoModal(err.message);
+    } finally {
+      modal.ver.disabled = false;
+    }
+  }
+
+  /** Tira uma fonte ou pesquisa da prévia antes de salvar. */
+  modal.previa.addEventListener('click', (e) => {
+    const botao = e.target.closest('[data-tirar]');
+    if (!botao || !previaModal) return;
+    const i = Number(botao.dataset.indice);
+    const lista = botao.dataset.tirar === 'pesquisa' ? previaModal.plano.pesquisas : previaModal.plano.fontes;
+    if (Array.isArray(lista) && i >= 0 && i < lista.length) lista.splice(i, 1);
+    desenharPreviaModal();
+  });
+
+  // Pedido mudou depois da prévia: a prévia deixa de valer (salvar interpreta de novo).
+  modal.pedido.addEventListener('input', () => {
+    if (previaModal && modal.pedido.value.trim() !== previaModal.texto) {
+      previaModal = null;
+      modal.previa.hidden = false;
+      modal.previa.innerHTML = '<p class="dm-previa-velha">O pedido mudou. Clique em “Ver o que eu entendi” para conferir as fontes de novo — ou salve direto.</p>';
+    }
+  });
+
+  // Exemplos de pedido, um clique.
+  el.ajustes.addEventListener('click', (e) => {
+    const exemplo = e.target.closest('[data-exemplo-modal]');
+    if (!exemplo) return;
+    modal.pedido.value = EXEMPLOS[Number(exemplo.dataset.exemploModal)]?.texto || '';
+    modal.pedido.dispatchEvent(new Event('input'));
+    modal.pedido.focus();
+  });
+
+  /** Salvar: cria o dot, fecha o modal e abre a conversa dele. */
+  async function salvarDoModal() {
+    const objetivo = modal.pedido.value.trim();
+    if (!objetivo) {
+      erroNoModal('Escreva o que o dot deve fazer.');
+      return modal.pedido.focus();
+    }
+    const destino = destinoEscolhido();
+    if (destino !== 'rascunho' && !el.pagina.value) {
+      erroNoModal(`Para ${destino === 'agendar' ? 'agendar' : 'publicar'}, escolha a página em “Publicar em”.`);
+      return el.pagina.focus();
+    }
+    const plano = previaModal && previaModal.texto === objetivo ? previaModal.plano : null;
+    if (plano && !(plano.fontes || []).some((f) => f.url) && !(plano.pesquisas || []).length) {
+      erroNoModal('Sobrou nenhuma fonte. Cole um link ou diga o assunto para eu pesquisar.');
+      return modal.pedido.focus();
+    }
+    erroNoModal('');
+    modal.salvar.disabled = true;
+    modal.salvar.classList.add('is-carregando');
+    modal.salvar.querySelector('span').textContent = plano ? 'Salvando…' : 'Procurando as fontes…';
+    try {
+      const r = await api('/api/dots', {
+        method: 'POST',
+        body: JSON.stringify({
+          objetivo,
+          nome: el.nome.value.trim() || null,
+          provedor: el.provedor?.value || 'auto',
+          facebook_page_id: el.pagina.value || null,
+          plano,
+          ...configuracaoDaTela(),
+        }),
+      });
+      const falhas = Array.isArray(r.problemas) ? r.problemas : [];
+      previaModal = null;
+      modal.pedido.value = '';
+      modal.previa.hidden = true;
+      modal.previa.innerHTML = '';
+      el.nome.value = '';
+      el.objetivo.value = '';
+      ajustarAltura();
+      conversaNova = [];
+      pedidoNovo = '';
+      planoConfirmado = null;
+      fecharAjustes();
+      avisar(
+        falhas.length
+          ? `Dot criado, mas não entraram: ${falhas.slice(0, 3).join(' | ')}`
+          : `Dot criado com ${r.fontes ?? 0} ${r.fontes === 1 ? 'fonte' : 'fontes'}. Já vou começar a ler.`,
+        r.fontes === 0
+      );
+      await carregar();
+      if (r.id) selecionar(r.id);
+    } catch (err) {
+      erroNoModal(err.message);
+    } finally {
+      modal.salvar.disabled = false;
+      modal.salvar.classList.remove('is-carregando');
+      modal.salvar.querySelector('span').textContent = 'Salvar';
+    }
+  }
+
+  // Foco preso no modal (Tab/Shift+Tab giram dentro dele).
+  el.ajustes.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    const focaveis = [...modal.caixa.querySelectorAll('button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])')]
+      .filter((n) => !n.disabled && n.offsetParent !== null);
+    if (!focaveis.length) return;
+    const primeiro = focaveis[0];
+    const ultimo = focaveis[focaveis.length - 1];
+    if (e.shiftKey && document.activeElement === primeiro) {
+      e.preventDefault();
+      ultimo.focus();
+    } else if (!e.shiftKey && document.activeElement === ultimo) {
+      e.preventDefault();
+      primeiro.focus();
+    }
+  });
+  // Ctrl+Enter salva de qualquer campo.
+  el.ajustes.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      salvarDoModal();
+    }
+  });
+  // Clique fora do modal fecha.
+  el.ajustes.addEventListener('mousedown', (e) => {
+    if (e.target === el.ajustes) fecharAjustes();
+  });
+
+  el.mais.addEventListener('click', () => comecarNovo());
   el.ajustesFechar.addEventListener('click', fecharAjustes);
+  modal.cancelar.addEventListener('click', fecharAjustes);
+  modal.salvar.addEventListener('click', salvarDoModal);
+  modal.ver.addEventListener('click', verPreviaNoModal);
   el.resumoAjustes.addEventListener('click', abrirAjustes);
 
   // ---------------------------------------------------------- lateral
@@ -1217,15 +1650,13 @@
     el.topo.hidden = false;
   }
 
-  /** "Criar novo dot": abre o nome e os ajustes; o pedido vai na caixa de baixo. */
+  /** "Criar novo dot": abre o modal com o nome, o pedido e os ajustes. */
   function comecarNovo(nomeInicial) {
     esconderPara();
     selecionar('novo');
     if (nomeInicial) el.nome.value = nomeInicial;
     abrirAjustes();
     renderTopo();
-    el.nome.focus();
-    if (nomeInicial) el.nome.setSelectionRange(nomeInicial.length, nomeInicial.length);
   }
 
   function escolherPara(id) {
@@ -1234,9 +1665,10 @@
     selecionar(id);
   }
 
+  // "+" da lateral: abre o modal do dot novo.
   el.novo.addEventListener('click', (e) => {
     e.stopPropagation();
-    mostrarPara();
+    comecarNovo();
   });
   el.paraBusca.addEventListener('input', () => {
     const opcoes = opcoesPara();
@@ -1309,6 +1741,254 @@
     else if (!el.ajustes.hidden) fecharAjustes();
   });
 
+  // ------------------------------------------------- ações nas matérias
+
+  function materiaDoDot(dotId, matterId) {
+    const d = detalhes.get(String(dotId));
+    return (d?.materias || []).find((m) => Number(m.id) === Number(matterId))
+      || (d?.execucoes || []).map((e) => e.materia).find((m) => m && Number(m.id) === Number(matterId))
+      || null;
+  }
+
+  /**
+   * Dia e hora para agendar, com atalhos. Começa no próximo horário livre da
+   * agenda (o mesmo do /materia-manual) ou no horário atual, se já agendada.
+   * Devolve "AAAA-MM-DDTHH:mm" no horário de Brasília, ou null.
+   */
+  async function dialogoAgendar(m, pagina) {
+    let inicial = null;
+    if (m.status === 'agendado' && m.agendada_para) {
+      inicial = dataLocal(new Date(m.agendada_para).getTime());
+    } else {
+      try {
+        inicial = (await api('/api/materias-ia/agenda/proximo-slot'))?.proximoSlotLocal || null;
+      } catch {
+        inicial = null;
+      }
+    }
+    const minimo = dataLocal(Date.now() + 2 * 60_000);
+    if (!inicial || inicial < minimo) inicial = dataLocal(Date.now() + 30 * 60_000);
+
+    return new Promise((resolve) => {
+      const fundo = document.createElement('div');
+      fundo.className = 'dc-dialogo-fundo';
+      fundo.innerHTML = `
+        <div class="dc-dialogo dc-dialogo--agendar" role="dialog" aria-modal="true" aria-labelledby="dc-ag-titulo">
+          <h3 id="dc-ag-titulo">${m.status === 'agendado' ? 'Mudar o horário' : 'Agendar publicação'}</h3>
+          <p class="dc-ag-materia">${escapar(m.titulo || 'Matéria')}<small>em ${escapar(pagina)}</small></p>
+          <label class="dc-ag-rotulo" for="dc-ag-quando">Dia e hora (horário de Brasília)</label>
+          <input id="dc-ag-quando" type="datetime-local" class="dc-dialogo-campo" value="${inicial}" min="${minimo}" step="300" />
+          <div class="dc-ag-atalhos" role="group" aria-label="Atalhos de horário">
+            <button type="button" data-ag="30">+30 min</button>
+            <button type="button" data-ag="60">+1 hora</button>
+            <button type="button" data-ag="180">+3 horas</button>
+            <button type="button" data-ag="amanha">Amanhã 8h</button>
+          </div>
+          <p class="dc-ag-erro" role="alert" hidden></p>
+          <div class="dc-dialogo-acoes">
+            <button type="button" class="dc-botao" data-resposta="nao">Cancelar</button>
+            <button type="button" class="dc-botao dc-botao--principal" data-resposta="sim">${icone('calendario')}<span>Agendar</span></button>
+          </div>
+        </div>`;
+      document.body.append(fundo);
+      const campo = fundo.querySelector('#dc-ag-quando');
+      const erroAg = fundo.querySelector('.dc-ag-erro');
+      const fechar = (valor) => {
+        fundo.classList.remove('is-on');
+        setTimeout(() => fundo.remove(), 180);
+        document.removeEventListener('keydown', teclas, true);
+        resolve(valor);
+      };
+      const confirmar = () => {
+        const valor = campo.value;
+        if (!valor || valor < dataLocal(Date.now() + 60_000)) {
+          erroAg.hidden = false;
+          erroAg.textContent = 'Escolha um dia e hora no futuro.';
+          return campo.focus();
+        }
+        fechar(valor);
+      };
+      const teclas = (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          fechar(null);
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          confirmar();
+        }
+      };
+      document.addEventListener('keydown', teclas, true);
+      fundo.addEventListener('click', (e) => {
+        if (e.target === fundo) return fechar(null);
+        const atalho = e.target.closest('[data-ag]');
+        if (atalho) {
+          const v = atalho.dataset.ag;
+          campo.value = v === 'amanha'
+            ? `${dataLocal(Date.now() + 86_400_000).slice(0, 10)}T08:00`
+            : dataLocal(Date.now() + Number(v) * 60_000);
+          erroAg.hidden = true;
+          return;
+        }
+        const botao = e.target.closest('[data-resposta]');
+        if (botao) {
+          if (botao.dataset.resposta === 'sim') confirmar();
+          else fechar(null);
+        }
+      });
+      requestAnimationFrame(() => fundo.classList.add('is-on'));
+      campo.focus();
+    });
+  }
+
+  /** Publicar, agendar, desagendar, imagem com IA e editar uma matéria do dot. */
+  async function executarNaMateria(dot, m, acao, botao = null) {
+    const pagina = m.pagina || dot.pagina || 'a página padrão da sua conta';
+    const original = botao?.innerHTML;
+    const travar = (texto) => {
+      if (!botao) return;
+      botao.disabled = true;
+      botao.innerHTML = `<span>${texto}</span>`;
+    };
+    try {
+      if (acao === 'editar') {
+        window.open(`/materias-ia/${m.id}`, '_blank', 'noopener');
+        return;
+      }
+      if (acao === 'publicar') {
+        const ok = await dialogo({
+          titulo: 'Publicar agora?',
+          texto: `“${m.titulo || 'Matéria'}” vai ao ar agora em ${pagina}.`,
+          confirmar: 'Publicar agora',
+        });
+        if (!ok) return;
+        travar('Publicando…');
+        const r = await api(`/api/materias-ia/matters/${m.id}/publicar`, {
+          method: 'POST',
+          body: JSON.stringify({
+            facebook_page_id: m.facebook_page_id || dot.facebook_page_id || undefined,
+            tipo_publicacao: 'auto',
+          }),
+        });
+        avisar(r.queued ? 'Na fila de publicação — sai em instantes.' : 'Publicada ✓');
+      } else if (acao === 'agendar') {
+        const quando = await dialogoAgendar(m, pagina);
+        if (!quando) return;
+        travar('Agendando…');
+        const r = await api(`/api/materias-ia/matters/${m.id}/agendar`, {
+          method: 'POST',
+          body: JSON.stringify({ run_at: quando }),
+        });
+        avisar(`Agendada para ${diaHora(r.runAt || quando)} ✓`);
+      } else if (acao === 'desagendar') {
+        const ok = await dialogo({
+          titulo: 'Desagendar?',
+          texto: `“${m.titulo || 'Matéria'}” volta a rascunho e não sai mais no horário marcado.`,
+          confirmar: 'Desagendar',
+          perigo: true,
+        });
+        if (!ok) return;
+        await api(`/api/materias-ia/matters/${m.id}/desagendar`, { method: 'POST' });
+        avisar('Desagendada. Voltou para rascunho.');
+      } else if (acao === 'imagem' || acao === 'limpar') {
+        if (m.gerando_imagem) return avisar('A imagem desta matéria já está sendo gerada.');
+        await api(`/api/dots/${dot.id}/materias/${m.id}/imagem`, {
+          method: 'POST',
+          body: JSON.stringify({ modo: acao === 'limpar' ? 'limpar_texto' : 'recriar' }),
+        });
+        avisar('Gerando a imagem com IA. Leva alguns minutos — a nova arte aparece aqui.');
+      }
+      detalhes.delete(String(dot.id));
+      await carregar();
+    } catch (err) {
+      avisar(err.message, true);
+      if (botao?.isConnected) {
+        botao.disabled = false;
+        botao.innerHTML = original;
+      }
+    }
+  }
+
+  function acaoNaMateria(dotId, matterId, acao, botao) {
+    const dot = ultimaLista.find((d) => String(d.id) === String(dotId));
+    const m = materiaDoDot(dotId, matterId);
+    if (!dot || !m) return avisar('Não achei esta matéria. Atualize a página.', true);
+    if (acao === 'mais-materia') {
+      const itens = [
+        { icone: 'abrir', texto: 'Abrir e editar a matéria', acao: 'editar' },
+        'separador',
+        { icone: 'varinha', texto: m.gerando_imagem ? 'Gerando imagem…' : 'Gerar imagem nova com IA', acao: 'imagem' },
+        { icone: 'imagem', texto: 'Limpar texto da imagem com IA', acao: 'limpar' },
+      ];
+      if (m.status === 'agendado') {
+        itens.push('separador', { icone: 'desagendar', texto: 'Desagendar (volta a rascunho)', acao: 'desagendar', perigo: true });
+      }
+      return abrirMenu(botao, itens, (escolha) => executarNaMateria(dot, m, escolha));
+    }
+    return executarNaMateria(dot, m, acao === 'publicar-materia' ? 'publicar' : 'agendar', botao);
+  }
+
+  // --------------------------------------------------- fontes do dot
+
+  async function removerFonteDoDot(dotId, fonteId, botao) {
+    const d = detalhes.get(String(dotId));
+    const f = (d?.fontes_lista || []).find((x) => Number(x.id) === Number(fonteId));
+    const nome = f ? (f.plataforma === 'busca' ? `a pesquisa “${f.termo || f.nome}”` : f.nome) : 'esta fonte';
+    const ok = await dialogo({
+      titulo: 'Tirar esta fonte?',
+      texto: `O dot deixa de ler ${nome}. Ela continua na sua Biblioteca.`,
+      confirmar: 'Tirar',
+      perigo: true,
+    });
+    if (!ok) return;
+    botao.disabled = true;
+    try {
+      await api(`/api/dots/${dotId}/fontes/${fonteId}`, { method: 'DELETE' });
+      avisar('Fonte retirada.');
+      detalhes.delete(String(dotId));
+      await carregar();
+    } catch (err) {
+      avisar(err.message, true);
+      if (botao.isConnected) botao.disabled = false;
+    }
+  }
+
+  el.painelCorpo.addEventListener('submit', async (e) => {
+    const form = e.target.closest('[data-form="adicionar-fonte"]');
+    if (!form) return;
+    e.preventDefault();
+    const id = form.closest('[data-dot]')?.dataset.dot;
+    const tipo = form.elements.tipo.value;
+    const texto = form.elements.texto.value.trim();
+    if (!id || !texto) return;
+    const botao = form.querySelector('button[type="submit"]');
+    botao.disabled = true;
+    botao.textContent = tipo === 'busca' || /^https?:\/\//i.test(texto) ? 'Acrescentando…' : 'Procurando…';
+    try {
+      const r = await api(`/api/dots/${id}/fontes`, { method: 'POST', body: JSON.stringify({ tipo, texto }) });
+      avisar(r.adicionada?.pesquisa
+        ? `Pesquisa “${r.adicionada.pesquisa}” acrescentada. Vou ler agora.`
+        : `Fonte acrescentada: ${r.adicionada?.nome || texto}. Vou ler agora.`);
+      form.elements.texto.value = '';
+      form.elements.texto.blur();
+      detalhes.delete(String(id));
+      await carregar();
+    } catch (err) {
+      avisar(err.message, true);
+    } finally {
+      if (botao.isConnected) {
+        botao.disabled = false;
+        botao.textContent = 'Acrescentar';
+      }
+    }
+  });
+
+  el.painelCorpo.addEventListener('change', (e) => {
+    if (!e.target.matches('.d-fonte-nova select[name="tipo"]')) return;
+    const campo = e.target.form?.elements?.texto;
+    if (campo) campo.placeholder = DICA_FONTE_NOVA[e.target.value] || '';
+  });
+
   // ------------------------------------------------------------ ações
 
   el.shell.addEventListener('click', async (e) => {
@@ -1340,6 +2020,12 @@
     const id = botao.closest('[data-dot]')?.dataset.dot;
     if (!id) return;
 
+    if (['publicar-materia', 'agendar-materia', 'mais-materia'].includes(acao)) {
+      const cartao = botao.closest('[data-materia]');
+      if (cartao) acaoNaMateria(id, Number(cartao.dataset.materia), acao, botao);
+      return;
+    }
+    if (acao === 'remover-fonte') return removerFonteDoDot(id, Number(botao.dataset.fonte), botao);
     if (acao === 'painel') return abrirPainel(botao.dataset.aba);
     if (acao === 'aba') {
       abas.set(String(id), botao.dataset.aba);

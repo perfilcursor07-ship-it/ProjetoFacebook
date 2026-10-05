@@ -62,6 +62,7 @@ router.delete('/matters/:id', controller.removerMateria);
 router.post('/matters/:id/publicar', controller.publicar);
 router.post('/matters/:id/texto-x', controller.gerarTextoX);
 router.post('/matters/:id/agendar', controller.agendar);
+router.post('/matters/:id/desagendar', controller.desagendar);
 router.post('/matters/:id/variacao', controller.gerarVariacao);
 router.post('/matters/:id/gerar-reel', controller.gerarReel);
 router.post('/matters/:id/views', controller.atualizarViews);
