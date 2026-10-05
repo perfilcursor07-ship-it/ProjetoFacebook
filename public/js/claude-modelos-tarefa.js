@@ -28,18 +28,20 @@
 
       const padrao = document.createElement('option');
       padrao.value = '';
-      padrao.textContent = 'Seguir o editor (sem modelo fixo)';
+      padrao.textContent = tarefa.vazio || 'Seguir o editor (sem modelo fixo)';
       select.appendChild(padrao);
 
       const atual = estado.escolhas[tarefa.id] || '';
-      for (const modelo of estado.modelos) {
+      // Tarefa com lista própria (ex.: geração de imagem: Grok, Gemini).
+      const opcoesDaTarefa = Array.isArray(tarefa.opcoes) ? tarefa.opcoes : estado.modelos;
+      for (const modelo of opcoesDaTarefa) {
         const opcao = document.createElement('option');
         opcao.value = modelo.id;
         opcao.textContent = modelo.disponivel === false ? `${modelo.nome} (sem login no gateway)` : modelo.nome;
         select.appendChild(opcao);
       }
       // Modelo salvo que saiu do catálogo continua visível até o admin trocar.
-      if (atual && !estado.modelos.some((m) => m.id === atual)) {
+      if (atual && !opcoesDaTarefa.some((m) => m.id === atual)) {
         const opcao = document.createElement('option');
         opcao.value = atual;
         opcao.textContent = `${atual} (fora do catálogo)`;

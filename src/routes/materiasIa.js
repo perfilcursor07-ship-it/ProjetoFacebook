@@ -19,6 +19,7 @@ router.post('/chat/conversas/:id/mensagens', chatController.enviar);
 router.delete('/chat/conversas/:id/mensagens/:messageId', chatController.apagarDaMensagem);
 router.post('/chat/mensagens/:messageId/materia', chatController.salvarMateria);
 router.post('/chat/mensagens/:messageId/titulos-alternativos', chatController.gerarTitulosAlternativos);
+router.post('/chat/titulo/corrigir', chatController.corrigirTitulo);
 router.post('/chat/mensagens/:messageId/sugerir-imagens', chatController.sugerirImagens);
 router.get('/chat/mensagens/:messageId/imagem-fonte', chatController.imagemDaFonte);
 router.patch('/chat/mensagens/:messageId/conteudo', chatController.editarConteudo);

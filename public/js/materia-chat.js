@@ -174,6 +174,18 @@
 
   const MODELO_KEY = 'ViralizeAI.materiaModelo';
   const ROTULO_PROVEDOR = { claude: 'Claude', chatgpt: 'ChatGPT' };
+  // Gerador de imagem escolhido em /claude (ChatGPT, Grok ou Google Gemini).
+  let geradorImagemNome = 'ChatGPT';
+  try {
+    Promise.resolve(fetch('/api/materias-ia/arte/gerador-imagem', { headers: { Accept: 'application/json' } }))
+      .then((res) => (res?.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.nome) geradorImagemNome = data.nome;
+      })
+      .catch(() => {});
+  } catch {
+    // sem fetch (testes): mantém o nome padrão
+  }
 
   function opcaoEscolhida() {
     return state.opcoesModelo.find((o) => o.id === state.modeloEscolhido) || null;
@@ -986,12 +998,12 @@
         painelGpt = document.createElement('div');
         painelGpt.className = 'm-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3';
         painelGpt.innerHTML =
-          '<div class="flex items-center justify-between gap-2"><p class="text-xs font-semibold text-white">Criar nova versão com ChatGPT</p>' +
+          `<div class="flex items-center justify-between gap-2"><p class="text-xs font-semibold text-white">Criar nova versão com ${geradorImagemNome}</p>` +
           '<span class="rounded-full border border-emerald-400/50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-200">Sem texto</span></div>' +
-          '<p class="mt-1 text-[11px] text-slate-400">Na versão com referência, a foto atual é enviada ao ChatGPT. Cada clique abre uma conversa separada. Para temas sensíveis, você também pode criar uma ilustração simbólica sem enviar a foto.</p>';
+          `<p class="mt-1 text-[11px] text-slate-400">Na versão com referência, a foto atual é enviada ao ${geradorImagemNome}. Cada clique abre uma conversa separada. Para temas sensíveis, você também pode criar uma ilustração simbólica sem enviar a foto.</p>`;
         const prompt = document.createElement('textarea');
         prompt.rows = 5;
-        prompt.setAttribute('aria-label', 'Pedido para o ChatGPT');
+        prompt.setAttribute('aria-label', `Pedido para o ${geradorImagemNome}`);
         prompt.className = 'mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-xs leading-relaxed text-slate-100 focus:border-emerald-400 focus:outline-none';
         prompt.value = [
           'Crie uma NOVA imagem editorial fotorrealista inspirada na imagem de referência enviada.',
@@ -1056,11 +1068,11 @@
             const res = await fetch(`${chatgpt.base}/gerar-chatgpt/${encodeURIComponent(inicial.jobId)}`, { headers: { Accept: 'application/json' } });
             const data = await res.json().catch(() => ({}));
             if (!res.ok && res.status !== 202) throw new Error(data.error || 'Não foi possível acompanhar a geração da imagem.');
-            if (data.status === 'error') throw new Error(data.error || 'O ChatGPT não conseguiu gerar a imagem.');
+            if (data.status === 'error') throw new Error(data.error || `O ${geradorImagemNome} não conseguiu gerar a imagem.`);
             if (data.status === 'ready') return data;
             job.estado.textContent = 'gerando em conversa separada…';
           }
-          throw new Error('A geração continua no ChatGPT. Use “Pegar imagem nova gerada” em alguns minutos.');
+          throw new Error(`A geração continua no ${geradorImagemNome}. Use “Pegar imagem nova gerada” em alguns minutos.`);
         };
         const iniciar = async (modo) => {
           const texto = prompt.value.trim();
@@ -1091,7 +1103,7 @@
           } catch (err) {
             job.estado.className = 'text-rose-300';
             job.estado.textContent = err.message || 'falhou';
-            tom(err.message || 'Falha ao gerar imagem com o ChatGPT.', 'text-rose-300');
+            tom(err.message || `Falha ao gerar imagem com o ${geradorImagemNome}.`, 'text-rose-300');
           } finally {
             geracoesAtivas = Math.max(0, geracoesAtivas - 1);
             if (!geracoesAtivas) gerar.textContent = 'Gerar imagem sem texto';
@@ -1101,14 +1113,14 @@
         simbolica.addEventListener('click', () => iniciar('simbolica'));
         recuperar.addEventListener('click', async () => {
           recuperar.disabled = true;
-          tom('Buscando a última imagem gerada na conversa do ChatGPT…', 'text-sky-200');
+          tom(`Buscando a última imagem gerada na conversa do ${geradorImagemNome}…`, 'text-sky-200');
           try {
             const data = await api(`${chatgpt.base}/recuperar-chatgpt`, { method: 'POST' });
             const id = ++seq;
-            pronta(linhaVersao(id, 'Imagem recuperada da conversa recente do ChatGPT.'), data, id, true);
+            pronta(linhaVersao(id, `Imagem recuperada da conversa recente do ${geradorImagemNome}.`), data, id, true);
             tom('Imagem recuperada. Ajuste o recorte e clique em “Usar recorte”.', 'text-emerald-300');
           } catch (err) {
-            tom(err.message || 'Não foi possível recuperar a imagem do ChatGPT.', 'text-rose-300');
+            tom(err.message || `Não foi possível recuperar a imagem do ${geradorImagemNome}.`, 'text-rose-300');
           } finally {
             recuperar.disabled = false;
           }
@@ -1172,7 +1184,7 @@
         caixa = { left: 0, top: 0, width: 1, height: 1 };
         usar.disabled = true;
         foto.src = `${novaUrl}${novaUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
-        status.textContent = recuperada ? 'Imagem recuperada — ajuste o recorte.' : 'Nova imagem do ChatGPT — ajuste o recorte.';
+        status.textContent = recuperada ? 'Imagem recuperada — ajuste o recorte.' : `Nova imagem do ${geradorImagemNome} — ajuste o recorte.`;
       }
       let arraste = null;
       quadro.addEventListener('pointerdown', (e) => {
@@ -1212,7 +1224,7 @@
 
       const podeFechar = () =>
         !geracoesAtivas ||
-        window.confirm('Uma imagem ainda está sendo gerada no ChatGPT. Fechar mesmo assim? Depois você pode usar “Pegar imagem nova gerada”.');
+        window.confirm(`Uma imagem ainda está sendo gerada no ${geradorImagemNome}. Fechar mesmo assim? Depois você pode usar “Pegar imagem nova gerada”.`);
       const fechar = (resultado) => {
         if (!resultado && !podeFechar()) return;
         document.removeEventListener('keydown', teclas);
@@ -1240,7 +1252,7 @@
         desenhar();
       });
       foto.addEventListener('error', () => {
-        if (foto.getAttribute('src')) status.textContent = 'Não consegui abrir esta foto (o site pode bloquear). Escolha outra foto ou gere uma com o ChatGPT.';
+        if (foto.getAttribute('src')) status.textContent = `Não consegui abrir esta foto (o site pode bloquear). Escolha outra foto ou gere uma com o ${geradorImagemNome}.`;
       });
 
       const overflowAntes = document.body.style.overflow;
@@ -1253,7 +1265,7 @@
       } else {
         quadro.classList.add('hidden');
         foto.classList.add('hidden');
-        status.textContent = 'Sem foto escolhida: gere uma imagem com o ChatGPT acima.';
+        status.textContent = `Sem foto escolhida: gere uma imagem com o ${geradorImagemNome} acima.`;
         foto.addEventListener('load', () => {
           quadro.classList.remove('hidden');
           foto.classList.remove('hidden');
@@ -1709,6 +1721,50 @@
     ajustesRapidos.appendChild(editarTexto);
     box.appendChild(ajustesRapidos);
 
+    /**
+     * Botão "Corrigir texto": a IA só acerta ortografia, acentos e pontuação
+     * do título que o editor escreveu; não troca palavras nem reescreve.
+     */
+    function criarCorrecaoDeTitulo(campo, aviso) {
+      const botao = document.createElement('button');
+      botao.type = 'button';
+      botao.textContent = 'Corrigir texto';
+      botao.title = 'A IA corrige só ortografia, acentos e pontuação — não muda as suas palavras';
+      botao.className =
+        'shrink-0 rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-200 transition hover:border-emerald-500/60 hover:text-white disabled:cursor-not-allowed disabled:opacity-50';
+      const atualizar = () => {
+        botao.disabled = campo.value.trim().length < 8;
+      };
+      campo.addEventListener('input', atualizar);
+      atualizar();
+      botao.addEventListener('click', async () => {
+        const original = campo.value.trim();
+        botao.disabled = true;
+        botao.textContent = 'Corrigindo…';
+        aviso.textContent = '';
+        try {
+          const data = await api(`${API}/titulo/corrigir`, {
+            method: 'POST',
+            body: JSON.stringify({ titulo: original }),
+          });
+          // Só troca se o editor não mudou o campo enquanto a IA corrigia.
+          if (campo.value.trim() === original && data.titulo) {
+            campo.value = data.titulo;
+            campo.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          aviso.textContent = data.aviso || (data.alterado ? 'Título corrigido.' : 'Nenhuma correção necessária.');
+          aviso.className = `mt-1 text-[11px] ${data.aviso ? 'text-amber-300' : 'text-emerald-300'}`;
+        } catch (err) {
+          aviso.textContent = err.message || 'Não foi possível corrigir agora.';
+          aviso.className = 'mt-1 text-[11px] text-rose-300';
+        } finally {
+          botao.textContent = 'Corrigir texto';
+          atualizar();
+        }
+      });
+      return botao;
+    }
+
     let tituloLivre = null;
     if (livre) {
       tituloLivre = document.createElement('input');
@@ -1716,9 +1772,15 @@
       tituloLivre.maxLength = 180;
       tituloLivre.value = tituloRascunhoLivre(mensagem);
       tituloLivre.placeholder = 'Título da matéria';
+      tituloLivre.setAttribute('aria-label', 'Título da matéria');
       tituloLivre.className =
-        'mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-medium text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none';
-      box.appendChild(tituloLivre);
+        'min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-medium text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none';
+      const linhaLivre = document.createElement('div');
+      linhaLivre.className = 'mt-2 flex gap-2';
+      const avisoLivre = document.createElement('p');
+      avisoLivre.className = 'mt-1 text-[11px] text-slate-500';
+      linhaLivre.append(tituloLivre, criarCorrecaoDeTitulo(tituloLivre, avisoLivre));
+      box.append(linhaLivre, avisoLivre);
     }
 
     // No Claude Livre, as sugestões são pedidas antes de a resposta virar um
@@ -1727,6 +1789,51 @@
     let opcoesTitulos = [];
     let listaTitulos = null;
     let tituloPrincipalAtual = '';
+
+    // "Seu título": o editor escreve o próprio título (e pode pedir só a
+    // correção do texto) quando não quer nenhum dos sugeridos pela IA.
+    let tituloProprio = null;
+    let campoTituloProprio = null;
+    let blocoTituloProprio = null;
+    const estiloOpcaoTitulo = (ativo) =>
+      'w-full rounded-md border px-2.5 py-1.5 text-left text-xs leading-snug transition ' +
+      (ativo
+        ? 'border-emerald-500 bg-emerald-500/10 text-emerald-200'
+        : 'border-slate-700 text-slate-300 hover:border-emerald-500/60 hover:text-white');
+    if (!livre && !mensagem.matterId) {
+      blocoTituloProprio = document.createElement('div');
+      blocoTituloProprio.className = 'mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2';
+      const rotulo = document.createElement('label');
+      rotulo.className = 'text-[11px] font-semibold uppercase tracking-wide text-slate-500';
+      rotulo.textContent = 'Ou escreva seu próprio título';
+      const linha = document.createElement('div');
+      linha.className = 'mt-1.5 flex gap-2';
+      campoTituloProprio = document.createElement('input');
+      campoTituloProprio.type = 'text';
+      campoTituloProprio.maxLength = 180;
+      campoTituloProprio.id = `titulo-proprio-${mensagem.id}`;
+      rotulo.htmlFor = campoTituloProprio.id;
+      campoTituloProprio.placeholder = 'Digite o título que você quer usar';
+      campoTituloProprio.className =
+        'min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-medium text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none';
+      const avisoProprio = document.createElement('p');
+      avisoProprio.className = 'mt-1 text-[11px] text-slate-500';
+      avisoProprio.textContent = 'O título escrito aqui substitui o sugerido ao salvar o rascunho.';
+      campoTituloProprio.addEventListener('input', () => {
+        const valor = campoTituloProprio.value.trim();
+        tituloProprio = valor || null;
+        campoTituloProprio.classList.toggle('border-emerald-500', Boolean(valor));
+        if (valor) {
+          // Título próprio em uso: nenhuma sugestão fica marcada.
+          opcoesTitulos.forEach((opcao) => { opcao.className = estiloOpcaoTitulo(false); });
+        } else if (opcoesTitulos.length) {
+          opcoesTitulos[0].click();
+        }
+      });
+      linha.append(campoTituloProprio, criarCorrecaoDeTitulo(campoTituloProprio, avisoProprio));
+      blocoTituloProprio.append(rotulo, linha, avisoProprio);
+      box.appendChild(blocoTituloProprio);
+    }
     const alternativos = Array.isArray(mensagem.titulosAlternativos)
       ? mensagem.titulosAlternativos.filter(Boolean).slice(0, 3)
       : [];
@@ -1757,7 +1864,9 @@
         dica.className = 'mt-1.5 text-[11px] text-slate-500';
         dica.textContent = 'Clique em um título para usá-lo no rascunho.';
         wrap.appendChild(dica);
-        box.appendChild(wrap);
+        // Sugestões acima do campo "Seu título", mesmo chegando depois.
+        if (blocoTituloProprio?.parentNode === box) box.insertBefore(wrap, blocoTituloProprio);
+        else box.appendChild(wrap);
       }
 
       listaTitulos.replaceChildren();
@@ -1766,13 +1875,14 @@
         const escolhido = btn.dataset.titulo || '';
         if (livre && tituloLivre) tituloLivre.value = escolhido;
         tituloEscolhido = livre || escolhido === tituloPrincipalAtual ? null : escolhido;
+        // Escolher uma sugestão descarta o título próprio digitado.
+        if (campoTituloProprio && campoTituloProprio.value) {
+          campoTituloProprio.value = '';
+          campoTituloProprio.classList.remove('border-emerald-500');
+          tituloProprio = null;
+        }
         opcoesTitulos.forEach((opcao) => {
-          const ativo = opcao === btn;
-          opcao.className =
-            'w-full rounded-md border px-2.5 py-1.5 text-left text-xs leading-snug transition ' +
-            (ativo
-              ? 'border-emerald-500 bg-emerald-500/10 text-emerald-200'
-              : 'border-slate-700 text-slate-300 hover:border-emerald-500/60 hover:text-white');
+          opcao.className = estiloOpcaoTitulo(opcao === btn);
         });
       };
       for (const opcao of [tituloPrincipal, ...sugestoes]) {
@@ -1935,7 +2045,7 @@
           recortePendente = { url: escolha.url, area: escolha.area };
           desenharPrevia(escolha.url, escolha.area);
           capaAviso.textContent = gerada
-            ? 'Imagem do ChatGPT recortada — será usada na arte ao salvar, publicar ou agendar.'
+            ? `Imagem do ${geradorImagemNome} recortada — será usada na arte ao salvar, publicar ou agendar.`
             : 'Recorte pronto — será aplicado na arte ao salvar, publicar ou agendar.';
         }
       } catch (err) {
@@ -2049,9 +2159,9 @@
           });
           const limite = Date.now() + 7 * 60 * 1000;
           while (data.status !== 'ready') {
-            if (data.status === 'error') throw new Error(data.error || 'O ChatGPT não conseguiu gerar a imagem.');
+            if (data.status === 'error') throw new Error(data.error || `O ${geradorImagemNome} não conseguiu gerar a imagem.`);
             if (Date.now() > limite) {
-              throw new Error('A geração continua no ChatGPT. Use “Recortar foto” › “Pegar imagem nova gerada” em alguns minutos.');
+              throw new Error(`A geração continua no ${geradorImagemNome}. Use “Recortar foto” › “Pegar imagem nova gerada” em alguns minutos.`);
             }
             await new Promise((r) => setTimeout(r, 2500));
             const res = await fetch(`${base}/gerar-chatgpt/${encodeURIComponent(data.jobId)}`, {
@@ -2164,7 +2274,8 @@
           body: JSON.stringify({
             imagemUrl: imagem.value.trim() || null,
             creditoImagem: credito.value.trim() || null,
-            titulo: livre ? tituloLivre?.value.trim() || null : tituloEscolhido,
+            titulo: livre ? tituloLivre?.value.trim() || null : tituloProprio || tituloEscolhido,
+            tituloProprio: !livre && Boolean(tituloProprio),
           }),
         }).then(async (data) => {
           mensagem.matterId = data.matterId;

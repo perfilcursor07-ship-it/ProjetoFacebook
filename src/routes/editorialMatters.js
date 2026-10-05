@@ -399,7 +399,7 @@ router.post('/matters/:id/arte/gerar-chatgpt', async (req, res, next) => {
     setImmediate(async () => {
       let storedSource = null;
       try {
-        const chatgptImageService = require('../services/chatgptImageService');
+        const chatgptImageService = require('../services/imagemIaService');
         const generated = await chatgptImageService.gerarImagem({
           sourceUrl,
           prompt: requestedPrompt,
@@ -418,6 +418,7 @@ router.post('/matters/:id/arte/gerar-chatgpt', async (req, res, next) => {
           imagemFonteUrl: storedSource.publicUrl,
           prompt: generated.prompt,
           model: generated.model,
+          gerador: generated.gerador,
         };
       } catch (err) {
         if (storedSource) removeMatterSourceImage(storedSource.publicUrl);
@@ -434,6 +435,15 @@ router.post('/matters/:id/arte/gerar-chatgpt', async (req, res, next) => {
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     console.error('[chatgpt-imagem]', err.message);
+    return next(err);
+  }
+});
+
+/** Gerador escolhido em /claude, para o modal de recorte mostrar o nome certo. */
+router.get('/arte/gerador-imagem', async (_req, res, next) => {
+  try {
+    return res.json({ ok: true, ...(await require('../services/imagemIaService').geradorAtual()) });
+  } catch (err) {
     return next(err);
   }
 });
@@ -466,7 +476,7 @@ router.post('/matters/:id/arte/recuperar-chatgpt', async (req, res, next) => {
       return res.status(400).json({ error: 'A imagem de uma matéria publicada não pode ser alterada' });
     }
 
-    const chatgptImageService = require('../services/chatgptImageService');
+    const chatgptImageService = require('../services/imagemIaService');
     const generated = await chatgptImageService.recuperarImagem({
       recoveryKey: `${req.session.userId}:${matterId}`,
     });
@@ -543,7 +553,7 @@ router.post('/chat/mensagens/:messageId/arte/gerar-chatgpt', async (req, res, ne
     setImmediate(async () => {
       let storedSource = null;
       try {
-        const chatgptImageService = require('../services/chatgptImageService');
+        const chatgptImageService = require('../services/imagemIaService');
         const generated = await chatgptImageService.gerarImagem({
           sourceUrl,
           prompt: req.body?.prompt,
@@ -563,6 +573,7 @@ router.post('/chat/mensagens/:messageId/arte/gerar-chatgpt', async (req, res, ne
           imagemFonteUrl: storedSource.publicUrl,
           prompt: generated.prompt,
           model: generated.model,
+          gerador: generated.gerador,
         };
       } catch (err) {
         if (storedSource) removeMatterSourceImage(storedSource.publicUrl);
@@ -602,7 +613,7 @@ router.post('/chat/mensagens/:messageId/arte/recuperar-chatgpt', async (req, res
   let storedSource = null;
   try {
     const row = await mensagemDoChatDoUsuario(req);
-    const chatgptImageService = require('../services/chatgptImageService');
+    const chatgptImageService = require('../services/imagemIaService');
     const generated = await chatgptImageService.recuperarImagem({
       recoveryKey: `${req.session.userId}:chat${row.id}`,
     });

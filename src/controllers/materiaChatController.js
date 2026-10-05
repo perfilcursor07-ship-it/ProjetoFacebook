@@ -292,8 +292,21 @@ async function salvarMateria(req, res, next) {
       indice: req.body?.indice ?? req.body?.index ?? null,
       // Título alternativo escolhido pelo editor no chat (opcional).
       titulo: req.body?.titulo || req.body?.tituloEscolhido || null,
+      // Título que o editor escreveu (não é uma das sugestões da IA).
+      tituloProprio: req.body?.tituloProprio === true,
     });
     return res.status(201).json({ ok: true, ...resultado });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
+/** "Corrigir texto": só ortografia/pontuação do título que o editor escreveu. */
+async function corrigirTitulo(req, res, next) {
+  try {
+    const { corrigirTitulo: corrigir } = require('../services/tituloCorrecaoService');
+    return res.json({ ok: true, ...(await corrigir(req.body?.titulo)) });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     return next(err);
@@ -427,6 +440,7 @@ async function salvarOrientacoes(req, res, next) {
 }
 
 module.exports = {
+  corrigirTitulo,
   modelo,
   listar,
   criar,

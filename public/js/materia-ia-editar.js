@@ -341,6 +341,21 @@
   let cropBox = { left: 0.05, top: 0.05, width: 0.9, height: 0.9 };
   let cropSourceUrl = '';
   let bodyOverflowBeforeCrop = '';
+  // Gerador escolhido em /claude (ChatGPT, Grok ou Google Gemini).
+  let geradorImagemNome = 'ChatGPT';
+  function carregarGeradorImagem() {
+    fetch('/api/materias-ia/arte/gerador-imagem', { headers: { Accept: 'application/json' } })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data?.nome) return;
+        geradorImagemNome = data.nome;
+        const titulo = document.getElementById('matter-image-generator-title');
+        const descricao = document.getElementById('matter-image-generator-desc');
+        if (titulo) titulo.textContent = 'Criar nova versão com ' + data.nome;
+        if (descricao) descricao.textContent = descricao.textContent.replace(/ChatGPT|Grok|Google Gemini/g, data.nome);
+      })
+      .catch(() => {});
+  }
   let chatgptImageJobSeq = 0;
   let chatgptImageActiveJobs = 0;
   let chatgptImageLastAppliedSeq = 0;
@@ -420,6 +435,7 @@
     }
     cropBox = { left: 0.05, top: 0.05, width: 0.9, height: 0.9 };
     cropSourceUrl = sourceUrl;
+    carregarGeradorImagem();
     if (chatgptImagePrompt && !chatgptImagePrompt.value.trim()) {
       chatgptImagePrompt.value = [
         'Crie uma NOVA imagem editorial fotorrealista inspirada na imagem de referência enviada.',
@@ -442,7 +458,7 @@
 
   function showChatgptImage(data, recovered = false) {
     cropSourceUrl = String(data?.imagemFonteUrl || '').trim();
-    if (!cropSourceUrl) throw new Error('O ChatGPT respondeu sem uma imagem utilizável.');
+    if (!cropSourceUrl) throw new Error(`O ${geradorImagemNome} respondeu sem uma imagem utilizável.`);
     cropBox = { left: 0, top: 0, width: 1, height: 1 };
     cropImage.onload = () => requestAnimationFrame(updateCropSelection);
     cropImage.src = cropSourceUrl + '?chatgpt=' + Date.now();
@@ -550,14 +566,14 @@
         throw new Error(data.error || 'Não foi possível acompanhar a geração da imagem.');
       }
       if (data.status === 'error') {
-        const error = new Error(data.error || 'O ChatGPT não conseguiu gerar a imagem.');
+        const error = new Error(data.error || `O ${geradorImagemNome} não conseguiu gerar a imagem.`);
         error.code = data.errorCode;
         throw error;
       }
       if (data.status === 'ready') return data;
       if (job) job.state.textContent = 'gerando em conversa separada...';
     }
-    throw new Error('A geração continua no ChatGPT. Use “Pegar imagem nova gerada” dentro de alguns minutos.');
+    throw new Error(`A geração continua no ${geradorImagemNome}. Use “Pegar imagem nova gerada” dentro de alguns minutos.`);
   }
 
   async function startChatgptImageJob(modo = 'referencia') {
@@ -584,7 +600,7 @@
         body: JSON.stringify({ prompt, titulo: tituloEl?.value || '', modo }),
       });
       let data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'O ChatGPT não conseguiu gerar a imagem.');
+      if (!res.ok) throw new Error(data.error || `O ${geradorImagemNome} não conseguiu gerar a imagem.`);
       data = await waitChatgptImageJob(data, job);
       if (job) finishChatgptJob(job, data, jobId);
       if (jobId >= chatgptImageLastAppliedSeq) {
@@ -594,7 +610,7 @@
       setChatgptStatus('Versão ' + jobId + ' pronta. Ajuste o recorte ou escolha outra versão da lista.', 'ok');
     } catch (err) {
       if (job) failChatgptJob(job, err.message || 'Falha ao gerar imagem');
-      setChatgptStatus(err.message || 'Falha ao gerar imagem com o ChatGPT.', 'error');
+      setChatgptStatus(err.message || `Falha ao gerar imagem com o ${geradorImagemNome}.`, 'error');
       if (err.code === 'image_safety_refusal') chatgptImageSymbolic?.focus();
     } finally {
       chatgptImageActiveJobs = Math.max(0, chatgptImageActiveJobs - 1);
@@ -609,21 +625,21 @@
     const original = chatgptImageRecover.textContent;
     chatgptImageRecover.disabled = true;
     chatgptImageRecover.textContent = 'Buscando…';
-    setChatgptStatus('Buscando a última imagem gerada na conversa do ChatGPT…', 'info');
+    setChatgptStatus(`Buscando a última imagem gerada na conversa do ${geradorImagemNome}…`, 'info');
     try {
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/arte/recuperar-chatgpt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Não foi possível recuperar a imagem do ChatGPT.');
+      if (!res.ok) throw new Error(data.error || `Não foi possível recuperar a imagem do ${geradorImagemNome}.`);
       showChatgptImage(data, true);
       const jobId = ++chatgptImageJobSeq;
-      const job = createChatgptJobRow(jobId, 'Imagem recuperada da conversa recente do ChatGPT.');
+      const job = createChatgptJobRow(jobId, `Imagem recuperada da conversa recente do ${geradorImagemNome}.`);
       if (job) finishChatgptJob(job, data, jobId, true);
       chatgptImageLastAppliedSeq = Math.max(chatgptImageLastAppliedSeq, jobId);
     } catch (err) {
-      setChatgptStatus(err.message || 'Não foi possível recuperar a imagem do ChatGPT.', 'error');
+      setChatgptStatus(err.message || `Não foi possível recuperar a imagem do ${geradorImagemNome}.`, 'error');
     } finally {
       chatgptImageRecover.disabled = false;
       chatgptImageRecover.textContent = original || 'Pegar imagem nova gerada';

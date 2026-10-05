@@ -4712,6 +4712,7 @@ async function salvarMateriaDoChat({
   creditoImagem = null,
   indice = null,
   titulo: tituloEscolhido = null,
+  tituloProprio = false,
 }) {
   const { montarRodapeMateriaComFontes, pareceFormatoJmNoticia } = require('./editorialGuidelinesFb');
   const materiaIaService = require('./materiaIaService');
@@ -4832,9 +4833,15 @@ async function salvarMateriaDoChat({
     .limparMarcacaoChatgpt(info.titulo || row.titulo || 'Matéria do chat')
     .replace(/\*\*/g, '')
     .trim() || 'Matéria do chat';
+  // Título escrito pelo próprio editor no chat (campo "Seu título").
+  const tituloDoEditor = tituloProprio && tituloDaEscolha.length >= 8 && tituloDaEscolha.length <= 180
+    ? tituloDaEscolha
+    : null;
   const titulo = escolhida
     ? tituloOriginal
-    : conversaLivre && tituloDaEscolha
+    : tituloDoEditor
+      ? tituloDoEditor
+      : conversaLivre && tituloDaEscolha
       ? tituloDaEscolha
       : tituloDaEscolha && alternativas.includes(tituloDaEscolha)
       ? tituloDaEscolha

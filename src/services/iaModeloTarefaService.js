@@ -11,6 +11,8 @@ const TABELA = 'ia_modelo_tarefa';
 const TAREFAS = Object.freeze({
   piloto: 'Piloto automático (escrever as matérias)',
   titulos: 'Títulos (sugerir e reescrever)',
+  // Valor aqui é o gerador (chatgpt, grok, gemini), não um modelo de texto.
+  imagem: 'Geração de imagem (Recortar foto da imagem destacada)',
 });
 const CACHE_MS = 15_000;
 let cache = null;
@@ -38,13 +40,14 @@ async function modeloDaTarefa(tarefa) {
   return (await todos())[tarefa] || null;
 }
 
-async function salvar(escolhas = {}, { userId = null, permitidos = [] } = {}) {
+async function salvar(escolhas = {}, { userId = null, permitidos = [], permitidosPorTarefa = {} } = {}) {
   const validos = new Set(permitidos);
   try {
     for (const tarefa of Object.keys(TAREFAS)) {
       if (!(tarefa in escolhas)) continue;
       const modelo = String(escolhas[tarefa] || '').trim() || null;
-      if (modelo && !validos.has(modelo)) {
+      const daTarefa = permitidosPorTarefa[tarefa] ? new Set(permitidosPorTarefa[tarefa]) : validos;
+      if (modelo && !daTarefa.has(modelo)) {
         const err = new Error(`Modelo "${modelo}" não está disponível. Escolha um da lista.`);
         err.status = 400;
         throw err;

@@ -189,7 +189,7 @@
     <section id="modelos-tarefa" class="d-card claude-section mt-4" aria-labelledby="modelos-tarefa-titulo">
       <h2 id="modelos-tarefa-titulo" class="text-sm font-semibold text-white">Modelo por tarefa</h2>
       <p class="mt-1 max-w-2xl text-xs leading-relaxed text-slate-400">
-        Fixe o modelo que escreve as matérias do piloto automático e o que sugere e reescreve títulos. Em “Seguir o editor”, vale o modelo escolhido em Criar matéria.
+        Fixe o modelo que escreve as matérias do piloto automático e o que sugere e reescreve títulos. Em “Seguir o editor”, vale o modelo escolhido em Criar matéria. Em “Geração de imagem”, escolha quem cria a imagem no recorte da imagem destacada; Grok e Gemini usam as contas logadas no Chrome do servidor (desktop privado acima).
       </p>
 
       <div id="modelos-tarefa-lista" class="mt-3 grid gap-3 sm:grid-cols-2">
@@ -226,6 +226,6 @@
   <script id="claude-initial-status" type="application/json"><%- JSON.stringify(initialStatus).replace(/</g, '\\u003c') %></script>
   <script src="/js/claude-gateway-admin.js?v=20260921chromeRecovery1"></script>
   <script src="/js/claude-modelos-materia.js?v=20260924modelos1"></script>
-  <script src="/js/claude-modelos-tarefa.js?v=20261001tarefa1"></script>
+  <script src="/js/claude-modelos-tarefa.js?v=20261005imagem1"></script>
   <script src="/js/claude-pausa-ia.js?v=20261001pausa1"></script>
 <%- include('partials/app-end') %>

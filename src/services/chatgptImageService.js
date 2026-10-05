@@ -830,6 +830,9 @@ module.exports = {
   promptSimbolicoPadrao,
   recusaDeSeguranca,
   promptComFormatoFacebook,
+  // Reaproveitados pela geração no Grok e no Gemini (imagemWebService).
+  obterBrowser,
+  imagemParaUpload,
   // Exposto somente para validar a compatibilidade dos cookies do Chrome.
   cookiesDoHeader,
   verificarSessaoChatgpt,

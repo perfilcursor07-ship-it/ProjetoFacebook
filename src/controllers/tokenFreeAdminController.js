@@ -151,13 +151,31 @@ async function salvarModelosMateria(req, res, next) {
 }
 
 /** Modelo fixo por tarefa (piloto automático e títulos) e o que pode ser escolhido. */
+/** Tarefas que não escolhem modelo de texto, e sim outra lista própria. */
+function opcoesPorTarefa() {
+  const { GERADORES, PADRAO } = require('../services/imagemIaService');
+  return {
+    imagem: {
+      vazio: `${GERADORES[PADRAO]} (padrão)`,
+      opcoes: Object.entries(GERADORES)
+        .filter(([id]) => id !== PADRAO)
+        .map(([id, nome]) => ({ id, nome })),
+    },
+  };
+}
+
 async function respostaModelosTarefa(escolhas) {
   const iaModeloTarefa = require('../services/iaModeloTarefaService');
   const { modelos, gatewayOnline } = await require('../services/materiaModelosService').listarCatalogo();
+  const especiais = opcoesPorTarefa();
   return {
     ok: true,
     gatewayOnline,
-    tarefas: Object.entries(iaModeloTarefa.TAREFAS).map(([id, nome]) => ({ id, nome })),
+    tarefas: Object.entries(iaModeloTarefa.TAREFAS).map(([id, nome]) => ({
+      id,
+      nome,
+      ...(especiais[id] ? { vazio: especiais[id].vazio, opcoes: especiais[id].opcoes } : {}),
+    })),
     escolhas: escolhas || (await iaModeloTarefa.todos()),
     modelos: modelos.map(({ id, nome, provedor, disponivel }) => ({ id, nome, provedor, disponivel })),
   };
@@ -175,9 +193,13 @@ async function salvarModelosTarefa(req, res, next) {
   try {
     const iaModeloTarefa = require('../services/iaModeloTarefaService');
     const { modelos } = await require('../services/materiaModelosService').listarCatalogo();
+    const especiais = opcoesPorTarefa();
     const escolhas = await iaModeloTarefa.salvar(req.body?.escolhas || {}, {
       userId: req.session.userId,
       permitidos: modelos.map((m) => m.id),
+      permitidosPorTarefa: Object.fromEntries(
+        Object.entries(especiais).map(([tarefa, { opcoes }]) => [tarefa, opcoes.map((o) => o.id)])
+      ),
     });
     console.info(`[ia-modelo-tarefa] user ${req.session.userId}: ${JSON.stringify(escolhas)}`);
     return res.json(await respostaModelosTarefa(escolhas));
