@@ -1,138 +1,150 @@
 <%- include('partials/app-start') %>
-  <link rel="stylesheet" href="/css/dots.css?v=20261004v3" />
+  <link rel="stylesheet" href="/css/dots.css?v=20261005chat1" />
+  <link rel="stylesheet" href="/css/dots-chat.css?v=20261005chat1" />
 
-  <main class="dots-pagina dots-v2 mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
+  <!-- Dots no formato de chat: cada dot é uma conversa. O pedido é a sua
+       mensagem; o que ele lê, escreve e publica são as respostas. -->
+  <main id="dc-shell" class="dc-shell dots-pagina">
 
-    <!-- ------------------------------------------------------------- topo -->
-    <header class="flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <p class="dots-etiqueta">Agentes</p>
-        <h1 class="dots-titulo mt-1">Dots</h1>
-        <p class="dots-sub">
-          Diga o que você quer, do seu jeito. O dot cuida do resto no servidor — acompanha as
-          páginas, separa o que tem conteúdo e escreve a matéria. Você fecha a aba, ele continua.
-        </p>
+    <!-- ------------------------------------------------------ conversas -->
+    <aside id="dc-lateral" class="dc-lateral" aria-label="Seus dots">
+      <div class="dc-lateral-topo">
+        <button type="button" id="dc-fechar-lateral" class="dc-icone dc-so-celular" aria-label="Fechar lista de dots">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+        <span class="dc-lateral-titulo">Dots</span>
+        <span id="dots-pulso" class="dc-pulso"></span>
+        <button type="button" id="dc-buscar" class="dc-icone" aria-label="Buscar dot" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        </button>
+        <button type="button" id="dc-novo" class="dc-icone" aria-label="Criar um dot">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
       </div>
-      <span id="dots-pulso" class="dv-pulso"></span>
-    </header>
+      <input id="dc-busca" class="dc-busca" type="search" placeholder="Buscar dots…" autocomplete="off" hidden />
+      <nav id="dots-lista" class="dc-conversas">
+        <p class="dc-lateral-vazio">Carregando…</p>
+      </nav>
+    </aside>
+    <div id="dc-fundo-lateral" class="dc-fundo-lateral" hidden></div>
 
-    <!-- -------------------------------------------------------- composer -->
-    <section class="d-composer dv-composer mt-7" aria-labelledby="dv-composer-titulo">
-      <div class="dv-composer-topo">
-        <h2 id="dv-composer-titulo">Criar um dot</h2>
-        <button type="button" id="dot-recolher" class="d-btn d-btn--fantasma" aria-expanded="true">Recolher</button>
-      </div>
+    <!-- ------------------------------------------------------- conversa -->
+    <section class="dc-conversa" aria-label="Conversa com o dot">
+      <header class="dc-topo">
+        <button type="button" id="dc-abrir-lateral" class="dc-icone dc-so-celular" aria-label="Abrir lista de dots">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <div id="dc-titulo" class="dc-titulo"><span class="dc-avatar dc-avatar--novo">+</span><span>Novo dot</span></div>
+        <div id="dc-acoes" class="dc-acoes"></div>
+      </header>
 
-      <div id="dot-form" class="mt-4 space-y-5">
+      <div id="dc-mensagens" class="dc-mensagens" aria-live="polite"></div>
 
-        <!-- ------------------------------------------------- o pedido -->
-        <div>
-          <label class="dv-rotulo" for="dot-objetivo">O que ele deve fazer</label>
-          <textarea id="dot-objetivo" rows="5"
-            placeholder="Monitore estas fontes e crie matéria do que render.&#10;Só o que citar Flávio Bolsonaro ou Lula, com título mais polêmico.&#10;&#10;https://www.facebook.com/pagina&#10;https://portaldenoticias.com.br"></textarea>
-          <p class="d-ajuda">
-            Diga o assunto, o recorte e o estilo. Cole os links —
-            <strong>Facebook, Instagram, YouTube ou site de notícias</strong>.
-          </p>
-        </div>
-
-        <!-- ------------------------------------------------- o destino -->
-        <div class="dv-grade-campos">
-          <div>
-            <p class="dv-rotulo">Com a matéria pronta</p>
-            <div class="d-segmentos dv-destino" role="group" aria-label="O que fazer com a matéria">
-              <label class="d-segmento"><input type="radio" name="dot-destino" value="rascunho" checked /><span>Rascunho</span></label>
-              <label class="d-segmento"><input type="radio" name="dot-destino" value="agendar" /><span>Agendar</span></label>
-              <label class="d-segmento"><input type="radio" name="dot-destino" value="publicar" /><span>Publicar</span></label>
-            </div>
-            <p id="dot-destino-ajuda" class="d-ajuda">Fica esperando você revisar. Nada sai sozinho.</p>
-
-            <div id="dot-ritmo" class="dv-ritmo hidden">
-              <label class="d-linha">
-                <select id="dot-saida-qtd" class="d-escolha" aria-label="Quantidade por lote"></select>
-                <span id="dot-saida-rotulo">matéria a cada</span>
-                <select id="dot-saida-min" class="d-escolha" aria-label="Intervalo entre lotes"></select>
-              </label>
-            </div>
+      <div class="dc-rodape">
+        <!-- Ajustes do dot novo: abrem pelo "+" da caixa de mensagem. -->
+        <div id="dc-ajustes" class="dc-ajustes" hidden>
+          <div class="dc-ajustes-topo">
+            <b>Ajustes do novo dot</b>
+            <button type="button" id="dc-ajustes-fechar" class="dc-icone" aria-label="Fechar ajustes">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
           </div>
 
-          <!-- -------------------------------------------- onde e com quem -->
-          <div>
-            <label class="dv-rotulo" for="dot-pagina">Publicar em</label>
-            <select id="dot-pagina" class="d-escolha dv-select">
-              <option value="">Carregando…</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- ------------------------------------------------- avançado -->
-        <details class="d-avancado dv-avancado">
-          <summary>Ajustes finos<span class="d-avancado-dica">jornada, varredura, limite, imagem</span></summary>
-
-          <div class="dv-ajustes">
+          <div class="dv-grade-campos">
             <div>
-              <label class="d-rotulo-min" for="dot-nome">Nome</label>
-              <input id="dot-nome" type="text" maxlength="160" placeholder="Sugiro um a partir do seu texto" />
+              <p class="dv-rotulo">Com a matéria pronta</p>
+              <div class="d-segmentos dv-destino" role="group" aria-label="O que fazer com a matéria">
+                <label class="d-segmento"><input type="radio" name="dot-destino" value="rascunho" checked /><span>Rascunho</span></label>
+                <label class="d-segmento"><input type="radio" name="dot-destino" value="agendar" /><span>Agendar</span></label>
+                <label class="d-segmento"><input type="radio" name="dot-destino" value="publicar" /><span>Publicar</span></label>
+              </div>
+              <p id="dot-destino-ajuda" class="d-ajuda">Fica esperando você revisar. Nada sai sozinho.</p>
+              <div id="dot-ritmo" class="dv-ritmo hidden">
+                <label class="d-linha">
+                  <select id="dot-saida-qtd" class="d-escolha" aria-label="Quantidade por lote"></select>
+                  <span id="dot-saida-rotulo">matéria a cada</span>
+                  <select id="dot-saida-min" class="d-escolha" aria-label="Intervalo entre lotes"></select>
+                </label>
+              </div>
             </div>
-
             <div>
-              <p class="d-rotulo-min">Dias de trabalho</p>
-              <div id="dot-dias" class="d-dias" role="group" aria-label="Dias em que o dot trabalha"></div>
-              <label class="d-linha mt-2">
-                <span>Das</span>
-                <select id="dot-hora-inicio" class="d-escolha" aria-label="Hora de início"></select>
-                <span>às</span>
-                <select id="dot-hora-fim" class="d-escolha" aria-label="Hora de término"></select>
-              </label>
-            </div>
-
-            <label class="d-linha">
-              <span>Reler as fontes a cada</span>
-              <select id="dot-scan" class="d-escolha" aria-label="Intervalo da varredura"></select>
-            </label>
-
-            <label class="d-linha">
-              <span>No máximo</span>
-              <input id="dot-limite" type="number" min="1" max="200" value="20" class="d-escolha d-escolha--num" />
-              <span>por dia</span>
-            </label>
-
-            <label class="d-linha items-start">
-              <input type="checkbox" id="dot-imagem-texto" class="mt-0.5" />
-              <span>
-                <span class="d-opcao-nome">Limpar texto da foto com IA</span>
-                <span class="d-opcao-ajuda">Só quando a foto do post tiver texto embutido.</span>
-              </span>
-            </label>
-
-            <label class="d-linha">
-              <span>Escreve com</span>
-              <select id="dot-provedor" class="d-escolha">
-                <option value="auto">Carregando…</option>
+              <label class="dv-rotulo" for="dot-pagina">Publicar em</label>
+              <select id="dot-pagina" class="d-escolha dv-select">
+                <option value="">Carregando…</option>
               </select>
-            </label>
+            </div>
           </div>
-        </details>
 
-        <div class="dv-acoes">
-          <p id="dot-aviso" class="d-ajuda" aria-live="polite"></p>
-          <div class="dv-acoes-botoes">
-            <button type="button" id="dot-previa" class="d-btn d-btn--neutro">Ver o que eu entendi</button>
-            <button type="button" id="dot-criar" class="d-btn d-btn--principal dv-criar">Criar dot</button>
-          </div>
+          <details class="d-avancado dv-avancado">
+            <summary>Ajustes finos<span class="d-avancado-dica">nome, jornada, varredura, limite, imagem</span></summary>
+            <div class="dv-ajustes">
+              <div>
+                <label class="d-rotulo-min" for="dot-nome">Nome</label>
+                <input id="dot-nome" type="text" maxlength="160" placeholder="Sugiro um a partir do seu texto" />
+              </div>
+              <div>
+                <p class="d-rotulo-min">Dias de trabalho</p>
+                <div id="dot-dias" class="d-dias" role="group" aria-label="Dias em que o dot trabalha"></div>
+                <label class="d-linha mt-2">
+                  <span>Das</span>
+                  <select id="dot-hora-inicio" class="d-escolha" aria-label="Hora de início"></select>
+                  <span>às</span>
+                  <select id="dot-hora-fim" class="d-escolha" aria-label="Hora de término"></select>
+                </label>
+              </div>
+              <label class="d-linha">
+                <span>Reler as fontes a cada</span>
+                <select id="dot-scan" class="d-escolha" aria-label="Intervalo da varredura"></select>
+              </label>
+              <label class="d-linha">
+                <span>No máximo</span>
+                <input id="dot-limite" type="number" min="1" max="200" value="20" class="d-escolha d-escolha--num" />
+                <span>por dia</span>
+              </label>
+              <label class="d-linha items-start">
+                <input type="checkbox" id="dot-imagem-texto" class="mt-0.5" />
+                <span>
+                  <span class="d-opcao-nome">Limpar texto da foto com IA</span>
+                  <span class="d-opcao-ajuda">Só quando a foto do post tiver texto embutido.</span>
+                </span>
+              </label>
+              <label class="d-linha">
+                <span>Escreve com</span>
+                <select id="dot-provedor" class="d-escolha">
+                  <option value="auto">Carregando…</option>
+                </select>
+              </label>
+            </div>
+          </details>
         </div>
-        <div id="dot-previa-box" class="hidden"></div>
+
+        <button type="button" id="dc-resumo-ajustes" class="dc-resumo-ajustes" hidden></button>
+
+        <form id="dc-composer" class="dc-composer" autocomplete="off">
+          <button type="button" id="dc-mais" class="dc-icone dc-mais" aria-label="Ajustes do dot" aria-expanded="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <textarea id="dot-objetivo" rows="1" placeholder="Diga o que o dot deve fazer e cole os links…" aria-label="Mensagem para o dot"></textarea>
+          <button type="submit" id="dc-enviar" class="dc-enviar" aria-label="Enviar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </form>
+        <p id="dot-aviso" class="dc-aviso" aria-live="polite"></p>
       </div>
     </section>
 
-    <!-- ---------------------------------------------------------- lista -->
-    <section class="mt-10">
-      <h2 class="d-secao">Seus dots</h2>
-      <div id="dots-lista" class="mt-3 space-y-4">
-        <p class="d-stat">Carregando…</p>
+    <!-- --------------------------------------- painel completo do dot -->
+    <div id="dc-painel-fundo" class="dc-painel-fundo" hidden></div>
+    <aside id="dc-painel" class="dc-painel" hidden aria-label="Painel do dot">
+      <div class="dc-painel-topo">
+        <b id="dc-painel-titulo">Painel</b>
+        <button type="button" id="dc-painel-fechar" class="dc-icone" aria-label="Fechar painel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
       </div>
-    </section>
+      <div id="dc-painel-corpo" class="dc-painel-corpo"></div>
+    </aside>
   </main>
 
-  <script src="/js/dots.js?v=20261004v3"></script>
+  <script src="/js/dots.js?v=20261005chat1"></script>
 <%- include('partials/app-end') %>

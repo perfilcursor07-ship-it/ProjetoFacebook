@@ -1,16 +1,39 @@
+/* Dots no formato de chat: a lateral lista os dots como conversas; o pedido do
+   dot é a mensagem do editor e o que ele lê, escreve e publica são as
+   respostas. Ajustar um dot é mandar uma mensagem para ele. */
 (() => {
   const $ = (id) => document.getElementById(id);
   const el = {
-    nome: $('dot-nome'),
+    shell: $('dc-shell'),
+    lateral: $('dc-lateral'),
+    fundoLateral: $('dc-fundo-lateral'),
+    abrirLateral: $('dc-abrir-lateral'),
+    fecharLateral: $('dc-fechar-lateral'),
+    buscar: $('dc-buscar'),
+    busca: $('dc-busca'),
+    novo: $('dc-novo'),
+    lista: $('dots-lista'),
+    pulso: $('dots-pulso'),
+    titulo: $('dc-titulo'),
+    acoes: $('dc-acoes'),
+    mensagens: $('dc-mensagens'),
+    composer: $('dc-composer'),
     objetivo: $('dot-objetivo'),
+    enviar: $('dc-enviar'),
+    mais: $('dc-mais'),
+    ajustes: $('dc-ajustes'),
+    ajustesFechar: $('dc-ajustes-fechar'),
+    resumoAjustes: $('dc-resumo-ajustes'),
+    aviso: $('dot-aviso'),
+    painel: $('dc-painel'),
+    painelFundo: $('dc-painel-fundo'),
+    painelTitulo: $('dc-painel-titulo'),
+    painelCorpo: $('dc-painel-corpo'),
+    painelFechar: $('dc-painel-fechar'),
+    // Campos dos ajustes do dot novo (mesmos ids da tela antiga).
+    nome: $('dot-nome'),
     pagina: $('dot-pagina'),
     provedor: $('dot-provedor'),
-    previa: $('dot-previa'),
-    criar: $('dot-criar'),
-    aviso: $('dot-aviso'),
-    previaBox: $('dot-previa-box'),
-    form: $('dot-form'),
-    recolher: $('dot-recolher'),
     dias: $('dot-dias'),
     horaInicio: $('dot-hora-inicio'),
     horaFim: $('dot-hora-fim'),
@@ -22,37 +45,40 @@
     saidaRotulo: $('dot-saida-rotulo'),
     limite: $('dot-limite'),
     imagemTexto: $('dot-imagem-texto'),
-    lista: $('dots-lista'),
-    pulso: $('dots-pulso'),
   };
-  if (!el.lista) return;
+  if (!el.shell || !el.lista) return;
 
-  /** Log por dot, para a atualização de 3s não piscar a timeline. */
+  const SELECIONADO_KEY = 'ViralizeAI.dotSelecionado';
+  const DETALHE_VALIDO_MS = 30000;
+
+  /** Log por dot (execuções) e detalhe completo (números, posts, matérias). */
   const logs = new Map();
-  /** Comandos em edição (id → texto). Enquanto houver, a lista não se redesenha. */
-  const editando = new Map();
-  /** Detalhe completo por dot (números, posts, matérias) e quando chegou. */
   const detalhes = new Map();
-  /** Aba aberta e filtro dos posts, por dot. */
+  /** Comandos em edição no painel (id → texto). */
+  const editando = new Map();
+  /** Aba aberta do painel e filtro dos posts, por dot. */
   const abas = new Map();
   const filtrosPosts = new Map();
-  const DETALHE_VALIDO_MS = 30000;
-  /** Última lista recebida, para redesenhar um cartão sem ir ao servidor. */
   let ultimaLista = [];
-
-  function redesenharCartao(id) {
-    const dot = ultimaLista.find((d) => String(d.id) === String(id));
-    const atual = el.lista.querySelector(`[data-dot="${CSS.escape(String(id))}"]`);
-    if (!dot || !atual) return;
-    const molde = document.createElement('div');
-    molde.innerHTML = cartao(dot).trim();
-    atual.replaceWith(molde.firstElementChild);
+  let timer = null;
+  /** 'novo' ou o id do dot aberto. */
+  let selecionado = 'novo';
+  try {
+    selecionado = localStorage.getItem(SELECIONADO_KEY) || 'novo';
+  } catch {
+    // sem localStorage: começa no dot novo
   }
+  /** Conversa do dot novo, antes de ele existir. */
+  let conversaNova = [];
+  let pedidoNovo = '';
+  /** Plano confirmado pelo editor. Sem ele o dot não é criado. */
+  let planoConfirmado = null;
+  /** Mensagem do editor enviada a um dot, até o servidor responder. */
+  const pendentes = new Map();
+  let ultimoHtmlConversa = '';
+  let ultimaConversaDesenhada = '';
 
   // ---------------------------------------------------------- configuração
-  //
-  // Tudo aqui era deduzido pela IA a partir do texto livre e errava direto.
-  // Agora é escolha explícita do editor; o texto só diz O QUE fazer.
 
   const DIAS_SEMANA = [
     { id: 1, curto: 'Seg' },
@@ -75,15 +101,12 @@
     { v: 1440, t: '1 dia' },
   ];
 
-  function opcao(select, valor, texto, selecionado = false) {
-    const o = new Option(texto, valor, selecionado, selecionado);
-    select.append(o);
+  function opcao(select, valor, texto, selecionadoAgora = false) {
+    select.append(new Option(texto, valor, selecionadoAgora, selecionadoAgora));
   }
 
   function montarCampos() {
     if (!el.dias) return;
-
-    // Dias: começam todos marcados = trabalha todo dia.
     el.dias.replaceChildren();
     for (const dia of DIAS_SEMANA) {
       const b = document.createElement('button');
@@ -98,27 +121,25 @@
       });
       el.dias.append(b);
     }
-
-    // Horário: "qualquer hora" é o padrão, com 0h–23h disponíveis.
     for (const select of [el.horaInicio, el.horaFim]) {
       select.replaceChildren();
       opcao(select, '', 'qualquer hora', true);
       for (let h = 0; h <= 23; h += 1) opcao(select, String(h), `${String(h).padStart(2, '0')}h`);
     }
-
     el.scan.replaceChildren();
     for (const i of INTERVALOS) opcao(el.scan, String(i.v), i.t, i.v === 60);
-
     el.saidaQtd.replaceChildren();
     for (let n = 1; n <= 10; n += 1) opcao(el.saidaQtd, String(n), String(n), n === 1);
-
     el.saidaMin.replaceChildren();
     for (const i of INTERVALOS) opcao(el.saidaMin, String(i.v), i.t, i.v === 15);
-
     el.saidaQtd.addEventListener('change', ajustarRotuloSaida);
     for (const radio of document.querySelectorAll('input[name="dot-destino"]')) {
-      radio.addEventListener('change', ajustarDestino);
+      radio.addEventListener('change', () => {
+        ajustarDestino();
+        atualizarResumoAjustes();
+      });
     }
+    el.pagina.addEventListener('change', atualizarResumoAjustes);
     ajustarDestino();
   }
 
@@ -131,14 +152,13 @@
     el.saidaRotulo.textContent = n === 1 ? 'matéria a cada' : 'matérias a cada';
   }
 
-  /** A explicação de cada destino aparece só quando ele é o escolhido. */
   const AJUDA_DESTINO = {
     rascunho: 'Fica esperando você revisar. Nada sai sozinho.',
     agendar: 'Programa o horário e publica sozinho na hora marcada.',
     publicar: 'Vai direto para a fila, sem revisão.',
   };
+  const ROTULO_DESTINO = { rascunho: 'Rascunho', agendar: 'Agendar', publicar: 'Publicar' };
 
-  /** Rascunho não tem ritmo de saída: nada sai sozinho. */
   function ajustarDestino() {
     const destino = destinoEscolhido();
     el.ritmo.classList.toggle('hidden', destino === 'rascunho');
@@ -153,7 +173,6 @@
     const fim = el.horaFim.value === '' ? null : Number(el.horaFim.value);
     return {
       dias_semana: marcados,
-      // Só vale faixa com as duas pontas escolhidas; uma ponta só não restringe.
       hora_inicio: inicio !== null && fim !== null ? inicio : null,
       hora_fim: inicio !== null && fim !== null ? fim : null,
       scan_minutos: Number(el.scan.value) || 60,
@@ -164,19 +183,18 @@
       gerar_imagem_com_texto: Boolean(el.imagemTexto.checked),
     };
   }
-  /** Plano confirmado pelo editor. Sem ele o "Criar dot" não envia nada. */
-  let planoConfirmado = null;
-  const abertos = new Set();
-  let timer = null;
 
-  const EXEMPLOS = {
-    monitorar:
-      'Monitore estas páginas e crie matéria do que render, até 10 por dia, salvando como rascunho:\nhttps://www.facebook.com/Poder360\nhttps://www.facebook.com/plenonews',
-    acompanhar:
-      'Só acompanhe estas páginas e me mostre o que aparecer de novo, sem escrever matéria:\nhttps://www.facebook.com/metropolesdf',
-    publicar:
-      'Acompanhe estas páginas de hora em hora, escreva e publique direto, no máximo 5 por dia:\nhttps://www.facebook.com/jovempannews',
-  };
+  /** "Rascunho · Apocalipse Gospel ⚙" acima da caixa, para o dot novo. */
+  function atualizarResumoAjustes() {
+    if (!el.resumoAjustes) return;
+    const novo = selecionado === 'novo';
+    el.resumoAjustes.hidden = !novo || !el.ajustes.hidden;
+    if (!novo) return;
+    const pagina = el.pagina.selectedOptions?.[0]?.textContent || 'sem página';
+    el.resumoAjustes.textContent = `${ROTULO_DESTINO[destinoEscolhido()]} · ${pagina.replace(' (padrão)', '')} · ajustes`;
+  }
+
+  // -------------------------------------------------------------- utilidades
 
   const ROTULO_IMAGEM = {
     original: 'foto original',
@@ -192,10 +210,13 @@
     raio: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
     imagem: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>',
     cpu: '<rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>',
+    play: '<path d="m7 4 13 8-13 8z"/>',
+    pausa: '<path d="M8 5v14M16 5v14"/>',
+    painel: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>',
   };
 
   const icone = (nome) =>
-    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONES[nome]}</svg>`;
+    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONES[nome]}</svg>`;
 
   async function api(url, opcoes = {}) {
     const resp = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opcoes });
@@ -206,13 +227,20 @@
 
   function avisar(texto, erro = false) {
     el.aviso.textContent = texto || '';
-    el.aviso.style.color = erro ? 'var(--d-erro)' : 'var(--d-texto-4)';
+    el.aviso.classList.toggle('is-erro', Boolean(erro));
   }
 
   function escapar(texto) {
     const d = document.createElement('div');
     d.textContent = String(texto ?? '');
     return d.innerHTML;
+  }
+
+  /** Texto com quebras de linha e links clicáveis, já escapado. */
+  function textoRico(texto) {
+    return escapar(texto)
+      .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>')
+      .replace(/\n/g, '<br>');
   }
 
   function haQuanto(iso) {
@@ -226,17 +254,15 @@
     return `há ${Math.round(s / 86400)}d`;
   }
 
-  function quando(iso) {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '—';
-    const min = Math.round((d.getTime() - Date.now()) / 60000);
-    if (min > 0) return `em ${min} min`;
-    if (min > -60) return `há ${Math.abs(min)} min`;
-    return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  function horaCurta(iso) {
+    if (!iso) return '';
+    return new Date(iso).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }
+  function diaHora(iso) {
+    if (!iso) return '';
+    return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   }
 
-  /** Só as IAs com chave configurada no servidor entram no seletor. */
   let provedoresCache = [];
   async function carregarProvedores() {
     try {
@@ -258,33 +284,73 @@
       const paginas = Array.isArray(dados.pages) ? dados.pages : [];
       el.pagina.innerHTML = '';
       el.pagina.append(new Option('Sem página (só rascunho)', ''));
-      // A API devolve `page_name`. Ler `nome`/`name` caía no texto de reserva e
-      // o editor via "Página 2" em vez do nome real da página.
       for (const p of paginas) {
         const rotulo = p.page_name || `Página ${p.id}`;
         el.pagina.append(new Option(p.is_default ? `${rotulo} (padrão)` : rotulo, p.id));
       }
-      // Já vem na padrão do usuário, como nos outros seletores de publicação.
       const padrao = paginas.find((p) => p.is_default);
       if (padrao) el.pagina.value = String(padrao.id);
     } catch {
       el.pagina.innerHTML = '';
       el.pagina.append(new Option('Não consegui carregar as páginas', ''));
     }
+    atualizarResumoAjustes();
+  }
+
+  // ------------------------------------------------------------- lateral
+
+  function estadoDoDot(dot) {
+    if (dot.trabalhando) return 'trabalhando';
+    if (dot.estado !== 'ativo') return 'pausado';
+    if (dot.ultimo_erro) return 'erro';
+    return 'ativo';
+  }
+
+  function avatar(dot, extra = '') {
+    const inicial = escapar(String(dot.nome || '?').trim().charAt(0).toUpperCase() || '?');
+    return `<span class="dc-avatar dc-avatar--${estadoDoDot(dot)} ${extra}" aria-hidden="true">${inicial}<i></i></span>`;
+  }
+
+  /** Subtítulo da conversa: o que ele está fazendo ou a última coisa que fez. */
+  function subtitulo(dot) {
+    if (dot.trabalhando) return dot.atividade || 'Trabalhando…';
+    if (dot.estado !== 'ativo') return 'Pausado';
+    if (dot.ultimo_erro) return `Problema: ${dot.ultimo_erro}`;
+    const ultimo = (logs.get(String(dot.id)) || [])[0];
+    if (ultimo?.acao === 'escreveu') return `Escreveu: ${partesDoEscreveu(ultimo.detalhe).titulo}`;
+    if (ultimo?.detalhe) return ultimo.detalhe;
+    return dot.ultimo_resumo || `${dot.feitas_hoje}/${dot.limite_dia} hoje`;
+  }
+
+  function renderLateral() {
+    const filtro = String(el.busca.value || '').trim().toLowerCase();
+    const dots = ultimaLista.filter((d) => !filtro || `${d.nome} ${d.objetivo}`.toLowerCase().includes(filtro));
+    if (!ultimaLista.length) {
+      el.lista.innerHTML = '<p class="dc-lateral-vazio">Nenhum dot ainda.<br>Escreva ao lado o que ele deve fazer.</p>';
+      return;
+    }
+    if (!dots.length) {
+      el.lista.innerHTML = '<p class="dc-lateral-vazio">Nenhum dot encontrado.</p>';
+      return;
+    }
+    el.lista.innerHTML = dots
+      .map((dot) => `
+        <button type="button" class="dc-item ${String(dot.id) === selecionado ? 'is-on' : ''}" data-abrir="${dot.id}">
+          ${avatar(dot)}
+          <span class="dc-item-texto">
+            <span class="dc-item-nome">${escapar(dot.nome)}</span>
+            <span class="dc-item-sub">${escapar(subtitulo(dot))}</span>
+          </span>
+        </button>`)
+      .join('');
   }
 
   // --------------------------------------------------------------- partes
 
   function pill(dot) {
-    if (dot.trabalhando) {
-      return '<span class="d-pill d-pill--trabalhando"><span class="d-luz d-luz--pulsa"></span>Trabalhando</span>';
-    }
-    if (dot.estado !== 'ativo') {
-      return '<span class="d-pill d-pill--pausado"><span class="d-luz"></span>Pausado</span>';
-    }
-    if (dot.ultimo_erro) {
-      return '<span class="d-pill d-pill--erro"><span class="d-luz"></span>Com erro</span>';
-    }
+    if (dot.trabalhando) return '<span class="d-pill d-pill--trabalhando"><span class="d-luz d-luz--pulsa"></span>Trabalhando</span>';
+    if (dot.estado !== 'ativo') return '<span class="d-pill d-pill--pausado"><span class="d-luz"></span>Pausado</span>';
+    if (dot.ultimo_erro) return '<span class="d-pill d-pill--erro"><span class="d-luz"></span>Com erro</span>';
     return '<span class="d-pill d-pill--ativo"><span class="d-luz"></span>Agendado</span>';
   }
 
@@ -297,29 +363,19 @@
         <span class="d-stat">${icone('imagem')}${ROTULO_IMAGEM[dot.modo_imagem] || 'foto original'}</span>
         <span class="d-stat">${icone('folha')}<b>${dot.feitas_hoje}</b>/${dot.limite_dia} hoje</span>
         <span class="d-stat">${icone('raio')}${dot.destino === 'agendar' ? `agenda a cada ${dot.agendar_minutos || dot.intervalo_minutos} min` : dot.destino === 'publicar' ? 'publica' : 'rascunho'}</span>
-        ${
-          // Sem mostrar o destino, matéria na página errada só aparecia depois
-          // de publicada. Sem página escolhida, ela cai na padrão da conta.
-          dot.pagina
-            ? `<span class="d-stat" title="Página de destino das matérias">${icone('paginas')}em <b>${escapar(dot.pagina)}</b></span>`
-            : `<span class="d-stat d-stat--aviso" title="Nenhuma página foi escolhida: a matéria vai para a página padrão da sua conta">${icone('paginas')}sem página definida</span>`
-        }
+        ${dot.pagina
+          ? `<span class="d-stat" title="Página de destino das matérias">${icone('paginas')}em <b>${escapar(dot.pagina)}</b></span>`
+          : `<span class="d-stat d-stat--aviso" title="Nenhuma página foi escolhida: a matéria vai para a página padrão da sua conta">${icone('paginas')}sem página definida</span>`}
         <label class="d-stat gap-1">
           ${icone('cpu')}
           <select data-provedor class="d-escolha" aria-label="IA que escreve">
-            ${provedoresCache
-              .map(
-                (p) =>
-                  `<option value="${p.id}"${p.id === (dot.provedor || 'auto') ? ' selected' : ''}>${escapar(p.nome)}</option>`
-              )
-              .join('')}
+            ${provedoresCache.map((p) => `<option value="${p.id}"${p.id === (dot.provedor || 'auto') ? ' selected' : ''}>${escapar(p.nome)}</option>`).join('')}
           </select>
         </label>
       </div>
       <div class="d-barra ${pct >= 100 ? 'd-barra--cheia' : ''} mt-2.5"><span style="width:${pct}%"></span></div>`;
   }
 
-  /** Ícone e rótulo de cada passo da atividade, para ler de relance. */
   function passoDe(e) {
     const texto = String(e.detalhe || '');
     if (e.acao === 'escreveu') return { icone: '✍️', rotulo: 'Escreveu a matéria', classe: 'd-passo--ok' };
@@ -331,7 +387,6 @@
     return { icone: '•', rotulo: 'Passo', classe: '' };
   }
 
-  /** Separa "título · palavra-chave: X · foto original · sai 15:47" em partes. */
   function partesDoEscreveu(detalhe) {
     const partes = String(detalhe || '').split(' · ');
     const titulo = partes.shift() || 'Matéria';
@@ -340,9 +395,6 @@
     return { titulo, palavra, imagem: resto.find((p) => /foto|imagem/i.test(p)) || '', saida: resto.find((p) => !/foto|imagem/i.test(p)) || '' };
   }
 
-  // ------------------------------------------------------- painel de gestão
-
-  /** Situação de cada post em linguagem simples. */
   const SITUACAO_POST = {
     proximo: { icone: '⏳', texto: 'Sai na próxima volta', classe: 'd-sit--fila', pode: true },
     repetido: { icone: '♻️', texto: 'Igual a uma matéria já publicada', classe: 'd-sit--fora', pode: true },
@@ -358,66 +410,50 @@
     { id: 'materia', texto: 'Viraram matéria', ok: (p) => p.situacao === 'materia' },
     { id: 'fora', texto: 'Fora do assunto', ok: (p) => p.situacao === 'fora_do_assunto' },
   ];
+  const PROXIMAS = ['proximo', 'repetido', 'falhou'];
 
-  function horaCurta(iso) {
-    if (!iso) return '';
-    return new Date(iso).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  }
-  function diaHora(iso) {
-    if (!iso) return '';
-    return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-  }
-
-  /** Miniatura do post; sem imagem, a inicial do veículo (nunca um traço). */
   function miniatura(url, fonte, classe) {
     if (url) return `<img src="${escapar(url)}" alt="" loading="lazy" class="${classe}" />`;
     const letra = escapar(String(fonte || '?').replace(/^www\./i, '').trim().charAt(0).toUpperCase() || '?');
     return `<span class="${classe} d-sem-imagem" aria-hidden="true">${letra}</span>`;
   }
 
-  /** O que o dot faz, numa frase. */
   function frase(dot) {
     const plano = dot.plano || {};
     const palavras = Array.isArray(plano.palavras) && plano.palavras.length
-      ? `procura <b>${escapar(plano.palavras.join(', '))}</b>`
-      : 'pega <b>qualquer assunto</b>';
+      ? `procuro <b>${escapar(plano.palavras.join(', '))}</b>`
+      : 'pego <b>qualquer assunto</b>';
     const destino = dot.destino === 'agendar'
-      ? `agenda 1 a cada ${dot.agendar_minutos || dot.intervalo_minutos} min`
-      : dot.destino === 'publicar' ? 'publica na hora' : 'deixa em rascunho';
+      ? `agendo 1 a cada ${dot.agendar_minutos || dot.intervalo_minutos} min`
+      : dot.destino === 'publicar' ? 'publico na hora' : 'deixo em rascunho';
     const pagina = dot.pagina ? ` em <b>${escapar(dot.pagina)}</b>` : ' <span class="d-aviso-mini">(sem página definida)</span>';
-    return `Lê ${dot.fontes} ${dot.fontes === 1 ? 'página' : 'páginas'}, ${palavras} e ${destino}${pagina}.`;
+    return `Leio ${dot.fontes} ${dot.fontes === 1 ? 'página' : 'páginas'}, ${palavras} e ${destino}${pagina}.`;
   }
 
-  /** Aviso principal: o que está acontecendo e o que fazer. */
   function banner(dot) {
-    const d = detalhes.get(String(dot.id));
-    const r = d?.resumo || {};
+    const r = detalhes.get(String(dot.id))?.resumo || {};
     if (dot.trabalhando) {
       return `<div class="d-banner d-banner--trabalhando"><span class="d-luz d-luz--pulsa"></span>
         <span><b>Trabalhando agora</b> — ${escapar(dot.atividade || 'começando…')}</span></div>`;
     }
     if (dot.estado !== 'ativo') {
-      return '<div class="d-banner d-banner--pausado">⏸️ <span><b>Pausado.</b> Clique em “Retomar” para ele voltar a trabalhar.</span></div>';
+      return '<div class="d-banner d-banner--pausado">⏸️ <span><b>Pausado.</b> Clique em “Retomar” para eu voltar a trabalhar.</span></div>';
     }
     if (dot.ultimo_erro) {
       return `<div class="d-banner d-banner--erro">⚠️ <span><b>Precisa de atenção:</b> ${escapar(dot.ultimo_erro)}</span></div>`;
     }
     const resta = Math.max(0, dot.limite_dia - dot.feitas_hoje);
     const quandoVolta = dot.proxima_execucao_at ? `às ${horaCurta(dot.proxima_execucao_at)}` : 'em breve';
-    if (!resta) {
-      return `<div class="d-banner">✋ <span>Limite de <b>${dot.limite_dia}</b> matérias hoje atingido. Volta amanhã.</span></div>`;
-    }
+    if (!resta) return `<div class="d-banner">✋ <span>Limite de <b>${dot.limite_dia}</b> matérias hoje atingido. Volto amanhã.</span></div>`;
     if (r.proximos) {
-      return `<div class="d-banner d-banner--ok">⏳ <span><b>${r.proximos} ${r.proximos === 1 ? 'post do assunto pronto' : 'posts do assunto prontos'}</b> — sai na próxima volta (${quandoVolta}). Quer agora? Use “Escrever agora” em Próximas.</span></div>`;
+      return `<div class="d-banner d-banner--ok">⏳ <span><b>${r.proximos} ${r.proximos === 1 ? 'post do assunto pronto' : 'posts do assunto prontos'}</b> — sai na próxima volta (${quandoVolta}).</span></div>`;
     }
-    return `<div class="d-banner">🔎 <span><b>Procurando.</b> Nenhum post novo do assunto ainda — relê as páginas ${quandoVolta}.</span></div>`;
+    return `<div class="d-banner">🔎 <span><b>Procurando.</b> Nenhum post novo do assunto ainda — releio as páginas ${quandoVolta}.</span></div>`;
   }
 
-  /** Funil: do que foi lido até o que saiu. */
   function funil(dot) {
     const r = detalhes.get(String(dot.id))?.resumo;
-    const etapa = (valor, rotulo, classe = '') =>
-      `<div class="d-etapa ${classe}"><b>${r ? valor : '—'}</b><span>${rotulo}</span></div>`;
+    const etapa = (valor, rotulo, classe = '') => `<div class="d-etapa ${classe}"><b>${r ? Number(valor) || 0 : '—'}</b><span>${rotulo}</span></div>`;
     const seta = '<span class="d-seta" aria-hidden="true">›</span>';
     return `
       <div class="d-funil mt-3">
@@ -430,12 +466,9 @@
       ${r?.agendadas || r?.problemas_24h ? `<p class="d-funil-extra">${r.agendadas ? `📅 ${r.agendadas} agendada(s)` : ''}${r.agendadas && r.problemas_24h ? ' · ' : ''}${r.problemas_24h ? `<span class="d-txt-erro">⚠️ ${r.problemas_24h} problema(s) nas últimas 24 h</span>` : ''}</p>` : ''}`;
   }
 
-  /** Um post como linha com imagem, situação e ação. */
   function linhaPost(p) {
     const sit = SITUACAO_POST[p.situacao] || SITUACAO_POST.descartado;
-    const detalheSit = p.situacao === 'falhou' && p.volta_em
-      ? `${sit.texto} · tenta de novo às ${horaCurta(p.volta_em)}`
-      : sit.texto;
+    const detalheSit = p.situacao === 'falhou' && p.volta_em ? `${sit.texto} · tenta de novo às ${horaCurta(p.volta_em)}` : sit.texto;
     const abrir = p.matter_id ? `/materias-ia/${p.matter_id}` : p.url;
     const acao = p.matter_id
       ? `<a class="d-btn d-btn--neutro" href="/materias-ia/${p.matter_id}" target="_blank" rel="noopener">Ver matéria</a>`
@@ -454,72 +487,57 @@
       </div>`;
   }
 
-  /** Próximas: só o que interessa — posts do assunto ainda sem matéria. */
+  function seloMateria(m) {
+    if (m.status === 'publicado') return '<span class="d-selo d-selo--ok">✅ Publicada</span>';
+    if (m.status === 'agendado') return `<span class="d-selo d-selo--alerta">📅 ${diaHora(m.agendada_para)}</span>`;
+    if (m.status === 'erro') return '<span class="d-selo d-selo--erro">⚠️ Erro ao publicar</span>';
+    return '<span class="d-selo">📝 Rascunho</span>';
+  }
+
+  function cartaoMateria(m) {
+    return `
+      <a class="d-arte" href="/materias-ia/${m.id}" target="_blank" rel="noopener">
+        <span class="d-arte-img">
+          ${m.imagem ? `<img src="${escapar(m.imagem)}" alt="" loading="lazy" />` : '<span class="d-sem-imagem">📰</span>'}
+          ${seloMateria(m)}
+        </span>
+        <span class="d-arte-titulo">${escapar(m.titulo || 'Matéria')}</span>
+      </a>`;
+  }
+
+  // ------------------------------------------------------------ painel
+
   function abaProximas(d) {
-    const lista = (d?.posts || []).filter((p) => ['proximo', 'repetido', 'falhou'].includes(p.situacao));
-    if (!lista.length) {
-      const posts = d?.posts || [];
-      const viraram = posts.filter((p) => p.situacao === 'materia').length;
-      const descartados = posts.filter((p) => ['descartado', 'pouco_texto'].includes(p.situacao)).length;
-      const motivo = viraram
-        ? ` ${viraram} já ${viraram === 1 ? 'virou' : 'viraram'} matéria — veja em “Matérias”.`
-        : descartados
-          ? ` ${descartados} do assunto ${descartados === 1 ? 'foi descartado' : 'foram descartados'} (a IA não conseguiu escrever) — veja em “Todos os posts”.`
-          : ' Assim que as páginas publicarem algo com as palavras-chave, aparece aqui.';
-      return `<div class="d-vazio-aba">🔎 Nenhum post do assunto esperando.${motivo}</div>`;
-    }
+    const lista = (d?.posts || []).filter((p) => PROXIMAS.includes(p.situacao));
+    if (!lista.length) return '<div class="d-vazio-aba">🔎 Nenhum post do assunto esperando.</div>';
     const ordem = { proximo: 0, falhou: 1, repetido: 2 };
     return `<div class="d-posts">${lista.sort((a, b) => ordem[a.situacao] - ordem[b.situacao]).map(linhaPost).join('')}</div>`;
   }
 
-  /** Matérias: cartões com a arte grande e a situação por cima. */
   function abaMaterias(d) {
     const materias = d?.materias || [];
-    if (!materias.length) {
-      return '<div class="d-vazio-aba">📰 Nenhuma matéria ainda. Quando um post do assunto virar matéria, a arte aparece aqui.</div>';
-    }
-    const etiqueta = (m) => {
-      if (m.status === 'publicado') return '<span class="d-selo d-selo--ok">✅ Publicada</span>';
-      if (m.status === 'agendado') return `<span class="d-selo d-selo--alerta">📅 ${diaHora(m.agendada_para)}</span>`;
-      if (m.status === 'erro') return '<span class="d-selo d-selo--erro">⚠️ Erro ao publicar</span>';
-      return '<span class="d-selo">📝 Rascunho</span>';
-    };
+    if (!materias.length) return '<div class="d-vazio-aba">📰 Nenhuma matéria ainda.</div>';
     const ordem = { agendado: 0, publicado: 1 };
     const lista = [...materias].sort((a, b) => (ordem[a.status] ?? 2) - (ordem[b.status] ?? 2));
-    return `<div class="d-grade">${lista.map((m) => `
-      <a class="d-arte" href="/materias-ia/${m.id}" target="_blank" rel="noopener">
-        <span class="d-arte-img">
-          ${m.imagem ? `<img src="${escapar(m.imagem)}" alt="" loading="lazy" />` : '<span class="d-sem-imagem">📰</span>'}
-          ${etiqueta(m)}
-        </span>
-        <span class="d-arte-titulo">${escapar(m.titulo || 'Matéria')}</span>
-      </a>`).join('')}</div>`;
+    return `<div class="d-grade">${lista.map(cartaoMateria).join('')}</div>`;
   }
 
-  /** Todos os posts lidos, com filtro (inclui os fora do assunto). */
   function abaTodos(dotId, d) {
     const posts = d?.posts || [];
-    if (!posts.length) {
-      return '<div class="d-vazio-aba">Nenhum post lido nos últimos 7 dias. Confira se o link da página no comando está certo.</div>';
-    }
+    if (!posts.length) return '<div class="d-vazio-aba">Nenhum post lido nos últimos 7 dias. Confira se o link da página no comando está certo.</div>';
     const filtroId = filtrosPosts.get(String(dotId)) || 'todos';
     const filtro = FILTROS_POST.find((f) => f.id === filtroId) || FILTROS_POST[0];
     const visiveis = posts.filter(filtro.ok);
-    const botoes = FILTROS_POST.map((f) => {
-      const n = posts.filter(f.ok).length;
-      return `<button type="button" data-acao="filtro-posts" data-filtro="${f.id}" class="d-filtro ${f.id === filtro.id ? 'is-on' : ''}">${f.texto} <span>${n}</span></button>`;
-    }).join('');
+    const botoes = FILTROS_POST.map((f) => `<button type="button" data-acao="filtro-posts" data-filtro="${f.id}" class="d-filtro ${f.id === filtro.id ? 'is-on' : ''}">${f.texto} <span>${posts.filter(f.ok).length}</span></button>`).join('');
     return `
       <div class="d-filtros">${botoes}</div>
       <div class="d-posts mt-2">${visiveis.slice(0, 40).map(linhaPost).join('') || '<div class="d-vazio-aba">Nada neste filtro.</div>'}</div>`;
   }
 
-  /** Histórico curto: junta linhas repetidas seguidas ("× 3"). */
-  function abaHistorico(dotId) {
-    const linhas = logs.get(String(dotId)) || [];
-    if (!linhas.length) return '<div class="d-vazio-aba">Ainda não há histórico.</div>';
+  /** Junta linhas repetidas seguidas ("× 3"). Recebe do mais novo ao mais velho. */
+  function agrupar(linhas) {
     const agrupadas = [];
-    for (const e of linhas.slice(0, 40)) {
+    for (const e of linhas) {
       const ultima = agrupadas[agrupadas.length - 1];
       if (ultima && ultima.acao === e.acao && ultima.detalhe === e.detalhe) {
         ultima.vezes += 1;
@@ -527,7 +545,13 @@
       }
       agrupadas.push({ ...e, vezes: 1 });
     }
-    return `<ol class="d-passos">${agrupadas.slice(0, 15).map((e) => {
+    return agrupadas;
+  }
+
+  function abaHistorico(dotId) {
+    const linhas = logs.get(String(dotId)) || [];
+    if (!linhas.length) return '<div class="d-vazio-aba">Ainda não há histórico.</div>';
+    return `<ol class="d-passos">${agrupar(linhas.slice(0, 60)).slice(0, 30).map((e) => {
       const passo = passoDe(e);
       const texto = e.acao === 'escreveu' ? partesDoEscreveu(e.detalhe).titulo : e.detalhe || e.acao;
       return `<li class="d-passo ${passo.classe}">
@@ -541,45 +565,15 @@
     }).join('')}</ol>`;
   }
 
-  function painelAbas(dot) {
-    const id = String(dot.id);
-    const d = detalhes.get(id);
-    const aba = abas.get(id) || 'proximas';
-    const qtd = (lista) => (d ? lista.length : null);
-    const posts = d?.posts || [];
-    const botao = (chave, texto, n) =>
-      `<button type="button" role="tab" data-acao="aba" data-aba="${chave}" aria-selected="${aba === chave}" class="d-aba ${aba === chave ? 'is-on' : ''}">${texto}${n !== null && n !== undefined ? ` <span>${n}</span>` : ''}</button>`;
-    const conteudo = !d
-      ? '<div class="d-vazio-aba">Carregando…</div>'
-      : aba === 'materias'
-        ? abaMaterias(d)
-        : aba === 'todos'
-          ? abaTodos(id, d)
-          : aba === 'historico'
-            ? abaHistorico(id)
-            : abaProximas(d);
-    return `
-      <div class="mt-4">
-        <div class="d-abas" role="tablist">
-          ${botao('proximas', '⏳ Próximas', qtd(posts.filter((p) => ['proximo', 'repetido', 'falhou'].includes(p.situacao))))}
-          ${botao('materias', '📰 Matérias', qtd(d?.materias || []))}
-          ${botao('todos', '🗂️ Todos os posts', qtd(posts))}
-          ${botao('historico', '🧭 Histórico', null)}
-        </div>
-        <div class="d-aba-corpo mt-3">${conteudo}</div>
-      </div>`;
-  }
-
-  /** O que o dot entendeu do comando + edição no próprio cartão. */
   function comando(dot) {
     const id = String(dot.id);
     const plano = dot.plano || {};
     if (editando.has(id)) {
       return `
-        <div class="d-comando d-comando--editando mt-3" data-comando-edicao>
+        <div class="d-comando d-comando--editando mt-3">
           <label class="d-rotulo-min" for="dot-cmd-${id}">O que ele deve fazer</label>
-          <textarea id="dot-cmd-${id}" data-comando-texto rows="6">${escapar(editando.get(id))}</textarea>
-          <p class="d-ajuda">Mude o assunto, as palavras-chave ou o estilo (ex.: “deixe o título mais polêmico”). Links novos viram páginas monitoradas.</p>
+          <textarea id="dot-cmd-${id}" data-comando-texto rows="7">${escapar(editando.get(id))}</textarea>
+          <p class="d-ajuda">Links novos viram páginas monitoradas; links apagados deixam de ser lidos.</p>
           <div class="mt-2 flex flex-wrap gap-2">
             <button type="button" data-acao="salvar-comando" class="d-btn d-btn--principal">Salvar comando</button>
             <button type="button" data-acao="cancelar-comando" class="d-btn d-btn--fantasma">Cancelar</button>
@@ -590,8 +584,8 @@
     return `
       <div class="d-comando mt-3">
         <div class="flex items-start justify-between gap-2">
-          <p class="d-comando-texto" title="${escapar(dot.objetivo || '')}">${escapar(dot.objetivo || 'Sem comando.')}</p>
-          <button type="button" data-acao="editar-comando" class="d-btn d-btn--fantasma shrink-0">✏️ Editar comando</button>
+          <p class="d-comando-texto">${textoRico(dot.objetivo || 'Sem comando.')}</p>
+          <button type="button" data-acao="editar-comando" class="d-btn d-btn--fantasma shrink-0">✏️ Editar</button>
         </div>
         <div class="d-mat-chips mt-1.5">
           ${palavras.length ? `<span class="d-chip d-chip--palavra">🔎 ${escapar(palavras.join(', '))}</span>` : '<span class="d-chip">🔎 qualquer assunto</span>'}
@@ -601,49 +595,235 @@
       </div>`;
   }
 
-  function cartao(dot) {
-    const id = String(dot.id);
-    const ativo = dot.estado === 'ativo';
-    const classe = dot.trabalhando ? 'd-card--trabalhando' : dot.ultimo_erro ? 'd-card--erro' : '';
+  function abaConfig(dot) {
     return `
-      <article class="d-card d-dot ${classe}" data-dot="${dot.id}">
-        <header class="d-dot-topo">
-          <div class="min-w-0 flex-1">
-            <div class="flex flex-wrap items-center gap-2">
-              <input class="d-nome truncate" data-nome value="${escapar(dot.nome)}" maxlength="160" aria-label="Nome do dot" />
-              ${pill(dot)}
-            </div>
-            <p class="d-frase">${frase(dot)}</p>
-          </div>
-          <div class="d-dot-acoes">
-            <button type="button" data-acao="rodar" class="d-btn d-btn--principal" ${dot.trabalhando ? 'disabled' : ''}>▶ Trabalhar agora</button>
-            <button type="button" data-acao="${ativo ? 'pausar' : 'retomar'}" class="d-btn d-btn--neutro">${ativo ? '⏸ Pausar' : '▶ Retomar'}</button>
-            <button type="button" data-acao="excluir" class="d-btn d-btn--fantasma d-btn--perigo" title="Excluir dot" aria-label="Excluir dot">✕</button>
-          </div>
-        </header>
-
-        ${banner(dot)}
-        ${funil(dot)}
-        ${painelAbas(dot)}
-
-        <details class="d-config mt-4" ${editando.has(id) ? 'open' : ''}>
-          <summary>⚙️ Configuração e comando</summary>
-          ${stats(dot)}
-          ${comando(dot)}
-        </details>
-      </article>`;
-  }
-
-  function vazio() {
-    return `
-      <div class="dv-vazio">
-        <span class="dv-vazio-orbita" aria-hidden="true"><i></i><i></i><i></i></span>
-        <b>Nenhum dot ainda.</b>
-        <p>Escreva acima o que você quer que ele faça.</p>
+      <div class="dc-config">
+        <label class="d-rotulo-min" for="dc-nome-${dot.id}">Nome</label>
+        <input id="dc-nome-${dot.id}" class="d-nome dc-config-nome" data-nome value="${escapar(dot.nome)}" maxlength="160" />
+        ${stats(dot)}
+        ${comando(dot)}
+        <button type="button" data-acao="excluir" class="d-btn d-btn--fantasma d-btn--perigo mt-4">Excluir este dot</button>
       </div>`;
   }
 
-  // ------------------------------------------------------------- ciclo UI
+  const ABAS = [
+    { id: 'proximas', texto: '⏳ Próximas' },
+    { id: 'materias', texto: '📰 Matérias' },
+    { id: 'todos', texto: '🗂️ Todos os posts' },
+    { id: 'historico', texto: '🧭 Histórico' },
+    { id: 'config', texto: '⚙️ Configuração' },
+  ];
+
+  function renderPainel() {
+    if (el.painel.hidden) return;
+    const dot = dotAtual();
+    if (!dot) return fecharPainel();
+    const id = String(dot.id);
+    const d = detalhes.get(id);
+    const aba = abas.get(id) || 'proximas';
+    const posts = d?.posts || [];
+    const contagem = {
+      proximas: d ? posts.filter((p) => PROXIMAS.includes(p.situacao)).length : null,
+      materias: d ? (d.materias || []).length : null,
+      todos: d ? posts.length : null,
+    };
+    const conteudo = aba === 'config'
+      ? abaConfig(dot)
+      : !d
+        ? '<div class="d-vazio-aba">Carregando…</div>'
+        : aba === 'materias'
+          ? abaMaterias(d)
+          : aba === 'todos'
+            ? abaTodos(id, d)
+            : aba === 'historico'
+              ? abaHistorico(id)
+              : abaProximas(d);
+    el.painelTitulo.textContent = dot.nome;
+    el.painelCorpo.innerHTML = `
+      <div data-dot="${dot.id}">
+        <div class="d-abas" role="tablist">
+          ${ABAS.map((a) => `<button type="button" role="tab" data-acao="aba" data-aba="${a.id}" aria-selected="${aba === a.id}" class="d-aba ${aba === a.id ? 'is-on' : ''}">${a.texto}${contagem[a.id] !== null && contagem[a.id] !== undefined ? ` <span>${contagem[a.id]}</span>` : ''}</button>`).join('')}
+        </div>
+        <div class="d-aba-corpo mt-3">${conteudo}</div>
+      </div>`;
+  }
+
+  function abrirPainel(aba) {
+    const dot = dotAtual();
+    if (!dot) return;
+    if (aba) abas.set(String(dot.id), aba);
+    el.painel.hidden = false;
+    el.painelFundo.hidden = false;
+    renderPainel();
+  }
+
+  function fecharPainel() {
+    if (editando.size) editando.clear();
+    el.painel.hidden = true;
+    el.painelFundo.hidden = true;
+  }
+
+  // ------------------------------------------------------------ conversa
+
+  function dotAtual() {
+    return ultimaLista.find((d) => String(d.id) === selecionado) || null;
+  }
+
+  const msgEditor = (html, extra = '') => `<div class="dc-msg dc-msg--editor ${extra}"><div class="dc-bolha">${html}</div></div>`;
+  const msgDot = (html, extra = '') => `<div class="dc-msg dc-msg--dot ${extra}"><div class="dc-bolha">${html}</div></div>`;
+
+  const EXEMPLOS = [
+    {
+      rotulo: 'Monitorar páginas',
+      texto: 'Monitore estas páginas e crie matéria do que render, com título forte:\nhttps://www.facebook.com/Poder360\nhttps://www.facebook.com/plenonews',
+    },
+    {
+      rotulo: 'Só um assunto',
+      texto: 'Só o que citar Flávio Bolsonaro ou Lula, com título mais polêmico:\nhttps://www.facebook.com/jovempannews',
+    },
+    {
+      rotulo: 'Site de notícias',
+      texto: 'Acompanhe este portal e escreva matéria das notícias de política:\nhttps://portaldenoticias.com.br',
+    },
+  ];
+
+  function conversaDoNovo() {
+    const boasVindas = msgDot(`
+      <p><b>Diga o que você quer, do seu jeito.</b></p>
+      <p>Eu acompanho as páginas, separo o que tem conteúdo e escrevo a matéria — no servidor, mesmo com a aba fechada.</p>
+      <p class="dc-dica">Diga o assunto, o recorte e o estilo e cole os links (Facebook, Instagram, YouTube ou site de notícias). No <b>+</b> da caixa você escolhe rascunho, agendar ou publicar e a página.</p>
+      <div class="dc-chips">${EXEMPLOS.map((e, i) => `<button type="button" class="dc-chip" data-acao="exemplo" data-exemplo="${i}">${escapar(e.rotulo)}</button>`).join('')}</div>`);
+    return boasVindas + conversaNova.map((m) => (m.autor === 'editor' ? msgEditor(m.html) : msgDot(m.html, m.extra || ''))).join('');
+  }
+
+  /** O comando vira a 1ª mensagem; cada "Ajuste:" mandado depois, uma nova. */
+  function mensagensDoComando(objetivo) {
+    return String(objetivo || '')
+      .split(/\n\nAjuste:\s*/)
+      .map((parte) => parte.trim())
+      .filter(Boolean);
+  }
+
+  function conversaDoDot(dot) {
+    const id = String(dot.id);
+    const d = detalhes.get(id);
+    const plano = dot.plano || {};
+    const partes = [];
+
+    for (const texto of mensagensDoComando(dot.objetivo)) partes.push(msgEditor(textoRico(texto)));
+    const palavras = Array.isArray(plano.palavras) ? plano.palavras : [];
+    partes.push(msgDot(`
+      <p>Entendi. ${frase(dot)}</p>
+      <div class="d-mat-chips mt-1.5">
+        ${palavras.length ? `<span class="d-chip d-chip--palavra">🔎 ${escapar(palavras.join(', '))}</span>` : ''}
+        ${plano.estilo ? `<span class="d-chip">🎯 ${escapar(plano.estilo)}</span>` : ''}
+      </div>`));
+
+    // Histórico do mais velho ao mais novo, como numa conversa.
+    const porId = new Map((d?.materias || []).map((m) => [Number(m.id), m]));
+    const historico = agrupar((logs.get(id) || []).slice(0, 60)).slice(0, 20).reverse();
+    for (const e of historico) {
+      const passo = passoDe(e);
+      if (e.acao === 'escreveu') {
+        const partesEscreveu = partesDoEscreveu(e.detalhe);
+        const m = porId.get(Number(e.matter_id));
+        partes.push(msgDot(`
+          <p class="dc-passo-topo">✍️ <b>Escrevi uma matéria</b> <span class="d-quando">${haQuanto(e.created_at)}</span></p>
+          ${m ? `<div class="dc-materia">${cartaoMateria(m)}</div>` : `<p>${escapar(partesEscreveu.titulo)}</p>`}
+          ${partesEscreveu.palavra ? `<p class="dc-dica">🔎 ${escapar(partesEscreveu.palavra)}${partesEscreveu.saida ? ` · ${escapar(partesEscreveu.saida)}` : ''}</p>` : ''}`, 'dc-msg--passo'));
+        continue;
+      }
+      partes.push(msgDot(`
+        <p class="dc-passo-topo">${passo.icone} <b>${passo.rotulo}</b>${e.vezes > 1 ? ` <b class="d-vezes">× ${e.vezes}</b>` : ''} <span class="d-quando">${haQuanto(e.created_at)}</span></p>
+        <p>${escapar(e.detalhe || e.acao)}</p>`, `dc-msg--passo ${passo.classe === 'd-passo--erro' ? 'dc-msg--erro' : ''}`));
+    }
+
+    // Mensagens que o editor acabou de mandar e o servidor ainda processa.
+    for (const p of pendentes.get(id) || []) {
+      partes.push(msgEditor(textoRico(p)));
+      partes.push(msgDot('<p class="dc-digitando"><i></i><i></i><i></i> Lendo o novo pedido…</p>'));
+    }
+
+    const proximas = (d?.posts || []).filter((p) => PROXIMAS.includes(p.situacao));
+    if (proximas.length) {
+      partes.push(msgDot(`
+        <p><b>${proximas.length} ${proximas.length === 1 ? 'post do assunto esperando' : 'posts do assunto esperando'}.</b> Quer algum agora?</p>
+        <div class="d-posts mt-2">${proximas.slice(0, 4).map(linhaPost).join('')}</div>
+        ${proximas.length > 4 ? '<button type="button" class="dc-chip mt-2" data-acao="painel" data-aba="proximas">Ver todos</button>' : ''}`));
+    }
+
+    partes.push(msgDot(`${banner(dot)}${funil(dot)}`, 'dc-msg--status'));
+    partes.push(`
+      <div class="dc-chips dc-chips--acoes">
+        <button type="button" class="dc-chip" data-acao="rodar" ${dot.trabalhando ? 'disabled' : ''}>▶ Trabalhar agora</button>
+        <button type="button" class="dc-chip" data-acao="${dot.estado === 'ativo' ? 'pausar' : 'retomar'}">${dot.estado === 'ativo' ? '⏸ Pausar' : '▶ Retomar'}</button>
+        <button type="button" class="dc-chip" data-acao="painel" data-aba="materias">📰 Matérias${d ? ` (${(d.materias || []).length})` : ''}</button>
+        <button type="button" class="dc-chip" data-acao="painel" data-aba="todos">🗂️ Todos os posts</button>
+        <button type="button" class="dc-chip" data-acao="painel" data-aba="config">⚙️ Configuração</button>
+      </div>`);
+    return `<div data-dot="${dot.id}" class="dc-fio">${partes.join('')}</div>`;
+  }
+
+  function renderTopo() {
+    const dot = dotAtual();
+    if (!dot) {
+      el.titulo.innerHTML = '<span class="dc-avatar dc-avatar--novo" aria-hidden="true">+</span><span class="dc-titulo-nome">Novo dot</span>';
+      el.acoes.innerHTML = '';
+      return;
+    }
+    el.titulo.innerHTML = `${avatar(dot)}<span class="dc-titulo-nome">${escapar(dot.nome)}</span>${pill(dot)}`;
+    el.acoes.innerHTML = `
+      <div data-dot="${dot.id}" class="dc-acoes-grupo">
+        <button type="button" class="dc-icone" data-acao="rodar" title="Trabalhar agora" aria-label="Trabalhar agora" ${dot.trabalhando ? 'disabled' : ''}>${icone('play')}</button>
+        <button type="button" class="dc-icone" data-acao="${dot.estado === 'ativo' ? 'pausar' : 'retomar'}" title="${dot.estado === 'ativo' ? 'Pausar' : 'Retomar'}" aria-label="${dot.estado === 'ativo' ? 'Pausar' : 'Retomar'}">${icone(dot.estado === 'ativo' ? 'pausa' : 'play')}</button>
+        <button type="button" class="dc-icone" data-acao="painel" title="Painel do dot" aria-label="Abrir painel do dot">${icone('painel')}</button>
+      </div>`;
+  }
+
+  function renderConversa({ rolar = false } = {}) {
+    const dot = dotAtual();
+    if (selecionado !== 'novo' && !dot && ultimaLista.length) selecionado = 'novo';
+    const html = dot ? conversaDoDot(dot) : conversaDoNovo();
+    const chave = dot ? String(dot.id) : 'novo';
+    const trocou = chave !== ultimaConversaDesenhada;
+    renderTopo();
+    el.objetivo.placeholder = dot
+      ? `Mensagem para ${dot.nome}`
+      : 'Diga o que o dot deve fazer e cole os links…';
+    el.mais.hidden = Boolean(dot);
+    if (dot) fecharAjustes();
+    atualizarResumoAjustes();
+    if (!trocou && html === ultimoHtmlConversa) return;
+    // Só desce sozinho quando o editor já estava no fim (ou trocou de conversa).
+    const perto = el.mensagens.scrollHeight - el.mensagens.scrollTop - el.mensagens.clientHeight < 120;
+    el.mensagens.innerHTML = html;
+    ultimoHtmlConversa = html;
+    ultimaConversaDesenhada = chave;
+    if (trocou || rolar || perto) el.mensagens.scrollTop = el.mensagens.scrollHeight;
+  }
+
+  function selecionar(id) {
+    selecionado = String(id || 'novo');
+    try {
+      localStorage.setItem(SELECIONADO_KEY, selecionado);
+    } catch {
+      // ignora
+    }
+    fecharLateral();
+    fecharPainel();
+    avisar('');
+    renderLateral();
+    renderConversa({ rolar: true });
+    if (selecionado !== 'novo' && !detalhes.has(selecionado)) {
+      carregarLog(selecionado).then(() => {
+        renderLateral();
+        renderConversa();
+      });
+    }
+    el.objetivo.focus();
+  }
+
+  // ------------------------------------------------------------- ciclo
 
   async function carregarLog(dotId) {
     try {
@@ -651,37 +831,38 @@
       logs.set(String(dotId), dados.execucoes || []);
       detalhes.set(String(dotId), { ...dados, em: Date.now() });
     } catch {
-      logs.set(String(dotId), []);
+      logs.set(String(dotId), logs.get(String(dotId)) || []);
     }
   }
 
   async function carregar() {
-    // Redesenhar a lista apagaria o que o editor está digitando no comando.
-    if (editando.size) return reagendar(5000);
     try {
       const resposta = await api('/api/dots');
-      // Resposta inesperada não pode quebrar a tela inteira.
       const dots = Array.isArray(resposta) ? resposta : [];
-      await Promise.all(
-        dots
-          .filter((d) => d.trabalhando || !detalhes.has(String(d.id)) || Date.now() - detalhes.get(String(d.id)).em > DETALHE_VALIDO_MS)
-          .map((d) => carregarLog(d.id))
-      );
+      const precisa = (d) =>
+        d.trabalhando ||
+        String(d.id) === selecionado ||
+        !detalhes.has(String(d.id)) ||
+        Date.now() - detalhes.get(String(d.id)).em > DETALHE_VALIDO_MS;
+      await Promise.all(dots.filter(precisa).slice(0, 8).map((d) => carregarLog(d.id)));
 
       ultimaLista = dots;
-      el.lista.innerHTML = dots.length ? dots.map(cartao).join('') : vazio();
+      if (selecionado !== 'novo' && !dots.some((d) => String(d.id) === selecionado)) selecionado = 'novo';
+      renderLateral();
+      renderConversa();
+      // Painel com comando em edição não se redesenha (perderia o texto).
+      if (!editando.size) renderPainel();
 
       const trabalhando = dots.filter((d) => d.trabalhando).length;
       const ativos = dots.filter((d) => d.estado === 'ativo').length;
       el.pulso.innerHTML = trabalhando
-        ? `<span class="d-luz d-luz--pulsa" style="color: var(--d-acento)"></span> ${trabalhando} trabalhando agora`
+        ? `<span class="d-luz d-luz--pulsa"></span>${trabalhando}`
         : ativos
-          ? `${ativos} ativo(s)`
+          ? `${ativos} ativo${ativos > 1 ? 's' : ''}`
           : '';
-
       reagendar(trabalhando ? 3000 : 15000);
     } catch (err) {
-      el.lista.innerHTML = `<p class="d-linha d-linha--erro"><span class="d-linha-marca">!</span><span>${escapar(err.message)}</span></p>`;
+      avisar(err.message, true);
       reagendar(15000);
     }
   }
@@ -691,131 +872,227 @@
     timer = setTimeout(carregar, ms);
   }
 
-  // ---------------------------------------------------------------- ações
+  // ------------------------------------------------------------ envio
 
-  for (const botao of document.querySelectorAll('[data-exemplo]')) {
-    botao.addEventListener('click', () => {
-      el.objetivo.value = EXEMPLOS[botao.dataset.exemplo] || '';
-      el.objetivo.focus();
-      avisar('Troque os links pelos seus e ajuste o texto à vontade.');
-    });
+  function ajustarAltura() {
+    el.objetivo.style.height = 'auto';
+    el.objetivo.style.height = `${Math.min(el.objetivo.scrollHeight, 220)}px`;
+    // Barra de rolagem só quando passar do limite de altura.
+    el.objetivo.style.overflowY = el.objetivo.scrollHeight > 220 ? 'auto' : 'hidden';
   }
 
-  // Mexeu no pedido, a confirmação anterior não vale mais.
-  el.objetivo.addEventListener('input', () => {
-    if (!planoConfirmado) return;
+  function pushNova(autor, html, extra = '') {
+    conversaNova.push({ autor, html, extra });
+    renderConversa({ rolar: true });
+  }
+
+  /** Dot novo: lê o pedido e mostra o que entendeu antes de criar. */
+  async function enviarNovo(texto) {
+    pedidoNovo = texto;
     planoConfirmado = null;
-    el.previaBox.className = 'hidden';
-  });
-
-  el.recolher.addEventListener('click', () => {
-    const escondido = el.form.hasAttribute('hidden');
-    if (escondido) el.form.removeAttribute('hidden');
-    else el.form.setAttribute('hidden', '');
-    el.recolher.textContent = escondido ? 'Recolher' : 'Abrir';
-    el.recolher.setAttribute('aria-expanded', String(escondido));
-  });
-
-  el.previa.addEventListener('click', async () => {
-    const objetivo = el.objetivo.value.trim();
-    if (!objetivo) return avisar('Escreva o que o dot deve fazer.', true);
-    avisar('Lendo o pedido…');
+    // Pedido novo substitui a prévia anterior que ainda esperava confirmação.
+    conversaNova = conversaNova.filter((m) => !m.previa);
+    pushNova('editor', textoRico(texto));
+    conversaNova.push({ autor: 'dot', html: '<p class="dc-digitando"><i></i><i></i><i></i> Lendo o pedido…</p>', previa: true });
+    renderConversa({ rolar: true });
     try {
       const { plano, urls, resumo } = await api('/api/dots/previa', {
         method: 'POST',
-        body: JSON.stringify({ objetivo, ...configuracaoDaTela() }),
+        body: JSON.stringify({ objetivo: texto, ...configuracaoDaTela() }),
       });
       if (!el.nome.value.trim()) el.nome.value = plano.nome;
-      planoConfirmado = null;
-
-      el.previaBox.className = 'd-card mt-1 p-4';
-      el.previaBox.style.background = 'var(--d-surface-2)';
-      el.previaBox.innerHTML = `
-        <p class="d-secao">Confira antes de criar</p>
-        <p class="mt-2 text-sm font-semibold" style="color: var(--d-texto)">${escapar(plano.nome)}</p>
-        <p class="mt-1 text-xs" style="color: var(--d-texto-2)">${escapar(plano.criterio)}</p>
-        <div class="mt-3 space-y-1">
-          ${(resumo || []).map((linha) => `<p class="d-linha"><span class="d-linha-marca">›</span><span>${escapar(linha)}</span></p>`).join('')}
-        </div>
-        <div class="mt-3 flex flex-wrap items-center gap-2">
-          <button type="button" id="dot-confirmar" class="d-btn d-btn--principal">É isso, pode criar</button>
-          <button type="button" id="dot-ajustar" class="d-btn d-btn--fantasma">Quero mudar</button>
-        </div>`;
-
-      document.getElementById('dot-confirmar').addEventListener('click', () => {
-        planoConfirmado = { plano, urls };
-        criarDot();
+      planoConfirmado = { plano, urls, pendente: true };
+      conversaNova = conversaNova.filter((m) => !m.previa);
+      conversaNova.push({
+        autor: 'dot',
+        previa: true,
+        html: `
+          <p><b>${escapar(plano.nome)}</b></p>
+          <p class="dc-dica">${escapar(plano.criterio || '')}</p>
+          <ul class="dc-lista">${(resumo || []).map((linha) => `<li>${escapar(linha)}</li>`).join('')}</ul>
+          <div class="dc-chips">
+            <button type="button" class="dc-chip dc-chip--principal" data-acao="confirmar-novo">É isso, pode criar</button>
+            <button type="button" class="dc-chip" data-acao="ajustar-novo">Quero mudar</button>
+            <button type="button" class="dc-chip" data-acao="abrir-ajustes">Ajustes (destino, página…)</button>
+          </div>`,
       });
-      document.getElementById('dot-ajustar').addEventListener('click', () => {
-        el.previaBox.className = 'hidden';
-        planoConfirmado = null;
-        el.objetivo.focus();
-        avisar('Ajuste o texto e peça para eu ler de novo.');
-      });
-
-      avisar('');
+      renderConversa({ rolar: true });
     } catch (err) {
-      avisar(err.message, true);
+      conversaNova = conversaNova.filter((m) => !m.previa);
+      pushNova('dot', `<p>⚠️ ${escapar(err.message)}</p>`, 'dc-msg--erro');
     }
-  });
+  }
 
-  /** Só cria depois que o editor confirmou o plano na tela. */
   async function criarDot() {
-    const objetivo = el.objetivo.value.trim();
-    if (!objetivo) return avisar('Escreva o que o dot deve fazer.', true);
-    if (!planoConfirmado) {
-      avisar('Clique em "Ver o que eu entendi" e confirme o plano antes de criar.', true);
-      return el.previa.click();
-    }
-    el.criar.disabled = true;
-    avisar('Criando e cadastrando as páginas… leva alguns segundos.');
+    if (!pedidoNovo || !planoConfirmado) return;
+    conversaNova = conversaNova.filter((m) => !m.previa);
+    pushNova('dot', '<p class="dc-digitando"><i></i><i></i><i></i> Criando e cadastrando as páginas…</p>');
     try {
       const r = await api('/api/dots', {
         method: 'POST',
         body: JSON.stringify({
-          objetivo,
+          objetivo: pedidoNovo,
           nome: el.nome.value.trim() || null,
           provedor: el.provedor?.value || 'auto',
           facebook_page_id: el.pagina.value || null,
           ...configuracaoDaTela(),
         }),
       });
-      el.objetivo.value = '';
-      el.nome.value = '';
-      el.previaBox.className = 'hidden';
-      planoConfirmado = null;
-      // "1 link(s) não entraram" não dizia qual nem por quê, e o dot nascia
-      // inútil sem o editor entender. O motivo vem no `problemas`.
       const falhas = Array.isArray(r.problemas) ? r.problemas : [];
-      const base = `dot criado com ${r.fontes} página(s)`;
-      if (falhas.length) {
-        avisar(`${base}. Não entraram: ${falhas.slice(0, 3).join(' | ')}`, r.fontes === 0);
-      } else {
-        avisar(`Pronto: ${base}.`);
-      }
+      conversaNova = [];
+      pedidoNovo = '';
+      planoConfirmado = null;
+      el.nome.value = '';
+      avisar(falhas.length ? `Não entraram: ${falhas.slice(0, 3).join(' | ')}` : '', r.fontes === 0);
       await carregar();
+      if (r.id) selecionar(r.id);
     } catch (err) {
-      avisar(err.message, true);
-    } finally {
-      el.criar.disabled = false;
+      conversaNova.pop();
+      pushNova('dot', `<p>⚠️ ${escapar(err.message)}</p>`, 'dc-msg--erro');
     }
   }
 
-  el.criar.addEventListener('click', criarDot);
+  /** Mensagem para um dot existente: vira um "Ajuste:" no comando dele. */
+  async function enviarParaDot(dot, texto) {
+    const id = String(dot.id);
+    pendentes.set(id, [...(pendentes.get(id) || []), texto]);
+    renderConversa({ rolar: true });
+    try {
+      const novoObjetivo = `${String(dot.objetivo || '').trim()}\n\nAjuste: ${texto}`;
+      const r = await api(`/api/dots/${id}`, { method: 'PATCH', body: JSON.stringify({ objetivo: novoObjetivo }) });
+      const falhas = Array.isArray(r.problemas) ? r.problemas : [];
+      avisar(falhas.length ? `Não entraram: ${falhas.slice(0, 2).join(' | ')}` : '', false);
+      detalhes.delete(id);
+    } catch (err) {
+      avisar(err.message, true);
+      el.objetivo.value = texto;
+      ajustarAltura();
+    } finally {
+      pendentes.set(id, (pendentes.get(id) || []).filter((p) => p !== texto));
+      await carregar();
+    }
+  }
 
-  el.lista.addEventListener('click', async (e) => {
+  el.composer.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const texto = el.objetivo.value.trim();
+    if (!texto) return;
+    el.objetivo.value = '';
+    ajustarAltura();
+    avisar('');
+    const dot = dotAtual();
+    if (dot) enviarParaDot(dot, texto);
+    else enviarNovo(texto);
+  });
+
+  el.objetivo.addEventListener('input', ajustarAltura);
+  el.objetivo.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      el.composer.requestSubmit();
+    }
+  });
+
+  // ---------------------------------------------------------- ajustes
+
+  function abrirAjustes() {
+    el.ajustes.hidden = false;
+    el.mais.setAttribute('aria-expanded', 'true');
+    atualizarResumoAjustes();
+  }
+  function fecharAjustes() {
+    el.ajustes.hidden = true;
+    el.mais.setAttribute('aria-expanded', 'false');
+    atualizarResumoAjustes();
+  }
+  el.mais.addEventListener('click', () => (el.ajustes.hidden ? abrirAjustes() : fecharAjustes()));
+  el.ajustesFechar.addEventListener('click', fecharAjustes);
+  el.resumoAjustes.addEventListener('click', abrirAjustes);
+
+  // ---------------------------------------------------------- lateral
+
+  function abrirLateral() {
+    el.lateral.classList.add('is-aberta');
+    el.fundoLateral.hidden = false;
+  }
+  function fecharLateral() {
+    el.lateral.classList.remove('is-aberta');
+    el.fundoLateral.hidden = true;
+  }
+  el.abrirLateral.addEventListener('click', abrirLateral);
+  el.fecharLateral.addEventListener('click', fecharLateral);
+  el.fundoLateral.addEventListener('click', fecharLateral);
+  el.novo.addEventListener('click', () => selecionar('novo'));
+  el.buscar.addEventListener('click', () => {
+    el.busca.hidden = !el.busca.hidden;
+    el.buscar.setAttribute('aria-expanded', String(!el.busca.hidden));
+    if (!el.busca.hidden) el.busca.focus();
+    else {
+      el.busca.value = '';
+      renderLateral();
+    }
+  });
+  el.busca.addEventListener('input', renderLateral);
+  el.lista.addEventListener('click', (e) => {
+    const item = e.target.closest('[data-abrir]');
+    if (item) selecionar(item.dataset.abrir);
+  });
+
+  el.painelFechar.addEventListener('click', fecharPainel);
+  el.painelFundo.addEventListener('click', fecharPainel);
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!el.painel.hidden) fecharPainel();
+    else if (!el.ajustes.hidden) fecharAjustes();
+  });
+
+  // ------------------------------------------------------------ ações
+
+  el.shell.addEventListener('click', async (e) => {
     const botao = e.target.closest('[data-acao]');
-    if (!botao) return;
-    const id = botao.closest('[data-dot]')?.dataset.dot;
-    if (!id) return;
+    if (!botao || botao.disabled) return;
     const acao = botao.dataset.acao;
 
+    if (acao === 'exemplo') {
+      el.objetivo.value = EXEMPLOS[Number(botao.dataset.exemplo)]?.texto || '';
+      ajustarAltura();
+      el.objetivo.focus();
+      return;
+    }
+    if (acao === 'confirmar-novo') {
+      botao.disabled = true;
+      return criarDot();
+    }
+    if (acao === 'ajustar-novo') {
+      conversaNova = conversaNova.filter((m) => !m.previa);
+      planoConfirmado = null;
+      el.objetivo.value = pedidoNovo;
+      ajustarAltura();
+      renderConversa();
+      el.objetivo.focus();
+      return;
+    }
+    if (acao === 'abrir-ajustes') return abrirAjustes();
+
+    const id = botao.closest('[data-dot]')?.dataset.dot;
+    if (!id) return;
+
+    if (acao === 'painel') return abrirPainel(botao.dataset.aba);
+    if (acao === 'aba') {
+      abas.set(String(id), botao.dataset.aba);
+      if (botao.dataset.aba !== 'config') editando.clear();
+      return renderPainel();
+    }
+    if (acao === 'filtro-posts') {
+      filtrosPosts.set(String(id), botao.dataset.filtro);
+      return renderPainel();
+    }
     if (acao === 'escrever-post') {
       botao.disabled = true;
       botao.textContent = 'Escrevendo…';
       try {
         await api(`/api/dots/${id}/posts/${botao.dataset.post}/escrever`, { method: 'POST' });
-        avisar('Escrevendo este post agora. A matéria aparece em “Matérias” assim que ficar pronta.');
+        avisar('Escrevendo este post agora. A matéria aparece aqui assim que ficar pronta.');
         detalhes.delete(String(id));
         await carregar();
       } catch (err) {
@@ -825,29 +1102,16 @@
       }
       return;
     }
-    if (acao === 'aba') {
-      abas.set(String(id), botao.dataset.aba);
-      redesenharCartao(id);
-      return;
-    }
-    if (acao === 'filtro-posts') {
-      filtrosPosts.set(String(id), botao.dataset.filtro);
-      redesenharCartao(id);
-      return;
-    }
-
-    // Edição do comando no próprio cartão.
     if (acao === 'editar-comando') {
-      const dot = (ultimaLista || []).find((d) => String(d.id) === String(id));
+      const dot = ultimaLista.find((d) => String(d.id) === String(id));
       editando.set(String(id), dot?.objetivo || '');
-      redesenharCartao(id);
-      botao.closest('[data-dot]')?.querySelector('[data-comando-texto]')?.focus();
+      renderPainel();
+      el.painelCorpo.querySelector('[data-comando-texto]')?.focus();
       return;
     }
     if (acao === 'cancelar-comando') {
       editando.delete(String(id));
-      redesenharCartao(id);
-      return;
+      return renderPainel();
     }
     if (acao === 'salvar-comando') {
       const texto = String(editando.get(String(id)) || '').trim();
@@ -858,11 +1122,8 @@
         const r = await api(`/api/dots/${id}`, { method: 'PATCH', body: JSON.stringify({ objetivo: texto }) });
         editando.delete(String(id));
         const falhas = Array.isArray(r.problemas) ? r.problemas : [];
-        avisar(
-          r.fontes !== undefined
-            ? `Comando atualizado: ${r.fontes} página(s) monitorada(s)${falhas.length ? `. Não entraram: ${falhas.slice(0, 2).join(' | ')}` : '.'}`
-            : 'Comando atualizado.'
-        );
+        avisar(falhas.length ? `Não entraram: ${falhas.slice(0, 2).join(' | ')}` : 'Comando atualizado.');
+        detalhes.delete(String(id));
         await carregar();
       } catch (err) {
         avisar(err.message, true);
@@ -871,15 +1132,17 @@
       }
       return;
     }
-
     if (acao === 'excluir' && !confirm('Excluir este dot? As páginas continuam na Biblioteca.')) return;
+    if (!['rodar', 'pausar', 'retomar', 'excluir'].includes(acao)) return;
 
     botao.disabled = true;
     try {
       if (acao === 'excluir') {
         await api(`/api/dots/${id}`, { method: 'DELETE' });
-        abertos.delete(String(id));
         logs.delete(String(id));
+        detalhes.delete(String(id));
+        fecharPainel();
+        selecionado = 'novo';
       } else {
         await api(`/api/dots/${id}/${acao}`, { method: 'POST' });
       }
@@ -890,21 +1153,7 @@
     }
   });
 
-  async function salvarNome(campo) {
-    const id = campo.closest('[data-dot]')?.dataset.dot;
-    const nome = campo.value.trim();
-    if (!id || !nome || nome === campo.defaultValue) return;
-    try {
-      await api(`/api/dots/${id}`, { method: 'PATCH', body: JSON.stringify({ nome }) });
-      campo.defaultValue = nome;
-      avisar('Nome salvo.');
-    } catch (err) {
-      campo.value = campo.defaultValue;
-      avisar(err.message, true);
-    }
-  }
-
-  el.lista.addEventListener('change', async (e) => {
+  el.painelCorpo.addEventListener('change', async (e) => {
     if (!e.target.matches('[data-provedor]')) return;
     const id = e.target.closest('[data-dot]')?.dataset.dot;
     if (!id) return;
@@ -916,35 +1165,35 @@
     }
   });
 
-  // Guarda o texto do comando a cada tecla (sobrevive a um redesenho do cartão).
-  el.lista.addEventListener('input', (e) => {
+  el.painelCorpo.addEventListener('input', (e) => {
     if (!e.target.matches('[data-comando-texto]')) return;
     const id = e.target.closest('[data-dot]')?.dataset.dot;
     if (id) editando.set(String(id), e.target.value);
   });
 
-  el.lista.addEventListener('blur', (e) => {
+  async function salvarNome(campo) {
+    const id = campo.closest('[data-dot]')?.dataset.dot;
+    const nome = campo.value.trim();
+    if (!id || !nome || nome === campo.defaultValue) return;
+    try {
+      await api(`/api/dots/${id}`, { method: 'PATCH', body: JSON.stringify({ nome }) });
+      campo.defaultValue = nome;
+      avisar('Nome salvo.');
+      await carregar();
+    } catch (err) {
+      campo.value = campo.defaultValue;
+      avisar(err.message, true);
+    }
+  }
+
+  el.painelCorpo.addEventListener('blur', (e) => {
     if (e.target.matches('[data-nome]')) salvarNome(e.target);
   }, true);
-
-  el.lista.addEventListener('keydown', (e) => {
+  el.painelCorpo.addEventListener('keydown', (e) => {
     if (!e.target.matches('[data-nome]')) return;
     if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
     if (e.key === 'Escape') { e.target.value = e.target.defaultValue; e.target.blur(); }
   });
-
-  el.lista.addEventListener('toggle', async (e) => {
-    const det = e.target;
-    if (!det.matches('[data-atividade]')) return;
-    const id = det.closest('[data-dot]')?.dataset.dot;
-    if (!id) return;
-    if (det.open) {
-      abertos.add(String(id));
-      if (!logs.has(String(id))) { await carregarLog(id); await carregar(); }
-    } else {
-      abertos.delete(String(id));
-    }
-  }, true);
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) clearTimeout(timer);
@@ -954,5 +1203,6 @@
   montarCampos();
   carregarProvedores();
   carregarPaginas();
+  renderConversa({ rolar: true });
   carregar();
 })();
