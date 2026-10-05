@@ -310,7 +310,7 @@ async function gerarImagem(id, { sourceUrl, prompt, titulo, materia, recoveryKey
     return { ...imagem, prompt: pedido, model: config.nome };
   } finally {
     liberar();
-    if (page) await page.close().catch(() => {});
+    if (page) await require('./abaEmSegundoPlano').fecharAba(page);
   }
 }
 
@@ -327,7 +327,7 @@ async function recuperarImagem(id, { recoveryKey }) {
     const imagem = await baixarImagem(page, src, config);
     return { ...imagem, model: config.nome };
   } finally {
-    await page.close().catch(() => {});
+    await require('./abaEmSegundoPlano').fecharAba(page);
   }
 }
 

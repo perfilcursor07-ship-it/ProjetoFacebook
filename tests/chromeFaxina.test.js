@@ -1,3 +1,6 @@
+// Registro de abas isolado: os testes nunca tocam o arquivo real do servidor.
+process.env.CHROME_ABAS_REGISTRO = require('path').join(require('os').tmpdir(), `abas-faxina-${process.pid}.json`);
+
 const test = require('node:test');
 const assert = require('node:assert/strict');
 

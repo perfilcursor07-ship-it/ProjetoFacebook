@@ -49,7 +49,15 @@ async function obterBrowser() {
         return await chromium.connectOverCDP(await websocketCdp(), { timeout: 60_000 });
       } catch (cause) {
         if (cause.status) throw cause;
-        throw erro('O Chrome do ChatGPT não respondeu a tempo. Aguarde as gerações atuais e confira o navegador na página /claude antes de tentar novamente.', 503);
+        // A conexão abre, mas o Playwright precisa se ligar a TODAS as abas;
+        // uma aba travada ou abas demais seguram tudo. O log mostra quantas.
+        // Em segundo plano: o diagnóstico nunca atrasa nem troca este erro.
+        const motivo = String(cause?.message || '').split('\n')[0];
+        Promise.resolve()
+          .then(() => resumoDasAbas())
+          .then((abas) => console.warn(`[chrome] conexão com o Chrome do servidor expirou (${abas}): ${motivo}`))
+          .catch(() => {});
+        throw erro('O Chrome do servidor (usado pelo ChatGPT, Grok e Gemini) não respondeu a tempo. Em /claude, clique em “Reiniciar gateway” e tente de novo.', 503);
       }
     })();
     conexaoBrowser = tentativa;
@@ -181,6 +189,30 @@ async function garantirSessaoChatgpt(page, context, credentials) {
     `Não foi possível confirmar a sessão do ChatGPT (${sessao.motivo}). Abra o Chrome em /claude e confira se o ChatGPT carrega normalmente.`,
     503
   );
+}
+
+/** "12 abas: grok.com 5, google.com 4, …" — para o log quando o Chrome trava. */
+async function resumoDasAbas() {
+  try {
+    const ws = await websocketCdp();
+    const base = ws.replace(/^ws:\/\//, 'http://').replace(/\/devtools\/.*$/, '');
+    const { data } = await axios.get(`${base}/json/list`, { timeout: 4000 });
+    const paginas = (Array.isArray(data) ? data : []).filter((alvo) => alvo?.type === 'page');
+    const porHost = new Map();
+    for (const pagina of paginas) {
+      let host = 'outra';
+      try {
+        host = new URL(pagina.url).host || pagina.url;
+      } catch {
+        // mantém "outra"
+      }
+      porHost.set(host, (porHost.get(host) || 0) + 1);
+    }
+    const lista = [...porHost].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([host, n]) => `${host} ${n}`);
+    return `${paginas.length} abas${lista.length ? `: ${lista.join(', ')}` : ''}`;
+  } catch (err) {
+    return `abas desconhecidas (${err.message})`;
+  }
 }
 
 async function websocketCdp() {
@@ -707,7 +739,7 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey
     return { ...result, prompt: pedido, model: CHATGPT_MODEL };
   } finally {
     liberarPreparacao();
-    if (page) await page.close().catch(() => {});
+    if (page) await require('./abaEmSegundoPlano').fecharAba(page);
   }
 }
 
@@ -734,7 +766,7 @@ async function recuperarImagem({ recoveryKey }) {
     const result = await baixarImagemDaPagina(page, src);
     return { ...result, model: CHATGPT_MODEL };
   } finally {
-    await page.close().catch(() => {});
+    await require('./abaEmSegundoPlano').fecharAba(page);
   }
 }
 

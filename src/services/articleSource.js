@@ -851,7 +851,7 @@ async function extrairMetadadosViaChrome(urlReal) {
     console.warn('extrairMetadadosArtigo Chrome:', err.message);
     return null;
   } finally {
-    if (page) await page.close().catch(() => {});
+    if (page) await require('./abaEmSegundoPlano').fecharAba(page);
     if (contextoCriado) await contextoCriado.close().catch(() => {});
   }
 }
@@ -914,7 +914,7 @@ async function carregarHtmlViaChrome(urlReal, { marcador = '', timeoutMs = 30_00
     console.warn('[mais-lidas] Chrome:', err.message);
     return null;
   } finally {
-    if (page) await page.close().catch(() => {});
+    if (page) await require('./abaEmSegundoPlano').fecharAba(page);
     if (contextoCriado) await contextoCriado.close().catch(() => {});
   }
 }
