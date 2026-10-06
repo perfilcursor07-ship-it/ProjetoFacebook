@@ -1457,3 +1457,26 @@ body.dm-aberto { overflow: hidden; }
 /* A lista de fontes não herda o recuo das listas comuns da prévia. */
 .dm-previa .dm-fontes { padding-left: 0; list-style: none; }
 .dm-previa .dm-avisos { padding-left: 1.6rem; }
+
+/* Botão dentro do aviso do dot ("Trocar a IA"). */
+.d-banner-acao { display: inline-flex; flex: none; width: auto; height: 1.7rem; margin-left: .4rem; vertical-align: middle; }
+
+/* Seletor de página nos diálogos de publicar e agendar. */
+.dc-dialogo-select { margin-top: .4rem; height: 2.6rem; color-scheme: dark; cursor: pointer; }
+
+/* Cartão com ações: "Publicar" na linha toda; "Agendar" e "⋯" embaixo. */
+.d-grade:has(.d-arte--acoes) { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.d-arte--acoes .d-arte-acoes { flex-wrap: wrap; }
+.d-arte--acoes .d-acao--principal { flex: 1 1 100%; }
+.d-arte--acoes .d-acao:not(.d-acao--principal):not(.d-acao--icone) { flex: 1 1 0; }
+@media (max-width: 560px) {
+  /* Com os botões em duas linhas, o texto cabe também no celular. */
+  .d-arte--acoes .d-arte-acoes .d-acao span { display: inline; }
+  .d-arte--acoes .d-arte-acoes .d-acao { padding: 0 .55rem; }
+}
+
+/* Segmento com texto longo ("Limpar texto da foto") quebra linha sem estourar. */
+.dm-segmentos .d-segmento span { height: auto; min-height: 2.15rem; padding: .3rem .45rem; text-align: center; line-height: 1.2; }
+@media (max-width: 560px) {
+  .d-arte--acoes .d-arte-acoes .d-acao--icone { flex: 0 0 2.6rem; width: 2.6rem; padding: 0; }
+}

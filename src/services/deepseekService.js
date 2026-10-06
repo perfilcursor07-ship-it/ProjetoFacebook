@@ -142,8 +142,16 @@ function tokenFreeDisponivel() {
   return require('./tokenFreeGatewayService').isConfigured();
 }
 
-/** Esta chamada especifica vai no gateway local? */
+/**
+ * Esta chamada especifica vai no gateway local?
+ *
+ * Provedor fixado para a chamada (dot com "IA que escreve" escolhida) manda:
+ * o gateway só entra quando ninguém fixou outro. Antes, com
+ * AI_PROVIDER=token-free, o dot escolhido em DeepSeek escrevia pelo gateway
+ * mesmo assim — e falhava junto com ele.
+ */
 function usarTokenFree(tarefa = 'conversa') {
+  if (provedorForcado()) return false;
   return require('./tokenFreeGatewayService').cobreTarefa(tarefa);
 }
 

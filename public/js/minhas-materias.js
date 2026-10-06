@@ -357,14 +357,20 @@
     setTimeout(iniciarAtualizacao, 100);
   }
 
-  /** Seleção em lote — só na aba Rascunhos */
-  (function initBulkRascunhos() {
-    if (st !== 'rascunho') return;
+  /**
+   * Seleção em lote — nas abas com matéria que ainda pode sair (Rascunhos,
+   * Prontas, Erros): publicar agora ou agendar várias de uma vez. Excluir
+   * continua só nos Rascunhos.
+   */
+  (function initBulk() {
+    if (!['rascunho', 'pronto', 'erro'].includes(st)) return;
     const selectAll = document.getElementById('mia-select-all');
     const bulkDelete = document.getElementById('mia-bulk-delete');
     const bulkDeleteAll = document.getElementById('mia-bulk-delete-all');
+    const bulkPublicar = document.getElementById('mia-bulk-publicar');
+    const bulkAgendar = document.getElementById('mia-bulk-agendar');
     const selectedCountEl = document.getElementById('mia-selected-count');
-    if (!list || !selectAll || !bulkDelete) return;
+    if (!list || !selectAll) return;
 
     function checks() {
       return Array.from(list.querySelectorAll('.mia-matter-check'));
@@ -383,7 +389,9 @@
       if (selectedCountEl) {
         selectedCountEl.textContent = ids.length + ' selecionada(s)';
       }
-      bulkDelete.disabled = ids.length === 0;
+      if (bulkDelete) bulkDelete.disabled = ids.length === 0;
+      if (bulkPublicar) bulkPublicar.disabled = ids.length === 0;
+      if (bulkAgendar) bulkAgendar.disabled = ids.length === 0;
       if (all.length) {
         selectAll.checked = ids.length === all.length;
         selectAll.indeterminate = ids.length > 0 && ids.length < all.length;
@@ -416,7 +424,7 @@
       return data;
     }
 
-    bulkDelete.addEventListener('click', async () => {
+    if (bulkDelete) bulkDelete.addEventListener('click', async () => {
       const ids = selectedIds();
       if (!ids.length) return;
       if (
@@ -471,6 +479,213 @@
           bulkDeleteAll.disabled = false;
           bulkDeleteAll.textContent = old;
         }
+      });
+    }
+
+    // ------------------------------------- publicar agora / agendar em lote
+
+    const fundo = document.getElementById('mm-lote');
+    const el = {
+      titulo: document.getElementById('mm-lote-titulo'),
+      resumo: document.getElementById('mm-lote-resumo'),
+      pagina: document.getElementById('mm-lote-pagina'),
+      inicioBloco: document.getElementById('mm-lote-inicio-bloco'),
+      inicio: document.getElementById('mm-lote-inicio'),
+      intervalo: document.getElementById('mm-lote-intervalo'),
+      intervaloRotulo: document.getElementById('mm-lote-intervalo-rotulo'),
+      horarios: document.getElementById('mm-lote-horarios'),
+      erro: document.getElementById('mm-lote-erro'),
+      confirmar: document.getElementById('mm-lote-confirmar'),
+    };
+    let acaoLote = 'agendar';
+    let idsLote = [];
+    let paginasCarregadas = false;
+
+    const INTERVALOS = {
+      agendar: [[15, '15 min'], [30, '30 min'], [60, '1 hora'], [120, '2 horas'], [180, '3 horas'], [360, '6 horas']],
+      publicar: [[1, '1 min (uma atrás da outra)'], [5, '5 min'], [15, '15 min'], [30, '30 min']],
+    };
+
+    /** "AAAA-MM-DDTHH:mm" no horário de Brasília (Araguaína). */
+    function dataLocal(ms) {
+      return new Intl.DateTimeFormat('sv-SE', {
+        timeZone: 'America/Araguaina',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      }).format(new Date(ms)).replace(' ', 'T').slice(0, 16);
+    }
+
+    /** Converte "AAAA-MM-DDTHH:mm" de Brasília (UTC-3) em milissegundos. */
+    function msDeLocal(valor) {
+      const t = Date.parse(String(valor || '') + ':00-03:00');
+      return Number.isNaN(t) ? NaN : t;
+    }
+
+    function rotuloHora(ms) {
+      return new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'America/Araguaina',
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(new Date(ms));
+    }
+
+    function tituloDa(id) {
+      const row = list.querySelector('.mia-matter-row[data-id="' + id + '"]');
+      return row?.querySelector('.mia-matter-title')?.textContent.trim() || 'Matéria #' + id;
+    }
+
+    function mostrarErro(texto) {
+      el.erro.textContent = texto || '';
+      el.erro.hidden = !texto;
+    }
+
+    /** Mostra antes de confirmar o horário em que cada matéria vai sair. */
+    function desenharHorarios() {
+      const passo = Number(el.intervalo.value) || 30;
+      const base = acaoLote === 'publicar' ? Date.now() : msDeLocal(el.inicio.value);
+      if (Number.isNaN(base)) {
+        el.horarios.innerHTML = '';
+        return;
+      }
+      el.horarios.replaceChildren(
+        ...idsLote.map((id, i) => {
+          const li = document.createElement('li');
+          const quando = document.createElement('b');
+          quando.textContent = acaoLote === 'publicar' && i === 0 ? 'agora' : rotuloHora(base + i * passo * 60_000);
+          const titulo = document.createElement('span');
+          titulo.textContent = tituloDa(id);
+          li.append(quando, titulo);
+          return li;
+        })
+      );
+    }
+
+    async function carregarPaginas() {
+      if (paginasCarregadas) return;
+      try {
+        const res = await fetch('/api/facebook/pages');
+        const data = await res.json().catch(() => ({}));
+        const paginas = Array.isArray(data.pages) ? data.pages : [];
+        el.pagina.replaceChildren();
+        if (!paginas.length) {
+          el.pagina.append(new Option('Nenhuma página ligada à sua conta', ''));
+        } else {
+          el.pagina.append(new Option('Página de cada matéria (ou a padrão)', ''));
+          for (const p of paginas) {
+            el.pagina.append(new Option((p.page_name || 'Página ' + p.id) + (p.is_default ? ' (padrão)' : ''), p.id));
+          }
+        }
+        paginasCarregadas = true;
+      } catch {
+        el.pagina.replaceChildren(new Option('Não consegui carregar as páginas', ''));
+      }
+    }
+
+    async function abrirLote(acao) {
+      idsLote = selectedIds();
+      if (!idsLote.length) return;
+      acaoLote = acao;
+      const n = idsLote.length;
+      const publicar = acao === 'publicar';
+      el.titulo.textContent = publicar ? 'Publicar agora' : 'Agendar';
+      el.resumo.textContent = publicar
+        ? n + (n === 1 ? ' matéria vai ao ar agora.' : ' matérias: a 1ª vai ao ar agora e as outras em sequência.')
+        : n + (n === 1 ? ' matéria será agendada.' : ' matérias serão agendadas, uma depois da outra.');
+      el.confirmar.textContent = publicar ? 'Publicar ' + n : 'Agendar ' + n;
+      el.inicioBloco.hidden = publicar;
+      el.intervaloRotulo.textContent = publicar ? 'Espaço entre uma e outra' : 'Uma a cada';
+      el.intervaloRotulo.hidden = n < 2;
+      el.intervalo.hidden = n < 2;
+      el.intervalo.replaceChildren(...INTERVALOS[acao].map(([v, t]) => new Option(t, v)));
+      el.intervalo.value = publicar ? '5' : '30';
+      mostrarErro('');
+
+      if (!publicar) {
+        let inicial = null;
+        try {
+          const res = await fetch('/api/materias-ia/agenda/proximo-slot');
+          inicial = (await res.json().catch(() => ({}))).proximoSlotLocal || null;
+        } catch {
+          inicial = null;
+        }
+        const minimo = dataLocal(Date.now() + 5 * 60_000);
+        el.inicio.min = minimo;
+        el.inicio.value = inicial && inicial > minimo ? inicial : dataLocal(Date.now() + 30 * 60_000);
+      }
+
+      fundo.hidden = false;
+      desenharHorarios();
+      await carregarPaginas();
+      (publicar ? el.pagina : el.inicio).focus();
+    }
+
+    function fecharLote() {
+      fundo.hidden = true;
+    }
+
+    async function confirmarLote() {
+      if (acaoLote === 'agendar') {
+        const base = msDeLocal(el.inicio.value);
+        if (Number.isNaN(base) || base <= Date.now() + 60_000) {
+          mostrarErro('Escolha um dia e hora no futuro.');
+          return el.inicio.focus();
+        }
+      }
+      if (paginasCarregadas && el.pagina.options.length === 1 && !el.pagina.value) {
+        mostrarErro('Conecte uma página do Facebook antes de publicar ou agendar.');
+        return;
+      }
+      el.confirmar.disabled = true;
+      const textoBotao = el.confirmar.textContent;
+      el.confirmar.textContent = acaoLote === 'publicar' ? 'Enviando…' : 'Agendando…';
+      mostrarErro('');
+      try {
+        const res = await fetch('/api/materias-ia/matters/lote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            acao: acaoLote,
+            ids: idsLote,
+            facebook_page_id: el.pagina.value || null,
+            inicio: acaoLote === 'agendar' ? el.inicio.value : null,
+            intervalo_minutos: Number(el.intervalo.value) || 30,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Falha ao ' + (acaoLote === 'publicar' ? 'publicar' : 'agendar'));
+        const falhas = Array.isArray(data.falhas) ? data.falhas : [];
+        if (falhas.length) {
+          alert(
+            data.feitas + ' de ' + idsLote.length + ' na fila.\n\nFicaram de fora:\n' +
+              falhas.map((f) => '• ' + tituloDa(f.id) + ': ' + f.motivo).join('\n')
+          );
+        }
+        // As que entraram na fila agora estão na aba Agendadas.
+        window.location.href = data.feitas ? '/minhas-materias?status=agendado' : window.location.href;
+      } catch (err) {
+        mostrarErro(err.message || 'Erro');
+        el.confirmar.disabled = false;
+        el.confirmar.textContent = textoBotao;
+      }
+    }
+
+    if (fundo) {
+      bulkPublicar?.addEventListener('click', () => abrirLote('publicar'));
+      bulkAgendar?.addEventListener('click', () => abrirLote('agendar'));
+      el.inicio.addEventListener('input', desenharHorarios);
+      el.intervalo.addEventListener('change', desenharHorarios);
+      fundo.addEventListener('click', (e) => {
+        if (e.target === fundo || e.target.closest('[data-lote="cancelar"]')) return fecharLote();
+        if (e.target.closest('[data-lote="confirmar"]')) confirmarLote();
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !fundo.hidden) fecharLote();
       });
     }
 

@@ -68,7 +68,10 @@ test('o pedido salvo pode ser editado sem recriar o dot', () => {
   assert.match(dots, /async function atualizar\(userId, dotId, \{ nome, provedor, objetivo \}\)/);
   // Reinterpreta e recadastra as páginas, sem perder ritmo nem histórico.
   assert.match(dots, /dados\.plano = JSON\.stringify\(\{ \.\.\.anterior, \.\.\.plano \}\)/);
-  assert.match(dots, /cadastrarFontes\(dot, extrairUrls\(texto\)\)/);
+  // Fonte já achada pelo nome não é procurada de novo; o que o editor mexeu
+  // pelo painel continua valendo.
+  assert.match(dots, /montarPlano\(texto, \{ anterior \}\)/);
+  assert.match(dots, /cadastrarFontes\(dot, plano\)/);
 
   const rota = fs.readFileSync('src/routes/dots.js', 'utf8');
   assert.match(rota, /objetivo: req\.body\.objetivo/);
@@ -78,5 +81,5 @@ test('o cadastro de páginas é um só, usado na criação e na edição', () =>
   const dots = fs.readFileSync('src/services/dotsService.js', 'utf8');
   const ocorrencias = (dots.match(/async function cadastrarFontes/g) || []).length;
   assert.equal(ocorrencias, 1, 'duplicar essa lógica faria as duas divergirem');
-  assert.match(dots, /const \{ fonteIds, problemas \} = await cadastrarFontes\(dot, urls\)/);
+  assert.match(dots, /const \{ fonteIds, problemas \} = await cadastrarFontes\(dot, plano\)/);
 });

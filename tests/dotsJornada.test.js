@@ -156,7 +156,8 @@ test('a IA deixou de deduzir ritmo, destino e quantidade', () => {
   for (const campo of ['intervalo_minutos', 'materias_por_volta', 'limite_dia', 'agendar_minutos']) {
     assert.doesNotMatch(prompt, new RegExp(campo), `${campo} não pode mais vir da IA`);
   }
-  assert.match(prompt, /só estes quatro/, 'o prompt tem de deixar isso explícito');
+  assert.match(prompt, /Campos \(só estes\)/, 'o prompt tem de deixar isso explícito');
+  assert.match(prompt, /NÃO tente deduzir nada/, 'ritmo e destino são da tela');
 });
 
 test('o ChatGPT recebe ordem de limpar o texto, não de criar outra cena', () => {

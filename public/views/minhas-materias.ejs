@@ -125,6 +125,8 @@
     if (/^https?:\/\//i.test(fonte) || fonte.startsWith('/')) return fonte;
     return '';
   }
+  // Abas com matéria que ainda pode sair: dá para escolher várias e agendar ou publicar.
+  const selecionavel = ['rascunho', 'pronto', 'erro'].includes(activeStatus);
   const pages = pageWindow(pag.page, pag.totalPages, 5);
   const fromItem = pag.total === 0 ? 0 : (pag.page - 1) * pag.perPage + 1;
   const toItem = Math.min(pag.page * pag.perPage, pag.total);
@@ -250,7 +252,7 @@
         </p>
       </div>
 
-      <% if (activeStatus === 'rascunho') { %>
+      <% if (selecionavel) { %>
         <div id="mia-bulk-bar" class="matters-bulk d-card mt-3">
           <label class="inline-flex cursor-pointer items-center gap-2 text-xs" style="color: var(--d-texto-2)">
             <input type="checkbox" id="mia-select-all" class="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500/40" />
@@ -258,11 +260,21 @@
           </label>
           <span id="mia-selected-count" class="d-stat">0 selecionada(s)</span>
           <div class="ml-auto flex flex-wrap items-center gap-1.5">
+            <button type="button" id="mia-bulk-publicar" disabled
+              class="d-btn d-btn--principal disabled:cursor-not-allowed disabled:opacity-40">
+              Publicar agora
+            </button>
+            <button type="button" id="mia-bulk-agendar" disabled
+              class="d-btn d-btn--neutro disabled:cursor-not-allowed disabled:opacity-40">
+              Agendar
+            </button>
+            <% if (activeStatus === 'rascunho') { %>
             <button type="button" id="mia-bulk-delete" disabled
               class="d-btn d-btn--neutro d-btn--perigo disabled:cursor-not-allowed disabled:opacity-40">
               Excluir selecionadas
             </button>
-            <% if (pag.total > 0) { %>
+            <% } %>
+            <% if (activeStatus === 'rascunho' && pag.total > 0) { %>
               <button type="button" id="mia-bulk-delete-all"
                 class="d-btn d-btn--fantasma d-btn--perigo"
                 data-total="<%= pag.total %>"
@@ -274,9 +286,9 @@
         </div>
       <% } %>
 
-      <ul id="mia-matters-list" class="mia-matters-list d-card mt-3 <%= activeStatus === 'rascunho' ? 'is-select' : '' %>">
+      <ul id="mia-matters-list" class="mia-matters-list d-card mt-3 <%= selecionavel ? 'is-select' : '' %>">
         <li class="mia-matters-head" aria-hidden="true">
-          <% if (activeStatus === 'rascunho') { %><span></span><% } %>
+          <% if (selecionavel) { %><span></span><% } %>
           <span></span>
           <span>Matéria</span>
           <span>Quando</span>
@@ -307,13 +319,13 @@
           <li class="mia-matter-row group"
             data-id="<%= item.id %>"
             data-status="<%= st %>">
-            <% if (activeStatus === 'rascunho') { %>
+            <% if (selecionavel) { %>
               <label class="flex shrink-0 cursor-pointer items-center justify-center">
                 <input type="checkbox"
                   class="mia-matter-check h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500/40"
                   value="<%= item.id %>"
                   data-id="<%= item.id %>"
-                  aria-label="Selecionar rascunho" />
+                  aria-label="Selecionar matéria" />
               </label>
             <% } %>
             <a href="/materias-ia/<%= item.id %>"
@@ -443,5 +455,51 @@
     <% } %>
   </main>
 
-  <script src="/js/minhas-materias.js?v=20260828menu"></script>
+  <% if (selecionavel && mattersList.length) { %>
+    <!-- Publicar agora / agendar as matérias selecionadas -->
+    <div id="mm-lote" class="mm-lote-fundo" hidden>
+      <div class="mm-lote" role="dialog" aria-modal="true" aria-labelledby="mm-lote-titulo">
+        <h3 id="mm-lote-titulo">Agendar</h3>
+        <p id="mm-lote-resumo" class="mm-lote-resumo"></p>
+
+        <label class="mm-lote-rotulo" for="mm-lote-pagina">Publicar em</label>
+        <select id="mm-lote-pagina" class="mm-lote-campo"><option value="">Carregando páginas…</option></select>
+
+        <div id="mm-lote-inicio-bloco">
+          <label class="mm-lote-rotulo" for="mm-lote-inicio">Começar em (horário de Brasília)</label>
+          <input id="mm-lote-inicio" type="datetime-local" class="mm-lote-campo" step="300" />
+        </div>
+
+        <label class="mm-lote-rotulo" for="mm-lote-intervalo" id="mm-lote-intervalo-rotulo">Uma a cada</label>
+        <select id="mm-lote-intervalo" class="mm-lote-campo"></select>
+
+        <ul id="mm-lote-horarios" class="mm-lote-horarios"></ul>
+        <p id="mm-lote-erro" class="mm-lote-erro" role="alert" hidden></p>
+
+        <div class="mm-lote-acoes">
+          <button type="button" class="d-btn d-btn--fantasma" data-lote="cancelar">Cancelar</button>
+          <button type="button" class="d-btn d-btn--principal" data-lote="confirmar" id="mm-lote-confirmar">Agendar</button>
+        </div>
+      </div>
+    </div>
+    <style>
+      .mm-lote-fundo { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgba(3, 6, 12, .7); backdrop-filter: blur(6px); }
+      .mm-lote-fundo[hidden] { display: none; }
+      .mm-lote { width: min(100%, 30rem); max-height: 92vh; overflow-y: auto; border: 1px solid rgba(255, 255, 255, .09); border-radius: 1.1rem; background: #111826; padding: 1.3rem 1.35rem 1.15rem; color: var(--d-texto); box-shadow: 0 40px 90px -30px rgba(0, 0, 0, .9); }
+      .mm-lote h3 { font-size: 1.05rem; font-weight: 700; }
+      .mm-lote-resumo { margin-top: .35rem; font-size: .84rem; color: var(--d-texto-2); }
+      .mm-lote-rotulo { display: block; margin-top: .95rem; font-size: .76rem; font-weight: 600; color: #cbd5e1; }
+      .mm-lote-campo { width: 100%; height: 2.6rem; margin-top: .4rem; border: 1px solid rgba(255, 255, 255, .12); border-radius: .7rem; background: rgba(0, 0, 0, .3); padding: 0 .8rem; color: var(--d-texto); font-size: .86rem; color-scheme: dark; }
+      .mm-lote-campo:focus { outline: none; border-color: rgba(52, 211, 153, .45); box-shadow: 0 0 0 3px rgba(52, 211, 153, .16); }
+      .mm-lote-horarios { margin: .8rem 0 0; padding: .6rem .8rem; border: 1px solid rgba(255, 255, 255, .07); border-radius: .75rem; background: rgba(4, 7, 13, .45); list-style: none; font-size: .76rem; color: var(--d-texto-2); max-height: 11rem; overflow-y: auto; }
+      .mm-lote-horarios li { display: flex; gap: .6rem; padding: .18rem 0; }
+      .mm-lote-horarios b { flex: 0 0 auto; min-width: 6.5rem; color: #6ee7b7; font-variant-numeric: tabular-nums; }
+      .mm-lote-horarios span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .mm-lote-erro { margin-top: .7rem; font-size: .8rem; color: #fda4af; }
+      .mm-lote-acoes { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1.1rem; }
+      .mm-lote-acoes .d-btn:disabled { opacity: .55; cursor: progress; }
+    </style>
+  <% } %>
+
+  <script src="/js/minhas-materias.js?v=20261005lote1"></script>
 <%- include('partials/app-end') %>

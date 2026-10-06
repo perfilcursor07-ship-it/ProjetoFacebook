@@ -1201,6 +1201,32 @@ async function agendar(req, res, next) {
   }
 }
 
+/** Agenda ou publica várias matérias selecionadas de uma vez. */
+async function lote(req, res, next) {
+  try {
+    const body = req.body || {};
+    const result = await materiaIaService.filaEmLote({
+      userId: req.session.userId,
+      ids: body.ids,
+      acao: body.acao,
+      facebookPageId: body.facebook_page_id || null,
+      inicio: body.inicio || null,
+      intervaloMinutos: body.intervalo_minutos,
+    });
+    if (result.acao === 'agendar') {
+      const agendaService = require('../services/bibliotecaAgendaService');
+      for (const r of result.resultados.filter((x) => x.ok)) {
+        await agendaService
+          .sincronizarAgendamentoDaMateria(req.session.userId, r.id, r.quando)
+          .catch((err) => console.warn('[materias-ia] sync agenda (lote):', err.message));
+      }
+    }
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+}
+
 /** Tira a matéria da agenda (volta a rascunho e cancela a publicação marcada). */
 async function desagendar(req, res, next) {
   try {
@@ -1905,6 +1931,7 @@ module.exports = {
   obterMateria,
   proximoSlotAgenda,
   desagendar,
+  lote,
   removerMateria,
   removerMateriasLote,
   atualizarMateria,

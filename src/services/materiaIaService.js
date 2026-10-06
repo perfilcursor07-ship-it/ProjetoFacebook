@@ -1434,6 +1434,100 @@ async function agendarMateria({ userId, matterId, runAt }) {
 }
 
 /**
+ * Põe várias matérias na fila de uma vez, na ordem em que foram escolhidas.
+ *
+ * - agendar: a 1ª no horário de início, as outras uma a cada N minutos;
+ * - publicar: a 1ª agora, as outras espaçadas — soltar todas no mesmo
+ *   minuto na mesma página parece spam para o Facebook.
+ *
+ * Quem publica é a fila (tickFilaJobs), igual ao agendamento de uma só.
+ * Matéria já publicada, de outro usuário ou sem página fica de fora, com o
+ * motivo; as demais seguem.
+ */
+async function filaEmLote({ userId, ids, acao, facebookPageId = null, inicio = null, intervaloMinutos = 30 }) {
+  const erroLote = (mensagem) => Object.assign(new Error(mensagem), { status: 400 });
+  const lista = [...new Set((Array.isArray(ids) ? ids : []).map(Number))]
+    .filter((id) => Number.isInteger(id) && id > 0)
+    .slice(0, 100);
+  if (!lista.length) throw erroLote('Selecione ao menos uma matéria.');
+  if (!['agendar', 'publicar'].includes(acao)) throw erroLote('Ação inválida.');
+
+  const minimo = acao === 'publicar' ? 1 : 5;
+  const intervalo = Math.min(1440, Math.max(minimo, Math.trunc(Number(intervaloMinutos)) || 30));
+
+  const resolver = require('./facebookPageResolver');
+  let paginaEscolhida = null;
+  if (facebookPageId) {
+    const page = await resolver.resolvePageForUser(userId, facebookPageId);
+    if (!page) throw erroLote('Esta página do Facebook não está ligada à sua conta.');
+    paginaEscolhida = Number(page.id);
+  }
+  const paginaPadrao = paginaEscolhida ? null : await resolver.defaultPageIdForUser(userId).catch(() => null);
+
+  let base = new Date();
+  if (acao === 'agendar') {
+    base = parseScheduleDate(inicio);
+    if (Number.isNaN(base.getTime()) || base <= new Date()) {
+      throw erroLote('Escolha um horário de início no futuro (horário de Brasília).');
+    }
+  }
+
+  const materias = await db('ai_matters')
+    .whereIn('id', lista)
+    .where({ user_id: userId })
+    .select('id', 'status', 'facebook_page_id', 'titulo');
+  const porId = new Map(materias.map((m) => [Number(m.id), m]));
+
+  const resultados = [];
+  let posicao = 0;
+  for (const id of lista) {
+    const m = porId.get(id);
+    if (!m) {
+      resultados.push({ id, ok: false, motivo: 'Matéria não encontrada.' });
+      continue;
+    }
+    if (m.status === 'publicado') {
+      resultados.push({ id, ok: false, motivo: 'Já foi publicada.' });
+      continue;
+    }
+    const pagina = paginaEscolhida || Number(m.facebook_page_id) || Number(paginaPadrao) || null;
+    if (!pagina) {
+      resultados.push({ id, ok: false, motivo: 'Sem página do Facebook: escolha uma.' });
+      continue;
+    }
+    try {
+      if (Number(m.facebook_page_id) !== pagina) await AiMatters.update(id, { facebook_page_id: pagina });
+      const quando = new Date(base.getTime() + posicao * intervalo * 60_000);
+      let runAt = quando;
+      if (acao === 'agendar') {
+        runAt = (await agendarMateria({ userId, matterId: id, runAt: quando.toISOString() })).runAt;
+      } else {
+        await AiMatters.update(id, { status: 'agendado', scheduled_at: quando });
+        const pendente = await db('ai_fila_jobs').where({ matter_id: id, status: 'pendente' }).orderBy('id', 'desc').first('id');
+        if (pendente) await AiFilaJobs.update(pendente.id, { run_at: quando });
+        else {
+          await AiFilaJobs.create({
+            user_id: userId,
+            matter_id: id,
+            run_at: quando,
+            status: 'pendente',
+            payload: JSON.stringify({ action: 'publish', matterId: id, origem: 'lote' }),
+          });
+        }
+      }
+      resultados.push({ id, ok: true, quando: runAt });
+      posicao += 1;
+    } catch (err) {
+      resultados.push({ id, ok: false, motivo: err.message });
+    }
+  }
+
+  const feitas = resultados.filter((r) => r.ok);
+  console.log(`[lote] ${acao}: ${feitas.length}/${lista.length} matéria(s) na fila, uma a cada ${intervalo} min`);
+  return { acao, feitas: feitas.length, falhas: resultados.filter((r) => !r.ok), resultados, intervaloMinutos: intervalo };
+}
+
+/**
  * Tira a matéria da agenda: ela volta a rascunho e o job da fila é cancelado.
  * Só mudar o status não bastava — o job pendente publicaria na hora marcada.
  * A agenda da Biblioteca também é cancelada, senão o reparo de agendamentos
@@ -4254,6 +4348,7 @@ module.exports = {
   tickMonitores,
   agendarMateria,
   desagendarMateria,
+  filaEmLote,
   repararAgendamentosSobrepostos,
   obterUltimoAgendamento,
   formatarHorarioAgendamento,

@@ -537,10 +537,14 @@
     }
   }
 
+  /** Páginas do editor (para os diálogos de publicar e agendar). */
+  let paginasCache = [];
+
   async function carregarPaginas() {
     try {
       const dados = await api('/api/facebook/pages');
       const paginas = Array.isArray(dados.pages) ? dados.pages : [];
+      paginasCache = paginas;
       el.pagina.innerHTML = '';
       el.pagina.append(new Option('Sem página (só rascunho)', ''));
       for (const p of paginas) {
@@ -625,7 +629,7 @@
     const pct = dot.limite_dia ? Math.min(100, Math.round((dot.feitas_hoje / dot.limite_dia) * 100)) : 0;
     return `
       <div class="d-stats mt-2">
-        <span class="d-stat">${icone('paginas')}<b>${dot.fontes}</b> páginas</span>
+        <span class="d-stat">${icone('radar')}<b>${dot.fontes}</b> ${dot.fontes === 1 ? 'fonte' : 'fontes'}</span>
         <span class="d-stat">${icone('relogio')}<b>${dot.materias_por_volta || 1}</b> a cada <b>${dot.intervalo_minutos}</b> min</span>
         <span class="d-stat">${icone('imagem')}${ROTULO_IMAGEM[dot.modo_imagem] || 'foto original'}</span>
         <span class="d-stat">${icone('folha')}<b>${dot.feitas_hoje}</b>/${dot.limite_dia} hoje</span>
@@ -718,7 +722,10 @@
       return '<div class="d-banner d-banner--pausado">⏸️ <span><b>Pausado.</b> Clique em “Retomar” para eu voltar a trabalhar.</span></div>';
     }
     if (dot.ultimo_erro) {
-      return `<div class="d-banner d-banner--erro">⚠️ <span><b>Precisa de atenção:</b> ${escapar(dot.ultimo_erro)}</span></div>`;
+      const trocarIa = /IA que escreve/i.test(dot.ultimo_erro)
+        ? ' <button type="button" class="d-acao d-banner-acao" data-acao="painel" data-aba="config">Trocar a IA</button>'
+        : '';
+      return `<div class="d-banner d-banner--erro">⚠️ <span><b>Precisa de atenção:</b> ${escapar(dot.ultimo_erro)}${trocarIa}</span></div>`;
     }
     const resta = Math.max(0, dot.limite_dia - dot.feitas_hoje);
     const quandoVolta = dot.proxima_execucao_at ? `às ${horaCurta(dot.proxima_execucao_at)}` : 'em breve';
@@ -953,9 +960,12 @@
           <button type="button" data-acao="editar-comando" class="d-btn d-btn--fantasma shrink-0">✏️ Editar</button>
         </div>
         <div class="d-mat-chips mt-1.5">
-          ${palavras.length ? `<span class="d-chip d-chip--palavra">🔎 ${escapar(palavras.join(', '))}</span>` : '<span class="d-chip">🔎 qualquer assunto</span>'}
+          ${(Array.isArray(dot.pesquisas) ? dot.pesquisas : []).map((p) => `<span class="d-chip d-chip--fonte">${seloPlataforma('busca', 'd-plat--mini')}“${escapar(p)}”</span>`).join('')}
+          ${palavras.length ? `<span class="d-chip d-chip--palavra">🔎 só se citar ${escapar(palavras.join(', '))}</span>` : ''}
+          ${plano.recorte ? `<span class="d-chip d-chip--palavra">${icone('radar')} só ${escapar(plano.recorte)}</span>` : ''}
+          ${!palavras.length && !plano.recorte && !(dot.pesquisas || []).length ? '<span class="d-chip">🔎 qualquer assunto</span>' : ''}
           ${plano.estilo ? `<span class="d-chip">🎯 ${escapar(plano.estilo)}</span>` : ''}
-          <span class="d-chip">📡 ${dot.fontes} ${dot.fontes === 1 ? 'página' : 'páginas'}</span>
+          <button type="button" class="d-chip" data-acao="aba" data-aba="fontes">📡 ${dot.fontes} ${dot.fontes === 1 ? 'fonte' : 'fontes'}</button>
         </div>
       </div>`;
   }
@@ -1168,7 +1178,7 @@
     renderTopo();
     el.objetivo.placeholder = dot
       ? `Mensagem para ${dot.nome}`
-      : 'Diga o assunto e onde procurar (nomes ou links)…';
+      : 'Diga o assunto e onde procurar…';
     el.mais.hidden = Boolean(dot);
     if (dot) fecharAjustes();
     atualizarResumoAjustes();
@@ -1750,12 +1760,100 @@
       || null;
   }
 
+  /** Página onde a matéria vai sair: a dela, a do dot ou a padrão da conta. */
+  function paginaInicial(m, dot) {
+    const padrao = paginasCache.find((p) => p.is_default) || paginasCache[0];
+    return String(m.facebook_page_id || dot.facebook_page_id || padrao?.id || '');
+  }
+
+  function seletorDePagina(id, selecionada) {
+    if (!paginasCache.length) {
+      return '<p class="dc-ag-erro">Nenhuma página do Facebook ligada à sua conta. Conecte uma em Páginas.</p>';
+    }
+    return `
+      <label class="dc-ag-rotulo" for="${id}">Publicar em</label>
+      <select id="${id}" class="dc-dialogo-campo dc-dialogo-select" data-pagina-escolhida>
+        ${paginasCache.map((p) => `<option value="${p.id}"${String(p.id) === String(selecionada) ? ' selected' : ''}>${escapar(p.page_name || `Página ${p.id}`)}${p.is_default ? ' (padrão)' : ''}</option>`).join('')}
+      </select>`;
+  }
+
   /**
-   * Dia e hora para agendar, com atalhos. Começa no próximo horário livre da
-   * agenda (o mesmo do /materia-manual) ou no horário atual, se já agendada.
-   * Devolve "AAAA-MM-DDTHH:mm" no horário de Brasília, ou null.
+   * Diálogo com campos próprios (publicar, agendar). `ler(fundo)` devolve o
+   * resultado — ou null para manter o diálogo aberto (ex.: horário inválido).
    */
-  async function dialogoAgendar(m, pagina) {
+  function dialogoComCampos(html, ler) {
+    return new Promise((resolve) => {
+      const fundo = document.createElement('div');
+      fundo.className = 'dc-dialogo-fundo';
+      fundo.innerHTML = html;
+      document.body.append(fundo);
+      const fechar = (valor) => {
+        fundo.classList.remove('is-on');
+        setTimeout(() => fundo.remove(), 180);
+        document.removeEventListener('keydown', teclas, true);
+        resolve(valor);
+      };
+      const confirmar = () => {
+        const valor = ler(fundo);
+        if (valor) fechar(valor);
+      };
+      const teclas = (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          fechar(null);
+        } else if (e.key === 'Enter' && e.target?.tagName !== 'SELECT') {
+          e.preventDefault();
+          confirmar();
+        }
+      };
+      document.addEventListener('keydown', teclas, true);
+      fundo.addEventListener('click', (e) => {
+        if (e.target === fundo) return fechar(null);
+        const atalho = e.target.closest('[data-ag]');
+        if (atalho) {
+          const campo = fundo.querySelector('#dc-ag-quando');
+          const v = atalho.dataset.ag;
+          campo.value = v === 'amanha'
+            ? `${dataLocal(Date.now() + 86_400_000).slice(0, 10)}T08:00`
+            : dataLocal(Date.now() + Number(v) * 60_000);
+          fundo.querySelector('.dc-ag-erro').hidden = true;
+          return;
+        }
+        const botao = e.target.closest('[data-resposta]');
+        if (botao && !botao.disabled) {
+          if (botao.dataset.resposta === 'sim') confirmar();
+          else fechar(null);
+        }
+      });
+      requestAnimationFrame(() => fundo.classList.add('is-on'));
+      (fundo.querySelector('#dc-ag-quando') || fundo.querySelector('[data-resposta="sim"]'))?.focus();
+    });
+  }
+
+  /** Confirma a publicação e deixa escolher a página. Devolve { paginaId } ou null. */
+  function dialogoPublicar(m, dot) {
+    return dialogoComCampos(`
+      <div class="dc-dialogo dc-dialogo--agendar" role="dialog" aria-modal="true" aria-labelledby="dc-pub-titulo">
+        <h3 id="dc-pub-titulo">Publicar agora?</h3>
+        <p class="dc-ag-materia">${escapar(m.titulo || 'Matéria')}<small>Vai ao ar assim que você confirmar.</small></p>
+        ${seletorDePagina('dc-pub-pagina', paginaInicial(m, dot))}
+        <div class="dc-dialogo-acoes">
+          <button type="button" class="dc-botao" data-resposta="nao">Cancelar</button>
+          <button type="button" class="dc-botao dc-botao--principal" data-resposta="sim"${paginasCache.length ? '' : ' disabled'}>${icone('enviar')}<span>Publicar agora</span></button>
+        </div>
+      </div>`, (fundo) => {
+      const paginaId = fundo.querySelector('[data-pagina-escolhida]')?.value;
+      return paginaId ? { paginaId } : null;
+    });
+  }
+
+  /**
+   * Dia, hora e página para agendar, com atalhos. Começa no próximo horário
+   * livre da agenda (o mesmo do /materia-manual) ou no horário atual, se já
+   * agendada. Devolve { quando: "AAAA-MM-DDTHH:mm" (Brasília), paginaId } ou null.
+   */
+  async function dialogoAgendar(m, dot) {
     let inicial = null;
     if (m.status === 'agendado' && m.agendada_para) {
       inicial = dataLocal(new Date(m.agendada_para).getTime());
@@ -1769,81 +1867,50 @@
     const minimo = dataLocal(Date.now() + 2 * 60_000);
     if (!inicial || inicial < minimo) inicial = dataLocal(Date.now() + 30 * 60_000);
 
-    return new Promise((resolve) => {
-      const fundo = document.createElement('div');
-      fundo.className = 'dc-dialogo-fundo';
-      fundo.innerHTML = `
-        <div class="dc-dialogo dc-dialogo--agendar" role="dialog" aria-modal="true" aria-labelledby="dc-ag-titulo">
-          <h3 id="dc-ag-titulo">${m.status === 'agendado' ? 'Mudar o horário' : 'Agendar publicação'}</h3>
-          <p class="dc-ag-materia">${escapar(m.titulo || 'Matéria')}<small>em ${escapar(pagina)}</small></p>
-          <label class="dc-ag-rotulo" for="dc-ag-quando">Dia e hora (horário de Brasília)</label>
-          <input id="dc-ag-quando" type="datetime-local" class="dc-dialogo-campo" value="${inicial}" min="${minimo}" step="300" />
-          <div class="dc-ag-atalhos" role="group" aria-label="Atalhos de horário">
-            <button type="button" data-ag="30">+30 min</button>
-            <button type="button" data-ag="60">+1 hora</button>
-            <button type="button" data-ag="180">+3 horas</button>
-            <button type="button" data-ag="amanha">Amanhã 8h</button>
-          </div>
-          <p class="dc-ag-erro" role="alert" hidden></p>
-          <div class="dc-dialogo-acoes">
-            <button type="button" class="dc-botao" data-resposta="nao">Cancelar</button>
-            <button type="button" class="dc-botao dc-botao--principal" data-resposta="sim">${icone('calendario')}<span>Agendar</span></button>
-          </div>
-        </div>`;
-      document.body.append(fundo);
+    return dialogoComCampos(`
+      <div class="dc-dialogo dc-dialogo--agendar" role="dialog" aria-modal="true" aria-labelledby="dc-ag-titulo">
+        <h3 id="dc-ag-titulo">${m.status === 'agendado' ? 'Mudar o horário' : 'Agendar publicação'}</h3>
+        <p class="dc-ag-materia">${escapar(m.titulo || 'Matéria')}</p>
+        <label class="dc-ag-rotulo" for="dc-ag-quando">Dia e hora (horário de Brasília)</label>
+        <input id="dc-ag-quando" type="datetime-local" class="dc-dialogo-campo" value="${inicial}" min="${minimo}" step="300" />
+        <div class="dc-ag-atalhos" role="group" aria-label="Atalhos de horário">
+          <button type="button" data-ag="30">+30 min</button>
+          <button type="button" data-ag="60">+1 hora</button>
+          <button type="button" data-ag="180">+3 horas</button>
+          <button type="button" data-ag="amanha">Amanhã 8h</button>
+        </div>
+        ${seletorDePagina('dc-ag-pagina', paginaInicial(m, dot))}
+        <p class="dc-ag-erro" role="alert" hidden></p>
+        <div class="dc-dialogo-acoes">
+          <button type="button" class="dc-botao" data-resposta="nao">Cancelar</button>
+          <button type="button" class="dc-botao dc-botao--principal" data-resposta="sim"${paginasCache.length ? '' : ' disabled'}>${icone('calendario')}<span>Agendar</span></button>
+        </div>
+      </div>`, (fundo) => {
       const campo = fundo.querySelector('#dc-ag-quando');
       const erroAg = fundo.querySelector('.dc-ag-erro');
-      const fechar = (valor) => {
-        fundo.classList.remove('is-on');
-        setTimeout(() => fundo.remove(), 180);
-        document.removeEventListener('keydown', teclas, true);
-        resolve(valor);
-      };
-      const confirmar = () => {
-        const valor = campo.value;
-        if (!valor || valor < dataLocal(Date.now() + 60_000)) {
-          erroAg.hidden = false;
-          erroAg.textContent = 'Escolha um dia e hora no futuro.';
-          return campo.focus();
-        }
-        fechar(valor);
-      };
-      const teclas = (e) => {
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          e.stopPropagation();
-          fechar(null);
-        } else if (e.key === 'Enter') {
-          e.preventDefault();
-          confirmar();
-        }
-      };
-      document.addEventListener('keydown', teclas, true);
-      fundo.addEventListener('click', (e) => {
-        if (e.target === fundo) return fechar(null);
-        const atalho = e.target.closest('[data-ag]');
-        if (atalho) {
-          const v = atalho.dataset.ag;
-          campo.value = v === 'amanha'
-            ? `${dataLocal(Date.now() + 86_400_000).slice(0, 10)}T08:00`
-            : dataLocal(Date.now() + Number(v) * 60_000);
-          erroAg.hidden = true;
-          return;
-        }
-        const botao = e.target.closest('[data-resposta]');
-        if (botao) {
-          if (botao.dataset.resposta === 'sim') confirmar();
-          else fechar(null);
-        }
-      });
-      requestAnimationFrame(() => fundo.classList.add('is-on'));
-      campo.focus();
+      const quando = campo.value;
+      if (!quando || quando < dataLocal(Date.now() + 60_000)) {
+        erroAg.hidden = false;
+        erroAg.textContent = 'Escolha um dia e hora no futuro.';
+        campo.focus();
+        return null;
+      }
+      const paginaId = fundo.querySelector('[data-pagina-escolhida]')?.value;
+      return paginaId ? { quando, paginaId } : null;
+    });
+  }
+
+  /** Grava a página escolhida na matéria, se mudou. */
+  async function garantirPagina(m, paginaId) {
+    if (!paginaId || String(paginaId) === String(m.facebook_page_id || '')) return;
+    await api(`/api/materias-ia/matters/${m.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ facebook_page_id: Number(paginaId) }),
     });
   }
 
   /** Publicar, agendar, desagendar, imagem com IA e editar uma matéria do dot. */
   async function executarNaMateria(dot, m, acao, botao = null) {
-    const pagina = m.pagina || dot.pagina || 'a página padrão da sua conta';
     const original = botao?.innerHTML;
     const travar = (texto) => {
       if (!botao) return;
@@ -1856,30 +1923,25 @@
         return;
       }
       if (acao === 'publicar') {
-        const ok = await dialogo({
-          titulo: 'Publicar agora?',
-          texto: `“${m.titulo || 'Matéria'}” vai ao ar agora em ${pagina}.`,
-          confirmar: 'Publicar agora',
-        });
-        if (!ok) return;
+        const escolha = await dialogoPublicar(m, dot);
+        if (!escolha) return;
         travar('Publicando…');
+        await garantirPagina(m, escolha.paginaId);
         const r = await api(`/api/materias-ia/matters/${m.id}/publicar`, {
           method: 'POST',
-          body: JSON.stringify({
-            facebook_page_id: m.facebook_page_id || dot.facebook_page_id || undefined,
-            tipo_publicacao: 'auto',
-          }),
+          body: JSON.stringify({ facebook_page_id: Number(escolha.paginaId), tipo_publicacao: 'auto' }),
         });
         avisar(r.queued ? 'Na fila de publicação — sai em instantes.' : 'Publicada ✓');
       } else if (acao === 'agendar') {
-        const quando = await dialogoAgendar(m, pagina);
-        if (!quando) return;
+        const escolha = await dialogoAgendar(m, dot);
+        if (!escolha) return;
         travar('Agendando…');
+        await garantirPagina(m, escolha.paginaId);
         const r = await api(`/api/materias-ia/matters/${m.id}/agendar`, {
           method: 'POST',
-          body: JSON.stringify({ run_at: quando }),
+          body: JSON.stringify({ run_at: escolha.quando }),
         });
-        avisar(`Agendada para ${diaHora(r.runAt || quando)} ✓`);
+        avisar(`Agendada para ${diaHora(r.runAt || escolha.quando)} ✓`);
       } else if (acao === 'desagendar') {
         const ok = await dialogo({
           titulo: 'Desagendar?',

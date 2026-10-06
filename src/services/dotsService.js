@@ -1782,6 +1782,28 @@ async function processarPost(dot, post, { indice = 1, total = 1, plano = parseJs
 }
 
 /**
+ * Confere em até 3 s se a IA que vai escrever está no ar. Só o gateway
+ * (ChatGPT/Claude pelo navegador) cai sozinho; DeepSeek e Claude por API
+ * respondem o próprio erro na hora, então não precisam disso.
+ */
+async function conferirIaDeEscrita(dot) {
+  if (dot.provedor && dot.provedor !== 'auto') return;
+  const tokenFree = require('./tokenFreeGatewayService');
+  const modelo = await require('./iaModeloTarefaService').modeloDaTarefa('piloto').catch(() => null);
+  if (!modelo && !tokenFree.isConfigured()) return;
+  try {
+    await tokenFree.verificarSaude({ timeout: 3000 });
+  } catch (err) {
+    if (falhaDaIa(err)) {
+      throw erro(
+        `A IA que escreve está fora do ar: ${err.message} Ligue essa IA ou troque em Configuração › "IA que escreve".`,
+        503
+      );
+    }
+  }
+}
+
+/**
  * A falha é da IA que escreve (fora do ar, sessão expirada, sem crédito,
  * limite de uso) e não do post? Antes o post levava a culpa: na 2ª falha era
  * descartado para sempre — com o gateway desligado, cada volta queimava uma
@@ -1993,10 +2015,65 @@ async function rodarCiclo(dot) {
  * Chamado pelo tick do servidor. Pega um dot vencido por vez: escrever é
  * lento, e dois ciclos juntos competiriam pela mesma conta de IA.
  */
+/** Quando este processo subiu: o que ficou "trabalhando" antes disso é sobra. */
+const INICIO_PROCESSO = new Date();
+let travasConferidas = false;
+
+/**
+ * Libera o que o processo anterior deixou preso (servidor reiniciado, pm2
+ * reload no meio de uma volta).
+ *
+ * Sem isto o dot ficava 30 min travado como "trabalhando", e o post que ele
+ * estava escrevendo ficava reservado ('gerado_texto' sem matéria) para
+ * sempre: nem virava matéria, nem voltava para a fila. Só mexe no que é
+ * anterior ao início deste processo — uma volta iniciada agora (um clique em
+ * "Escrever agora" logo após o boot) não é tocada.
+ *
+ * Premissa: um único processo roda o tick (ecosystem.config.cjs: instances 1,
+ * fork). Com duas instâncias, uma soltaria a trava da volta da outra.
+ */
+async function liberarTravasDoProcessoAnterior() {
+  const presos = await db(TABELA)
+    .where({ trabalhando: true })
+    .andWhere(function antigos() {
+      this.whereNull('atividade_em').orWhere('atividade_em', '<', INICIO_PROCESSO);
+    })
+    .select('id', 'user_id', 'fonte_ids');
+  if (!presos.length) return 0;
+
+  await db(TABELA).whereIn('id', presos.map((d) => d.id)).update({ trabalhando: false, atividade: null });
+  let posts = 0;
+  for (const dot of presos) {
+    // Outro dot do mesmo editor escrevendo agora (neste processo) pode estar
+    // com um destes posts: aí não mexe.
+    const ocupado = await db(TABELA)
+      .where({ user_id: dot.user_id, trabalhando: true })
+      .where('atividade_em', '>=', INICIO_PROCESSO)
+      .first('id')
+      .catch(() => null);
+    const fonteIds = parseJson(dot.fonte_ids, []);
+    if (ocupado || !fonteIds.length) continue;
+    posts += Number(
+      await db('biblioteca_posts')
+        .whereIn('fonte_id', fonteIds)
+        .where({ user_id: dot.user_id, status: 'gerado_texto' })
+        .whereNull('matter_id')
+        .update({ status: 'visto' })
+        .catch(() => 0)
+    ) || 0;
+  }
+  console.info(`[dots] processo reiniciado: ${presos.length} dot(s) destravado(s), ${posts} post(s) de volta à fila`);
+  return presos.length;
+}
+
 async function tick() {
   if (rodando) return;
   rodando = true;
   try {
+    if (!travasConferidas) {
+      travasConferidas = true;
+      await liberarTravasDoProcessoAnterior().catch((err) => console.warn('[dots] destravar:', err.message));
+    }
     const dot = await db(TABELA)
       .where('estado', 'ativo')
       .andWhere(function vencido() {
@@ -2109,9 +2186,13 @@ async function detalhe(userId, dotId) {
     ...idsEscritas.map(Number),
     ...execucoes.filter((e) => e.acao === 'escreveu' && e.matter_id).map((e) => Number(e.matter_id)),
   ])];
+  // O link do post publicado mora em `publications` (ai_matters não tem
+  // fb_post_url). Pedir a coluna inexistente quebrava a consulta, e o catch
+  // silencioso fazia o painel mostrar "nenhuma matéria" para sempre.
   const materias = ids.length
     ? await db('ai_matters as m')
       .leftJoin('facebook_pages as fp', 'fp.id', 'm.facebook_page_id')
+      .leftJoin('publications as pub', 'pub.id', 'm.publication_id')
       .whereIn('m.id', ids)
       .where('m.user_id', userId)
       .select(
@@ -2120,12 +2201,15 @@ async function detalhe(userId, dotId) {
         'm.imagem_url',
         'm.status',
         'm.scheduled_at',
-        'm.fb_post_url',
+        'pub.fb_post_url',
         'm.facebook_page_id',
         'm.created_at',
         'fp.page_name'
       )
-      .catch(() => [])
+      .catch((err) => {
+        console.warn(`[dots #${dotId}] matérias do painel: ${err.message}`);
+        return [];
+      })
     : [];
   const porId = new Map(materias.map((m) => [Number(m.id), m]));
   const plano = parseJson(dot.plano, {});
@@ -2523,6 +2607,8 @@ async function escreverPostAgora(userId, dotId, postId) {
   if (feitasHoje >= Number(dot.limite_dia)) {
     throw erro(`Limite de ${dot.limite_dia} matérias por dia atingido.`, 409);
   }
+  // Avisa na hora, em vez de dizer "escrevendo" e falhar um minuto depois.
+  await conferirIaDeEscrita(dot);
   if (!(await reservarCiclo(dot.id))) {
     throw erro('Este dot já está trabalhando agora. Espere esta volta terminar.', 409);
   }
@@ -2582,6 +2668,8 @@ module.exports = {
   tick,
   // Expostos para teste
   extrairUrls,
+  falhaDaIa,
+  liberarTravasDoProcessoAnterior,
   montarPlano,
   planoDaTela,
   avisosDoPlano,
