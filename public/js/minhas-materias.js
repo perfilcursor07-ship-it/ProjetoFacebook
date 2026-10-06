@@ -607,16 +607,9 @@
       mostrarErro('');
 
       if (!publicar) {
-        let inicial = null;
-        try {
-          const res = await fetch('/api/materias-ia/agenda/proximo-slot');
-          inicial = (await res.json().catch(() => ({}))).proximoSlotLocal || null;
-        } catch {
-          inicial = null;
-        }
-        const minimo = dataLocal(Date.now() + 5 * 60_000);
-        el.inicio.min = minimo;
-        el.inicio.value = inicial && inicial > minimo ? inicial : dataLocal(Date.now() + 30 * 60_000);
+        // Começa hoje, 15 min depois de agora (horário de Brasília).
+        el.inicio.min = dataLocal(Date.now() + 5 * 60_000);
+        el.inicio.value = dataLocal(Date.now() + 15 * 60_000);
       }
 
       fundo.hidden = false;
