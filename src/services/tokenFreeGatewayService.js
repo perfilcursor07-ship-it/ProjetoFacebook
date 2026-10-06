@@ -272,8 +272,41 @@ async function chatCompletion(
     logar(inicio, tarefa, data?.usage);
     return json ? limparCercaJson(texto) : texto;
   } catch (err) {
-    throw normalizarErro(err);
+    const normalizado = normalizarErro(err);
+    if (podeIrPelaApiDeepseek(normalizado)) {
+      avisarDesvioDeepseek(normalizado);
+      const deepseek = require('./deepseekService');
+      return deepseek.comProvedor('deepseek', () => deepseek.chatCompletion(messages, { temperature, json, tarefa }));
+    }
+    throw normalizado;
   }
+}
+
+/** O modelo escolhido para esta chamada é a DeepSeek (DeepSeek web no gateway)? */
+function ehModeloDeepseek(modelo = modeloAtual()) {
+  return /deepseek/i.test(String(modelo || ''));
+}
+
+/**
+ * O DeepSeek web do gateway quebra quando a DeepSeek muda o desafio anti-robô
+ * ("PoW challenge missing in response") ou a sessão do navegador expira. Com
+ * DEEPSEEK_API_KEY configurada, a mesma chamada segue pela API oficial — o
+ * editor escolheu DeepSeek e recebe DeepSeek, em vez de um erro na tela.
+ * Quando o web voltar a funcionar, ele volta a ser usado sozinho.
+ */
+function podeIrPelaApiDeepseek(err) {
+  if (!ehModeloDeepseek() || !String(env.deepseekApiKey || '').trim()) return false;
+  if (err?.iaPausada) return false;
+  const texto = `${err?.message || ''} ${mensagemRemota(err?.cause || err)}`;
+  return /PoW challenge|create_pow_challenge|Failed to create PoW|deepseek/i.test(texto)
+    || [401, 403, 502, 503].includes(Number(err?.status || err?.response?.status || 0));
+}
+
+let ultimoAvisoDesvio = 0;
+function avisarDesvioDeepseek(err) {
+  if (Date.now() - ultimoAvisoDesvio < 60_000) return;
+  ultimoAvisoDesvio = Date.now();
+  console.warn(`[token-free] DeepSeek web falhou (${err?.message || err}); seguindo pela API oficial da DeepSeek`);
 }
 
 /**
@@ -365,6 +398,17 @@ async function chatCompletionStream(
     return limparMarcacaoChatgpt(full).trim();
   } catch (err) {
     if (full.trim()) throw normalizarErro(err);
+    // DeepSeek web fora: em vez de tentar o gateway de novo (falha igual),
+    // segue em streaming pela API oficial — o texto continua aparecendo aos poucos.
+    if (podeIrPelaApiDeepseek(normalizarErro(err))) {
+      avisarDesvioDeepseek(normalizarErro(err));
+      return require('./deepseekService').chatCompletionStream(messages, {
+        temperature,
+        onDelta,
+        tarefa,
+        forceDeepseek: true,
+      });
+    }
     console.warn('[token-free-stream] stream indisponivel; tentando modo comum:', mensagemRemota(err));
     const texto = await chatCompletion(messages, {
       temperature,
