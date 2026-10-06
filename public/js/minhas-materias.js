@@ -502,6 +502,7 @@
     let acaoLote = 'agendar';
     let idsLote = [];
     let paginasCarregadas = false;
+    let recarregarAoFecharLote = false;
 
     const INTERVALOS = {
       agendar: [[15, '15 min'], [30, '30 min'], [60, '1 hora'], [120, '2 horas'], [180, '3 horas'], [360, '6 horas']],
@@ -589,8 +590,9 @@
       }
     }
 
-    async function abrirLote(acao) {
-      idsLote = selectedIds();
+    /** @param {number[]} [ids] já escolhidas (vindas do "Alterar título"); sem isso, as marcadas. */
+    async function abrirLote(acao, ids) {
+      idsLote = ids && ids.length ? ids : selectedIds();
       if (!idsLote.length) return;
       acaoLote = acao;
       const n = idsLote.length;
@@ -622,6 +624,8 @@
 
     function fecharLote() {
       fundo.hidden = true;
+      // Títulos já foram trocados antes de abrir: recarrega para mostrar as artes novas.
+      if (recarregarAoFecharLote) window.location.reload();
     }
 
     async function confirmarLote() {
@@ -699,7 +703,7 @@
         previa: document.getElementById('mm-tit-previa'),
         erro: document.getElementById('mm-tit-erro'),
         gerar: caixa.querySelector('[data-tit="gerar"]'),
-        aplicar: caixa.querySelector('[data-tit="aplicar"]'),
+        aplicar: Array.from(caixa.querySelectorAll('[data-tit="aplicar"]')),
         voltar: caixa.querySelector('[data-tit="voltar"]'),
         refazer: caixa.querySelector('[data-tit="refazer"]'),
       };
@@ -725,7 +729,9 @@
         t.passo1.hidden = n !== 1;
         t.passo2.hidden = n !== 2;
         t.gerar.hidden = n !== 1;
-        t.aplicar.hidden = n !== 2;
+        t.aplicar.forEach((b) => {
+          b.hidden = n !== 2;
+        });
         t.voltar.hidden = n !== 2;
         t.refazer.hidden = n !== 2 || modo !== 'tom';
       }
@@ -803,8 +809,10 @@
 
       function contarAplicar() {
         const n = itensParaAplicar().length;
-        t.aplicar.textContent = n === 1 ? 'Salvar 1 título' : 'Salvar ' + n + ' títulos';
-        t.aplicar.disabled = n === 0;
+        t.aplicar.forEach((b) => {
+          b.disabled = n === 0;
+        });
+        t.aplicar[0].textContent = n === 1 ? 'Só salvar' : 'Só salvar (' + n + ')';
       }
 
       function travar(botao, texto) {
@@ -862,14 +870,16 @@
         }
       }
 
-      async function aplicar() {
+      /** @param {HTMLButtonElement} botao destino: só salvar, ou salvar e abrir agendar/publicar */
+      async function aplicar(botao) {
+        const destino = botao.dataset.destino || 'salvar';
         const itens = itensParaAplicar();
         if (!itens.length) return;
         if (itens.some((it) => it.titulo.length < 8)) {
           return erro('Algum título ficou vazio ou curto demais.');
         }
         erro('');
-        travar(t.aplicar, 'Salvando e refazendo artes…');
+        travar(botao, 'Salvando e refazendo artes…');
         try {
           const data = await postJson('/api/materias-ia/matters/titulos-lote/aplicar', { itens, origem: modo });
           const falhas = (data.resultados || []).filter((r) => !r.ok);
@@ -879,10 +889,23 @@
                 falhas.map((f) => '• ' + tituloDa(f.id) + ': ' + f.erro).join('\n')
             );
           }
-          // Recarrega para mostrar títulos e artes novas.
-          window.location.reload();
+          const salvas = (data.resultados || []).filter((r) => r.ok);
+          if (destino === 'salvar' || !salvas.length) {
+            // Recarrega para mostrar títulos e artes novas.
+            return window.location.reload();
+          }
+          // Já mostra o título novo na lista (e na janela de agendar/publicar).
+          for (const r of salvas) {
+            const el = list.querySelector('.mia-matter-row[data-id="' + r.id + '"] .mia-matter-title');
+            if (el && r.titulo) el.textContent = r.titulo;
+          }
+          travar(botao, '');
+          caixa.hidden = true;
+          recarregarAoFecharLote = true;
+          abrirLote(destino, salvas.map((r) => r.id));
         } catch (err) {
-          travar(t.aplicar, '');
+          travar(botao, '');
+          contarAplicar();
           erro(err.message || 'Erro ao salvar títulos');
         }
       }
@@ -929,7 +952,8 @@
           erro('');
           return passo(1);
         }
-        if (e.target.closest('[data-tit="aplicar"]')) aplicar();
+        const aplicarBtn = e.target.closest('[data-tit="aplicar"]');
+        if (aplicarBtn) aplicar(aplicarBtn);
       });
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && !caixa.hidden) fechar();

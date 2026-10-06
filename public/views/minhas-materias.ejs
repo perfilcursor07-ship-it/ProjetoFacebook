@@ -533,7 +533,9 @@
           <button type="button" class="d-btn d-btn--fantasma" data-tit="voltar" hidden>Voltar</button>
           <button type="button" class="d-btn d-btn--neutro" data-tit="refazer" hidden>Gerar de novo</button>
           <button type="button" class="d-btn d-btn--principal" data-tit="gerar" id="mm-tit-gerar">Gerar títulos</button>
-          <button type="button" class="d-btn d-btn--principal" data-tit="aplicar" id="mm-tit-aplicar" hidden>Salvar títulos</button>
+          <button type="button" class="d-btn d-btn--fantasma" data-tit="aplicar" data-destino="salvar" id="mm-tit-aplicar" hidden>Só salvar</button>
+          <button type="button" class="d-btn d-btn--neutro" data-tit="aplicar" data-destino="agendar" hidden>Salvar e agendar</button>
+          <button type="button" class="d-btn d-btn--principal" data-tit="aplicar" data-destino="publicar" hidden>Salvar e publicar</button>
         </div>
       </div>
     </div>
@@ -551,7 +553,7 @@
       .mm-lote-horarios b { flex: 0 0 auto; min-width: 6.5rem; color: #6ee7b7; font-variant-numeric: tabular-nums; }
       .mm-lote-horarios span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .mm-lote-erro { margin-top: .7rem; font-size: .8rem; color: #fda4af; }
-      .mm-lote-acoes { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1.1rem; }
+      .mm-lote-acoes { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; margin-top: 1.1rem; }
       .mm-lote-acoes .d-btn:disabled { opacity: .55; cursor: progress; }
       .mm-tit { width: min(100%, 40rem); overflow-x: hidden; }
       .mm-tit-modos { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-top: 1rem; }
@@ -571,10 +573,10 @@
       .mm-tit-item textarea:focus { outline: none; border-color: rgba(52, 211, 153, .45); box-shadow: 0 0 0 3px rgba(52, 211, 153, .16); }
       .mm-tit-nota { margin-top: .3rem; font-size: .72rem; color: #fcd34d; }
       .mm-tit-nota.is-erro { color: #fda4af; }
-      .mm-lote-acoes [hidden] { display: none; }
+      .mm-lote-acoes [hidden], .mm-lote-rotulo[hidden] { display: none; }
       @media (max-width: 520px) { .mm-tit-modos { grid-template-columns: 1fr; } }
     </style>
   <% } %>
 
-  <script src="/js/minhas-materias.js?v=20261006titulo"></script>
+  <script src="/js/minhas-materias.js?v=20261006titulo2"></script>
 <%- include('partials/app-end') %>
