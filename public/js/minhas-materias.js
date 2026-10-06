@@ -505,7 +505,10 @@
     let recarregarAoFecharLote = false;
 
     const INTERVALOS = {
-      agendar: [[15, '15 min'], [30, '30 min'], [60, '1 hora'], [120, '2 horas'], [180, '3 horas'], [360, '6 horas']],
+      agendar: [
+        [10, '10 min'], [15, '15 min'], [20, '20 min'], [30, '30 min'], [45, '45 min'],
+        [60, '1 hora'], [90, '1h30'], [120, '2 horas'], [180, '3 horas'], [360, '6 horas'],
+      ],
       publicar: [[1, '1 min (uma atrás da outra)'], [5, '5 min'], [15, '15 min'], [30, '30 min']],
     };
 
@@ -607,8 +610,9 @@
       el.intervaloRotulo.hidden = n < 2;
       el.intervalo.hidden = n < 2;
       el.intervalo.replaceChildren(...INTERVALOS[acao].map(([v, t]) => new Option(t, v)));
-      el.intervalo.value = publicar ? '5' : '30';
+      el.intervalo.value = publicar ? '5' : '15';
       mostrarErro('');
+      if (!publicar) carregarAgendadas();
 
       if (!publicar) {
         // Começa hoje, 15 min depois de agora (horário de Brasília).
@@ -673,6 +677,79 @@
         el.confirmar.textContent = textoBotao;
       }
     }
+
+    // ------------------------------------------- lista resumida das agendadas
+
+    const caixaAgendadas = document.getElementById('mm-ag');
+
+    /** Busca as agendadas e preenche todas as listas resumidas da página. */
+    async function carregarAgendadas() {
+      const listas = document.querySelectorAll('[data-ag-lista]');
+      const totais = document.querySelectorAll('[data-ag-total]');
+      listas.forEach((ul) => {
+        ul.innerHTML = '<li class="mm-ag-vazio">Carregando…</li>';
+      });
+      try {
+        const res = await fetch('/api/materias-ia/agendadas');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Falha ao carregar');
+        const agendadas = Array.isArray(data.agendadas) ? data.agendadas : [];
+        totais.forEach((t) => {
+          t.textContent = '(' + agendadas.length + ')';
+        });
+        listas.forEach((ul) => {
+          if (!agendadas.length) {
+            ul.innerHTML = '<li class="mm-ag-vazio">Nenhuma matéria agendada.</li>';
+            return;
+          }
+          ul.replaceChildren(
+            ...agendadas.map((m) => {
+              const li = document.createElement('li');
+              const quando = document.createElement('b');
+              const ms = new Date(m.scheduled_at).getTime();
+              quando.textContent = Number.isNaN(ms) ? '—' : rotuloHora(ms);
+              if (ms < Date.now()) {
+                quando.classList.add('is-atrasada');
+                quando.title = 'Horário já passou: a fila publica na próxima volta';
+              }
+              const titulo = document.createElement('a');
+              titulo.href = '/materias-ia/' + m.id;
+              titulo.target = '_blank';
+              titulo.rel = 'noopener';
+              titulo.textContent = m.titulo || 'Matéria #' + m.id;
+              titulo.title = m.titulo || '';
+              li.append(quando, titulo);
+              if (m.page_name) {
+                const pagina = document.createElement('small');
+                pagina.textContent = m.page_name;
+                li.append(pagina);
+              }
+              return li;
+            })
+          );
+        });
+      } catch (err) {
+        listas.forEach((ul) => {
+          ul.innerHTML = '';
+          const li = document.createElement('li');
+          li.className = 'mm-ag-vazio';
+          li.textContent = err.message || 'Não consegui carregar as agendadas.';
+          ul.append(li);
+        });
+      }
+    }
+
+    document.getElementById('mia-ver-agendadas')?.addEventListener('click', () => {
+      if (!caixaAgendadas) return;
+      caixaAgendadas.hidden = false;
+      carregarAgendadas();
+    });
+    caixaAgendadas?.addEventListener('click', (e) => {
+      if (e.target === caixaAgendadas || e.target.closest('[data-ag="fechar"]')) caixaAgendadas.hidden = true;
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && caixaAgendadas && !caixaAgendadas.hidden) caixaAgendadas.hidden = true;
+    });
 
     if (fundo) {
       bulkPublicar?.addEventListener('click', () => abrirLote('publicar'));

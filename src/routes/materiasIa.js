@@ -54,6 +54,7 @@ router.post('/matters/:id/ensinar', controller.ensinarIa);
 router.get('/matters', controller.listarMaterias);
 router.post('/matters/excluir-lote', controller.removerMateriasLote);
 router.post('/matters/lote', controller.lote);
+router.get('/agendadas', controller.agendadasResumo);
 router.post('/matters/titulos-lote/sugerir', controller.sugerirTitulosLote);
 router.post('/matters/titulos-lote/aplicar', controller.aplicarTitulosLote);
 router.post('/matters/sincronizar-engajamento', controller.sincronizarEngajamento);

@@ -1201,6 +1201,24 @@ async function agendar(req, res, next) {
   }
 }
 
+/** Lista resumida das matérias agendadas (hora, título e página), em ordem de saída. */
+async function agendadasResumo(req, res, next) {
+  try {
+    const db = require('../config/db');
+    const agendadas = await db('ai_matters as m')
+      .leftJoin('facebook_pages as fp', 'fp.id', 'm.facebook_page_id')
+      .where('m.user_id', req.session.userId)
+      .where('m.status', 'agendado')
+      .orderBy('m.scheduled_at', 'asc')
+      .orderBy('m.id', 'asc')
+      .limit(200)
+      .select('m.id', 'm.titulo', 'm.scheduled_at', 'fp.page_name');
+    res.json({ ok: true, agendadas });
+  } catch (err) {
+    next(err);
+  }
+}
+
 /** Agenda ou publica várias matérias selecionadas de uma vez. */
 async function lote(req, res, next) {
   try {
@@ -1907,6 +1925,7 @@ module.exports = {
   proximoSlotAgenda,
   desagendar,
   lote,
+  agendadasResumo,
   sugerirTitulosLote,
   aplicarTitulosLote,
   removerMateria,

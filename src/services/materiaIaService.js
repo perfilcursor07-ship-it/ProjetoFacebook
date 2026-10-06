@@ -1452,7 +1452,8 @@ async function filaEmLote({ userId, ids, acao, facebookPageId = null, inicio = n
   if (!lista.length) throw erroLote('Selecione ao menos uma matéria.');
   if (!['agendar', 'publicar'].includes(acao)) throw erroLote('Ação inválida.');
 
-  const minimo = acao === 'publicar' ? 1 : 5;
+  // Agendar: de 10 em 10 min para cima. Publicar agora: pode ser uma atrás da outra.
+  const minimo = acao === 'publicar' ? 1 : 10;
   const intervalo = Math.min(1440, Math.max(minimo, Math.trunc(Number(intervaloMinutos)) || 30));
 
   const resolver = require('./facebookPageResolver');
@@ -1500,7 +1501,13 @@ async function filaEmLote({ userId, ids, acao, facebookPageId = null, inicio = n
       const quando = new Date(base.getTime() + posicao * intervalo * 60_000);
       let runAt = quando;
       if (acao === 'agendar') {
-        runAt = (await agendarMateria({ userId, matterId: id, runAt: quando.toISOString() })).runAt;
+        const agendado = await agendarMateria({ userId, matterId: id, runAt: quando.toISOString() });
+        runAt = agendado.runAt;
+        // Marca o job como do lote: o reparo de sobrepostos respeita o espaço
+        // escolhido aqui em vez de empurrar tudo para 30 em 30 min.
+        await AiFilaJobs.update(agendado.jobId, {
+          payload: JSON.stringify({ action: 'publish', matterId: id, origem: 'lote', intervaloMinutos: intervalo }),
+        });
       } else {
         await AiMatters.update(id, { status: 'agendado', scheduled_at: quando });
         const pendente = await db('ai_fila_jobs').where({ matter_id: id, status: 'pendente' }).orderBy('id', 'desc').first('id');
@@ -1511,7 +1518,7 @@ async function filaEmLote({ userId, ids, acao, facebookPageId = null, inicio = n
             matter_id: id,
             run_at: quando,
             status: 'pendente',
-            payload: JSON.stringify({ action: 'publish', matterId: id, origem: 'lote' }),
+            payload: JSON.stringify({ action: 'publish', matterId: id, origem: 'lote', intervaloMinutos: intervalo }),
           });
         }
       }
@@ -1628,12 +1635,28 @@ async function repararAgendamentosSobrepostos(userId, { intervaloMinutos = INTER
     // tabela ainda não existe
   }
 
+  // Agendadas em lote ("uma a cada 15 min") e pelos Dots têm o espaço que o
+  // editor escolheu: não são sobreposição. Antes eram empurradas para 30 em
+  // 30 min toda vez que a aba Agendadas abria.
+  let comEspacoEscolhido = new Set();
+  try {
+    comEspacoEscolhido = new Set(
+      (await db('ai_fila_jobs')
+        .where({ user_id: userId, status: 'pendente' })
+        .whereNotNull('matter_id')
+        .whereRaw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.origem')) IN ('lote', 'dots')")
+        .select('matter_id')).map((r) => Number(r.matter_id))
+    );
+  } catch (err) {
+    console.warn('[agendar] origem dos jobs:', err.message);
+  }
+
   let cursor = null;
   let ajustados = 0;
   const intervaloMs = Math.max(5, Number(intervaloMinutos) || INTERVALO_AGENDAMENTO_MINUTOS) * 60 * 1000;
 
   for (const row of rows || []) {
-    if (daFilaDoFuros.has(Number(row.id))) continue;
+    if (daFilaDoFuros.has(Number(row.id)) || comEspacoEscolhido.has(Number(row.id))) continue;
     const atual = row.scheduled_at instanceof Date ? row.scheduled_at : new Date(row.scheduled_at);
     if (Number.isNaN(atual.getTime())) continue;
     const novo = cursor && atual.getTime() < cursor.getTime() ? cursor : atual;

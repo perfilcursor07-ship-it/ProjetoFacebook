@@ -259,6 +259,10 @@
             <span>Selecionar todas nesta página</span>
           </label>
           <span id="mia-selected-count" class="d-stat">0 selecionada(s)</span>
+          <button type="button" id="mia-ver-agendadas" class="d-btn d-btn--fantasma"
+            title="Lista resumida do que já está agendado">
+            Ver agendadas (<%= counts.agendado || 0 %>)
+          </button>
           <div class="ml-auto flex flex-wrap items-center gap-1.5">
             <button type="button" id="mia-bulk-publicar" disabled
               class="d-btn d-btn--principal disabled:cursor-not-allowed disabled:opacity-40">
@@ -479,6 +483,11 @@
         <select id="mm-lote-intervalo" class="mm-lote-campo"></select>
 
         <ul id="mm-lote-horarios" class="mm-lote-horarios"></ul>
+
+        <details id="mm-lote-agendadas" class="mm-ag-detalhes">
+          <summary>Já agendadas <span data-ag-total></span></summary>
+          <ul class="mm-ag-lista" data-ag-lista></ul>
+        </details>
         <p id="mm-lote-erro" class="mm-lote-erro" role="alert" hidden></p>
 
         <div class="mm-lote-acoes">
@@ -487,6 +496,37 @@
         </div>
       </div>
     </div>
+    <!-- Lista resumida das agendadas (só para ver) -->
+    <div id="mm-ag" class="mm-lote-fundo" hidden>
+      <div class="mm-lote" role="dialog" aria-modal="true" aria-labelledby="mm-ag-titulo">
+        <h3 id="mm-ag-titulo">Agendadas <span data-ag-total></span></h3>
+        <p class="mm-lote-resumo">Em ordem de saída (horário de Brasília).</p>
+        <ul class="mm-ag-lista mm-ag-lista--grande" data-ag-lista></ul>
+        <div class="mm-lote-acoes">
+          <a href="/minhas-materias?status=agendado" class="d-btn d-btn--fantasma">Abrir aba Agendadas</a>
+          <button type="button" class="d-btn d-btn--neutro" data-ag="fechar">Fechar</button>
+        </div>
+      </div>
+    </div>
+    <style>
+      .mm-ag-detalhes { margin-top: .8rem; border: 1px solid rgba(255, 255, 255, .07); border-radius: .75rem; background: rgba(4, 7, 13, .3); padding: .1rem .8rem; }
+      .mm-ag-detalhes > summary { cursor: pointer; padding: .55rem 0; font-size: .78rem; font-weight: 600; color: #cbd5e1; }
+      .mm-ag-detalhes[open] { padding-bottom: .6rem; }
+      .mm-ag-lista { margin: 0; padding: 0; list-style: none; font-size: .76rem; color: var(--d-texto-2); max-height: 12rem; overflow-y: auto; }
+      .mm-ag-lista--grande { max-height: 60vh; margin-top: .8rem; padding: .4rem .8rem; border: 1px solid rgba(255, 255, 255, .07); border-radius: .75rem; background: rgba(4, 7, 13, .45); }
+      .mm-ag-lista li { display: grid; grid-template-columns: 6.6rem 1fr; gap: .1rem .6rem; padding: .35rem 0; border-bottom: 1px solid rgba(255, 255, 255, .05); }
+      .mm-ag-lista li:last-child { border-bottom: 0; }
+      .mm-ag-lista b { color: #fcd34d; font-variant-numeric: tabular-nums; }
+      .mm-ag-lista b.is-atrasada { color: #fda4af; }
+      .mm-ag-lista a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--d-texto); text-decoration: none; }
+      .mm-ag-lista a:hover { color: #6ee7b7; }
+      .mm-ag-lista small { grid-column: 2; font-size: .68rem; color: var(--d-texto-3); }
+      .mm-ag-vazio { display: block !important; padding: .4rem 0; color: var(--d-texto-3); }
+      /* Título longo corta com reticências, sem barra de rolagem lateral. */
+      .mm-lote, .mm-lote-horarios, .mm-ag-lista { overflow-x: hidden; }
+      .mm-lote-horarios span, .mm-ag-lista a, .mm-ag-lista small { min-width: 0; }
+      .mm-ag-lista li { grid-template-columns: 6.6rem minmax(0, 1fr); }
+    </style>
     <!-- Alterar o título das matérias selecionadas (IA reescreve no tom ou corrige o que o editor digitou) -->
     <div id="mm-tit" class="mm-lote-fundo" hidden>
       <div class="mm-lote mm-tit" role="dialog" aria-modal="true" aria-labelledby="mm-tit-titulo">
@@ -578,5 +618,5 @@
     </style>
   <% } %>
 
-  <script src="/js/minhas-materias.js?v=20261006titulo2"></script>
+  <script src="/js/minhas-materias.js?v=20261006lote3"></script>
 <%- include('partials/app-end') %>
