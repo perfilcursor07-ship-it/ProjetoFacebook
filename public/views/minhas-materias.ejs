@@ -268,6 +268,11 @@
               class="d-btn d-btn--neutro disabled:cursor-not-allowed disabled:opacity-40">
               Agendar
             </button>
+            <button type="button" id="mia-bulk-titulo" disabled
+              class="d-btn d-btn--neutro disabled:cursor-not-allowed disabled:opacity-40"
+              title="Trocar o título das selecionadas com IA antes de publicar ou agendar">
+              Alterar título
+            </button>
             <% if (activeStatus === 'rascunho') { %>
             <button type="button" id="mia-bulk-delete" disabled
               class="d-btn d-btn--neutro d-btn--perigo disabled:cursor-not-allowed disabled:opacity-40">
@@ -482,6 +487,56 @@
         </div>
       </div>
     </div>
+    <!-- Alterar o título das matérias selecionadas (IA reescreve no tom ou corrige o que o editor digitou) -->
+    <div id="mm-tit" class="mm-lote-fundo" hidden>
+      <div class="mm-lote mm-tit" role="dialog" aria-modal="true" aria-labelledby="mm-tit-titulo">
+        <h3 id="mm-tit-titulo">Alterar título</h3>
+        <p id="mm-tit-resumo" class="mm-lote-resumo"></p>
+
+        <div id="mm-tit-passo1">
+          <div class="mm-tit-modos" role="radiogroup" aria-label="Como alterar">
+            <button type="button" class="mm-tit-modo is-on" data-modo="tom" role="radio" aria-checked="true">
+              <b>IA reescreve</b><span>Escolha o estilo e a IA cria um título novo para cada uma</span>
+            </button>
+            <button type="button" class="mm-tit-modo" data-modo="corrigir" role="radio" aria-checked="false">
+              <b>Eu digito</b><span>Você escreve e a IA só corrige o português</span>
+            </button>
+          </div>
+
+          <div id="mm-tit-bloco-tom">
+            <p class="mm-lote-rotulo">Estilo do novo título</p>
+            <div class="mm-tit-tons" role="radiogroup" aria-label="Estilo do título">
+              <button type="button" class="mm-tit-tom is-on" data-tom="polemico" role="radio" aria-checked="true">Mais polêmico</button>
+              <button type="button" class="mm-tit-tom" data-tom="curiosidade" role="radio" aria-checked="false">Curiosidade</button>
+              <button type="button" class="mm-tit-tom" data-tom="emocional" role="radio" aria-checked="false">Emocional</button>
+              <button type="button" class="mm-tit-tom" data-tom="direto" role="radio" aria-checked="false">Direto</button>
+              <button type="button" class="mm-tit-tom" data-tom="natural" role="radio" aria-checked="false">Natural</button>
+              <button type="button" class="mm-tit-tom" data-tom="factual" role="radio" aria-checked="false">Factual</button>
+            </div>
+          </div>
+
+          <div id="mm-tit-bloco-digitar" hidden>
+            <p class="mm-lote-rotulo">Novo título de cada matéria</p>
+            <ol id="mm-tit-digitar" class="mm-tit-lista"></ol>
+          </div>
+        </div>
+
+        <div id="mm-tit-passo2" hidden>
+          <p class="mm-lote-rotulo">Confira e ajuste antes de salvar</p>
+          <ol id="mm-tit-previa" class="mm-tit-lista"></ol>
+        </div>
+
+        <p id="mm-tit-erro" class="mm-lote-erro" role="alert" hidden></p>
+
+        <div class="mm-lote-acoes">
+          <button type="button" class="d-btn d-btn--fantasma" data-tit="cancelar">Cancelar</button>
+          <button type="button" class="d-btn d-btn--fantasma" data-tit="voltar" hidden>Voltar</button>
+          <button type="button" class="d-btn d-btn--neutro" data-tit="refazer" hidden>Gerar de novo</button>
+          <button type="button" class="d-btn d-btn--principal" data-tit="gerar" id="mm-tit-gerar">Gerar títulos</button>
+          <button type="button" class="d-btn d-btn--principal" data-tit="aplicar" id="mm-tit-aplicar" hidden>Salvar títulos</button>
+        </div>
+      </div>
+    </div>
     <style>
       .mm-lote-fundo { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgba(3, 6, 12, .7); backdrop-filter: blur(6px); }
       .mm-lote-fundo[hidden] { display: none; }
@@ -498,8 +553,28 @@
       .mm-lote-erro { margin-top: .7rem; font-size: .8rem; color: #fda4af; }
       .mm-lote-acoes { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1.1rem; }
       .mm-lote-acoes .d-btn:disabled { opacity: .55; cursor: progress; }
+      .mm-tit { width: min(100%, 40rem); overflow-x: hidden; }
+      .mm-tit-modos { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-top: 1rem; }
+      .mm-tit-modo { display: flex; flex-direction: column; gap: .2rem; text-align: left; padding: .7rem .8rem; border: 1px solid rgba(255, 255, 255, .1); border-radius: .8rem; background: rgba(0, 0, 0, .2); color: var(--d-texto); }
+      .mm-tit-modo b { font-size: .86rem; }
+      .mm-tit-modo span { font-size: .74rem; color: var(--d-texto-2); line-height: 1.35; }
+      .mm-tit-modo.is-on { border-color: rgba(52, 211, 153, .55); background: rgba(52, 211, 153, .08); }
+      .mm-tit-tons { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .45rem; }
+      .mm-tit-tom { padding: .38rem .75rem; border: 1px solid rgba(255, 255, 255, .12); border-radius: 999px; font-size: .78rem; color: var(--d-texto-2); background: rgba(0, 0, 0, .2); }
+      .mm-tit-tom.is-on { border-color: rgba(52, 211, 153, .6); color: #6ee7b7; background: rgba(52, 211, 153, .1); }
+      .mm-tit-lista { margin: .45rem 0 0; padding: 0; list-style: none; overflow-x: hidden; display: flex; flex-direction: column; gap: .55rem; max-height: 50vh; overflow-y: auto; }
+      .mm-tit-item { padding: .6rem .7rem; border: 1px solid rgba(255, 255, 255, .07); border-radius: .75rem; background: rgba(4, 7, 13, .45); }
+      .mm-tit-item.is-off { opacity: .5; }
+      .mm-tit-antes { display: flex; gap: .5rem; align-items: flex-start; font-size: .74rem; color: var(--d-texto-3, #64748b); line-height: 1.35; }
+      .mm-tit-antes input { margin-top: .15rem; flex: 0 0 auto; }
+      .mm-tit-item textarea { box-sizing: border-box; display: block; width: 100%; field-sizing: content; max-height: 8rem; overflow-x: hidden; overflow-y: auto; margin-top: .4rem; min-height: 2.6rem; resize: vertical; border: 1px solid rgba(255, 255, 255, .12); border-radius: .6rem; background: rgba(0, 0, 0, .3); padding: .45rem .6rem; color: var(--d-texto); font-size: .84rem; line-height: 1.4; }
+      .mm-tit-item textarea:focus { outline: none; border-color: rgba(52, 211, 153, .45); box-shadow: 0 0 0 3px rgba(52, 211, 153, .16); }
+      .mm-tit-nota { margin-top: .3rem; font-size: .72rem; color: #fcd34d; }
+      .mm-tit-nota.is-erro { color: #fda4af; }
+      .mm-lote-acoes [hidden] { display: none; }
+      @media (max-width: 520px) { .mm-tit-modos { grid-template-columns: 1fr; } }
     </style>
   <% } %>
 
-  <script src="/js/minhas-materias.js?v=20261005lote2"></script>
+  <script src="/js/minhas-materias.js?v=20261006titulo"></script>
 <%- include('partials/app-end') %>

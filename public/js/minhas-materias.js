@@ -369,6 +369,7 @@
     const bulkDeleteAll = document.getElementById('mia-bulk-delete-all');
     const bulkPublicar = document.getElementById('mia-bulk-publicar');
     const bulkAgendar = document.getElementById('mia-bulk-agendar');
+    const bulkTitulo = document.getElementById('mia-bulk-titulo');
     const selectedCountEl = document.getElementById('mia-selected-count');
     if (!list || !selectAll) return;
 
@@ -392,6 +393,7 @@
       if (bulkDelete) bulkDelete.disabled = ids.length === 0;
       if (bulkPublicar) bulkPublicar.disabled = ids.length === 0;
       if (bulkAgendar) bulkAgendar.disabled = ids.length === 0;
+      if (bulkTitulo) bulkTitulo.disabled = ids.length === 0;
       if (all.length) {
         selectAll.checked = ids.length === all.length;
         selectAll.indeterminate = ids.length > 0 && ids.length < all.length;
@@ -681,6 +683,258 @@
         if (e.key === 'Escape' && !fundo.hidden) fecharLote();
       });
     }
+
+    // ------------------------------------------------ alterar título em lote
+
+    (function initTitulos() {
+      const caixa = document.getElementById('mm-tit');
+      if (!caixa || !bulkTitulo) return;
+      const t = {
+        resumo: document.getElementById('mm-tit-resumo'),
+        passo1: document.getElementById('mm-tit-passo1'),
+        passo2: document.getElementById('mm-tit-passo2'),
+        blocoTom: document.getElementById('mm-tit-bloco-tom'),
+        blocoDigitar: document.getElementById('mm-tit-bloco-digitar'),
+        digitar: document.getElementById('mm-tit-digitar'),
+        previa: document.getElementById('mm-tit-previa'),
+        erro: document.getElementById('mm-tit-erro'),
+        gerar: caixa.querySelector('[data-tit="gerar"]'),
+        aplicar: caixa.querySelector('[data-tit="aplicar"]'),
+        voltar: caixa.querySelector('[data-tit="voltar"]'),
+        refazer: caixa.querySelector('[data-tit="refazer"]'),
+      };
+      let ids = [];
+      let modo = 'tom';
+      let tom = 'polemico';
+      let ocupado = false;
+
+      function erro(texto) {
+        t.erro.textContent = texto || '';
+        t.erro.hidden = !texto;
+      }
+
+      function marcar(seletor, attr, valor) {
+        caixa.querySelectorAll(seletor).forEach((b) => {
+          const on = b.dataset[attr] === valor;
+          b.classList.toggle('is-on', on);
+          b.setAttribute('aria-checked', on ? 'true' : 'false');
+        });
+      }
+
+      function passo(n) {
+        t.passo1.hidden = n !== 1;
+        t.passo2.hidden = n !== 2;
+        t.gerar.hidden = n !== 1;
+        t.aplicar.hidden = n !== 2;
+        t.voltar.hidden = n !== 2;
+        t.refazer.hidden = n !== 2 || modo !== 'tom';
+      }
+
+      function trocarModo(novo) {
+        modo = novo;
+        marcar('.mm-tit-modo', 'modo', modo);
+        t.blocoTom.hidden = modo !== 'tom';
+        t.blocoDigitar.hidden = modo !== 'corrigir';
+        t.gerar.textContent = modo === 'tom' ? 'Gerar títulos' : 'Corrigir português';
+      }
+
+      function campoTitulo(valor) {
+        const area = document.createElement('textarea');
+        area.rows = 2;
+        area.maxLength = 300;
+        area.value = valor || '';
+        return area;
+      }
+
+      /** Modo "Eu digito": um campo por matéria, já com o título atual para editar. */
+      function desenharDigitar() {
+        t.digitar.replaceChildren(
+          ...ids.map((id) => {
+            const li = document.createElement('li');
+            li.className = 'mm-tit-item';
+            li.dataset.id = id;
+            const antes = document.createElement('div');
+            antes.className = 'mm-tit-antes';
+            antes.textContent = 'Atual: ' + tituloDa(id);
+            li.append(antes, campoTitulo(tituloDa(id)));
+            return li;
+          })
+        );
+      }
+
+      /** Prévia: título antigo, novo (editável) e se entra no salvar. */
+      function desenharPrevia(itens) {
+        t.previa.replaceChildren(
+          ...itens.map((it) => {
+            const li = document.createElement('li');
+            li.className = 'mm-tit-item';
+            li.dataset.id = it.id;
+            const antes = document.createElement('label');
+            antes.className = 'mm-tit-antes';
+            const check = document.createElement('input');
+            check.type = 'checkbox';
+            check.className = 'mm-tit-usar h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-emerald-500';
+            check.checked = Boolean(it.titulo) && !it.erro && it.alterado !== false;
+            check.disabled = !it.titulo;
+            const rotulo = document.createElement('span');
+            rotulo.textContent = 'Antes: ' + (it.atual || tituloDa(it.id));
+            antes.append(check, rotulo);
+            li.append(antes);
+            if (it.titulo) li.append(campoTitulo(it.titulo));
+            const nota = it.erro || it.aviso || (it.titulo && !it.alterado ? 'Ficou igual ao atual.' : '');
+            if (nota) {
+              const p = document.createElement('p');
+              p.className = 'mm-tit-nota' + (it.erro ? ' is-erro' : '');
+              p.textContent = nota;
+              li.append(p);
+            }
+            li.classList.toggle('is-off', !check.checked);
+            return li;
+          })
+        );
+        contarAplicar();
+      }
+
+      function itensParaAplicar() {
+        return Array.from(t.previa.querySelectorAll('.mm-tit-item'))
+          .filter((li) => li.querySelector('.mm-tit-usar')?.checked)
+          .map((li) => ({ id: Number(li.dataset.id), titulo: li.querySelector('textarea')?.value.trim() || '' }));
+      }
+
+      function contarAplicar() {
+        const n = itensParaAplicar().length;
+        t.aplicar.textContent = n === 1 ? 'Salvar 1 título' : 'Salvar ' + n + ' títulos';
+        t.aplicar.disabled = n === 0;
+      }
+
+      function travar(botao, texto) {
+        ocupado = Boolean(texto);
+        caixa.querySelectorAll('.mm-lote-acoes .d-btn').forEach((b) => {
+          if (b.dataset.tit !== 'cancelar') b.disabled = ocupado;
+        });
+        if (texto) {
+          botao.dataset.textoAntes = botao.textContent;
+          botao.textContent = texto;
+        } else if (botao.dataset.textoAntes) {
+          botao.textContent = botao.dataset.textoAntes;
+        }
+      }
+
+      async function postJson(url, body) {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Falha na requisição');
+        return data;
+      }
+
+      async function gerar(botao) {
+        erro('');
+        const body = { ids, modo, tom };
+        if (modo === 'corrigir') {
+          body.titulos = {};
+          for (const li of t.digitar.querySelectorAll('.mm-tit-item')) {
+            const area = li.querySelector('textarea');
+            const texto = area.value.trim();
+            if (texto.length < 8) {
+              erro('Cada título precisa ter pelo menos 8 caracteres.');
+              return area.focus();
+            }
+            body.titulos[li.dataset.id] = texto;
+          }
+        }
+        travar(botao, modo === 'tom' ? 'Gerando ' + ids.length + '…' : 'Corrigindo…');
+        try {
+          const data = await postJson('/api/materias-ia/matters/titulos-lote/sugerir', body);
+          travar(botao, '');
+          const itens = Array.isArray(data.itens) ? data.itens : [];
+          // Mesmo erro em todas (IA fora do ar, sem chave…): avisa uma vez e fica no passo atual.
+          const erros = new Set(itens.map((it) => it.erro));
+          if (itens.length && erros.size === 1 && itens[0].erro) return erro(itens[0].erro);
+          desenharPrevia(itens);
+          passo(2);
+        } catch (err) {
+          travar(botao, '');
+          erro(err.message || 'Erro ao gerar títulos');
+        }
+      }
+
+      async function aplicar() {
+        const itens = itensParaAplicar();
+        if (!itens.length) return;
+        if (itens.some((it) => it.titulo.length < 8)) {
+          return erro('Algum título ficou vazio ou curto demais.');
+        }
+        erro('');
+        travar(t.aplicar, 'Salvando e refazendo artes…');
+        try {
+          const data = await postJson('/api/materias-ia/matters/titulos-lote/aplicar', { itens, origem: modo });
+          const falhas = (data.resultados || []).filter((r) => !r.ok);
+          if (falhas.length) {
+            alert(
+              data.feitas + ' de ' + itens.length + ' títulos salvos.\n\nNão salvaram:\n' +
+                falhas.map((f) => '• ' + tituloDa(f.id) + ': ' + f.erro).join('\n')
+            );
+          }
+          // Recarrega para mostrar títulos e artes novas.
+          window.location.reload();
+        } catch (err) {
+          travar(t.aplicar, '');
+          erro(err.message || 'Erro ao salvar títulos');
+        }
+      }
+
+      function abrir() {
+        ids = selectedIds();
+        if (!ids.length) return;
+        t.resumo.textContent =
+          ids.length === 1 ? '1 matéria selecionada.' : ids.length + ' matérias selecionadas.';
+        erro('');
+        desenharDigitar();
+        trocarModo(modo);
+        passo(1);
+        caixa.hidden = false;
+      }
+
+      function fechar() {
+        if (ocupado && !confirm('A IA ainda está trabalhando. Fechar mesmo assim?')) return;
+        caixa.hidden = true;
+      }
+
+      bulkTitulo.addEventListener('click', abrir);
+      t.previa.addEventListener('input', contarAplicar);
+      t.previa.addEventListener('change', (e) => {
+        const li = e.target.closest('.mm-tit-item');
+        if (li && e.target.classList.contains('mm-tit-usar')) {
+          li.classList.toggle('is-off', !e.target.checked);
+        }
+        contarAplicar();
+      });
+      caixa.addEventListener('click', (e) => {
+        if (e.target === caixa || e.target.closest('[data-tit="cancelar"]')) return fechar();
+        if (ocupado) return;
+        const modoBtn = e.target.closest('.mm-tit-modo');
+        if (modoBtn) return trocarModo(modoBtn.dataset.modo);
+        const tomBtn = e.target.closest('.mm-tit-tom');
+        if (tomBtn) {
+          tom = tomBtn.dataset.tom;
+          return marcar('.mm-tit-tom', 'tom', tom);
+        }
+        if (e.target.closest('[data-tit="gerar"]')) return gerar(t.gerar);
+        if (e.target.closest('[data-tit="refazer"]')) return gerar(t.refazer);
+        if (e.target.closest('[data-tit="voltar"]')) {
+          erro('');
+          return passo(1);
+        }
+        if (e.target.closest('[data-tit="aplicar"]')) aplicar();
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !caixa.hidden) fechar();
+      });
+    })();
 
     syncBulkUi();
   })();

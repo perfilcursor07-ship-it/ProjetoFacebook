@@ -1227,6 +1227,40 @@ async function lote(req, res, next) {
   }
 }
 
+/** Lote: gera (sem salvar) o título novo das matérias selecionadas. */
+async function sugerirTitulosLote(req, res, next) {
+  try {
+    const body = req.body || {};
+    const itens = await require('../services/titulosLoteService').sugerir({
+      userId: req.session.userId,
+      ids: body.ids,
+      modo: body.modo,
+      tom: String(body.tom || 'natural').trim().toLowerCase(),
+      titulos: body.titulos,
+    });
+    res.json({ ok: true, itens });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+}
+
+/** Lote: grava os títulos revisados e refaz a arte de cada matéria. */
+async function aplicarTitulosLote(req, res, next) {
+  try {
+    const body = req.body || {};
+    const result = await require('../services/titulosLoteService').aplicar({
+      userId: req.session.userId,
+      itens: body.itens,
+      origem: body.origem,
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+}
+
 /** Tira a matéria da agenda (volta a rascunho e cancela a publicação marcada). */
 async function desagendar(req, res, next) {
   try {
@@ -1382,72 +1416,13 @@ async function sugerirTitulo(req, res, next) {
       tarefa: 'conversa',
     });
 
-    const patch = {
+    const { aplicarTitulo } = require('../services/titulosLoteService');
+    const { matter: updated, imagemUrl, videoUrl, aviso } = await aplicarTitulo({
+      userId: req.session.userId,
+      matter,
       titulo: sugerido.titulo,
-      titulo_ia: sugerido.titulo,
-      error_message: null,
-    };
-    if (matter.status !== 'agendado') patch.status = 'rascunho';
-    await AiMatters.update(matterId, patch);
-
-    let updated = await AiMatters.findById(matterId);
-    let imagemUrl = updated.imagem_url || null;
-    let videoUrl = null;
-    let aviso = null;
-
-    // Reel: regenera capa só se o editor já tinha incluído a capa
-    if (updated.tipo_publicacao === 'reel' && updated.video_clip_id) {
-      try {
-        const VideoClips = require('../models/VideoClips');
-        const clipCapa = await VideoClips.findById(updated.video_clip_id);
-        const temCapa =
-          clipCapa?.capa_status === 'pronta' ||
-          (clipCapa?.caminho_arquivo && /_capa_/i.test(String(clipCapa.caminho_arquivo)));
-        if (temCapa) {
-          const { applyCoverToClipNow } = require('../services/clipPostProcessService');
-          await applyCoverToClipNow({
-            clipId: updated.video_clip_id,
-            userId: req.session.userId,
-            titulo: sugerido.titulo,
-            force: true,
-          });
-          updated = await AiMatters.findById(matterId);
-          if (updated.video_path) {
-            videoUrl = `/media/${String(updated.video_path).replace(/\\/g, '/')}`;
-          }
-          aviso = 'Novo título aplicado e capa do Reel atualizada (Minha marca) ✓';
-        } else {
-          aviso = 'Novo título aplicado (capa do Reel continua desmarcada)';
-        }
-      } catch (err) {
-        aviso = `Título atualizado, mas a capa do Reel não foi regenerada: ${err.message}`;
-      }
-    } else {
-      const sourceUrl =
-        updated.imagem_fonte_url ||
-        (!updated.imagem_path && /^https?:\/\//i.test(String(updated.imagem_url || ''))
-          ? updated.imagem_url
-          : null);
-
-      if (sourceUrl) {
-        try {
-          const artwork = await composeMatterArtwork({
-            userId: req.session.userId,
-            matterId: updated.id,
-            sourceUrl,
-            title: sugerido.titulo,
-            force: true,
-          });
-          updated = artwork.matter;
-          imagemUrl = artwork.publicUrl;
-        } catch (err) {
-          aviso = `Título atualizado, mas a arte não foi regenerada: ${err.message}`;
-        }
-      } else {
-        aviso =
-          'Título atualizado. Para gravar o título na arte, escolha uma imagem e aplique Minha marca.';
-      }
-    }
+      tituloIa: true,
+    });
 
     return res.json({
       ok: true,
@@ -1932,6 +1907,8 @@ module.exports = {
   proximoSlotAgenda,
   desagendar,
   lote,
+  sugerirTitulosLote,
+  aplicarTitulosLote,
   removerMateria,
   removerMateriasLote,
   atualizarMateria,
