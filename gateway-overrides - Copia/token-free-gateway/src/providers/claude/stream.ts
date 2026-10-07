@@ -38,15 +38,6 @@ function stripInlineThinkTags(text: string): { text: string; thinking: string } 
 	};
 }
 
-/** Hostname de uma URL; vazio se ela for inválida (ex.: "https://" sozinho). */
-function hostnameOf(url: string): string {
-	try {
-		return new URL(url).hostname;
-	} catch {
-		return "";
-	}
-}
-
 class Accumulator {
 	text = "";
 	thinkingText = "";
@@ -62,14 +53,13 @@ class Accumulator {
 		if (typeof value !== "object") return;
 		const record = value as Record<string, unknown>;
 		const url = typeof record.url === "string" ? record.url.trim() : "";
-		const hostname = /^https?:\/\//i.test(url) ? hostnameOf(url) : "";
-		if (hostname) {
+		if (/^https?:\/\//i.test(url)) {
 			const title =
 				typeof record.title === "string" && record.title.trim()
 					? record.title.trim()
 					: typeof record.name === "string" && record.name.trim()
 						? record.name.trim()
-						: hostname.replace(/^www\./, "");
+						: new URL(url).hostname.replace(/^www\./, "");
 			this.sources.set(url, title);
 		}
 		for (const child of Object.values(record)) this.collectSources(child, depth + 1);

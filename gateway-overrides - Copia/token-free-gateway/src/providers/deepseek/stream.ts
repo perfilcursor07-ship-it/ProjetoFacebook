@@ -8,16 +8,6 @@ const JUNK_TOKENS = new Set([
 	"<|endoftext|>",
 ]);
 
-/** Remove os tokens de controle mesmo quando chegam colados em outro texto. */
-function stripJunk(value: string): string {
-	let out = value;
-	for (const token of JUNK_TOKENS) out = out.split(token).join("");
-	return out;
-}
-
-/** Um "<" seguido de mais que isso sem fechar não é início de tag. */
-const MAX_PENDING_TAG = 200;
-
 export async function parseDeepSeekStream(
 	body: ReadableStream<Uint8Array>,
 	onDelta?: (delta: string) => void,
@@ -33,16 +23,14 @@ export async function parseDeepSeekStream(
 	let tagBuffer = "";
 
 	const emitText = (delta: string) => {
-		const clean = stripJunk(delta);
-		if (!clean) return;
-		text += clean;
-		onDelta?.(clean);
+		if (!delta || JUNK_TOKENS.has(delta)) return;
+		text += delta;
+		onDelta?.(delta);
 	};
 
 	const emitThinking = (delta: string) => {
-		const clean = stripJunk(delta);
-		if (!clean) return;
-		thinkingText += clean;
+		if (!delta || JUNK_TOKENS.has(delta)) return;
+		thinkingText += delta;
 	};
 
 	const pushDelta = (delta: string, forceType?: "text" | "thinking") => {
@@ -110,9 +98,7 @@ export async function parseDeepSeekStream(
 				checkTags();
 			} else {
 				const lastAngle = tagBuffer.lastIndexOf("<");
-				// Sem isto, um "<" comum ("a < b") segurava o resto da resposta
-				// no buffer até o fim, e o streaming parava de mostrar texto.
-				if (lastAngle === -1 || tagBuffer.length - lastAngle > MAX_PENDING_TAG) {
+				if (lastAngle === -1) {
 					if (currentMode === "thinking") emitThinking(tagBuffer);
 					else if (currentMode === "tool_call") emitText(tagBuffer);
 					else emitText(tagBuffer);

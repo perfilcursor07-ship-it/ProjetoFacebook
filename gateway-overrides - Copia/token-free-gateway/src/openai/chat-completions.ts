@@ -24,14 +24,9 @@ function estimateTokens(text: string): number {
 	return Math.ceil(text.length / 4);
 }
 
-/**
- * `signal` é o do request HTTP (cliente desconectou). Ele só vale até a
- * resposta começar; depois disso, quem cancela é o `cancel()` do stream SSE.
- */
 export async function handleChatCompletions(
 	body: ChatCompletionRequest,
 	client: WebProviderClient,
-	signal?: AbortSignal,
 ): Promise<Response> {
 	if (!body.messages || body.messages.length === 0) {
 		return jsonError("messages is required and must not be empty", 400);
@@ -49,32 +44,18 @@ export async function handleChatCompletions(
 		return jsonError("Could not construct prompt from messages", 400);
 	}
 
-	// Cancela o trabalho no provedor (aba do Chrome) quando a rota desiste:
-	// sem isso a resposta continuava sendo gerada e consumindo cota da conta.
-	const upstream = new AbortController();
-	const onClientGone = () => upstream.abort();
-	if (signal?.aborted) upstream.abort();
-	signal?.addEventListener("abort", onClientGone, { once: true });
-
 	const handler = body.stream
-		? handleStreaming(id, model, prompt, hasTools, body, client, upstream)
-		: handleNonStreaming(id, model, prompt, hasTools, body, client, upstream.signal);
+		? handleStreaming(id, model, prompt, hasTools, body, client)
+		: handleNonStreaming(id, model, prompt, hasTools, body, client);
 
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	const timeout = new Promise<Response>((resolve) => {
-		timer = setTimeout(() => {
+	const timeout = new Promise<Response>((resolve) =>
+		setTimeout(() => {
 			console.error(`[chat-completions] Request timed out after ${_routeTimeoutMs / 1000}s`);
-			upstream.abort();
 			resolve(jsonError("Gateway timeout: upstream provider did not respond in time", 504));
-		}, _routeTimeoutMs);
-	});
+		}, _routeTimeoutMs),
+	);
 
-	try {
-		return await Promise.race([handler, timeout]);
-	} finally {
-		clearTimeout(timer);
-		signal?.removeEventListener("abort", onClientGone);
-	}
+	return Promise.race([handler, timeout]);
 }
 
 async function handleNonStreaming(
@@ -84,13 +65,11 @@ async function handleNonStreaming(
 	hasTools: boolean,
 	body: ChatCompletionRequest,
 	client: WebProviderClient,
-	signal: AbortSignal,
 ): Promise<Response> {
 	try {
 		const stream = await client.sendMessage({
 			message: prompt,
 			model,
-			signal,
 			conversationId: body.conversation_id,
 			conversationName: body.conversation_name,
 			webSearch: body.web_search,
@@ -145,17 +124,7 @@ type SseWriter = {
 
 function createSseWriter(controller: ReadableStreamDefaultController<Uint8Array>): SseWriter {
 	const encoder = new TextEncoder();
-	let closed = false;
-	// Depois que o cliente desconecta o controller fecha; escrever nele
-	// lançaria "Controller is already closed" dentro do catch abaixo.
-	const emit = (data: string) => {
-		if (closed) return;
-		try {
-			controller.enqueue(encoder.encode(data));
-		} catch {
-			closed = true;
-		}
-	};
+	const emit = (data: string) => controller.enqueue(encoder.encode(data));
 	return {
 		writeChunk(id, model, choices) {
 			emit(sseEvent(JSON.stringify(makeChunk(id, model, choices))));
@@ -167,13 +136,7 @@ function createSseWriter(controller: ReadableStreamDefaultController<Uint8Array>
 			emit(sseEvent(JSON.stringify({ error: { message, type: "server_error" } })));
 		},
 		close() {
-			if (closed) return;
-			closed = true;
-			try {
-				controller.close();
-			} catch {
-				/* já fechado pelo cliente */
-			}
+			controller.close();
 		},
 	};
 }
@@ -204,7 +167,6 @@ async function handleStreaming(
 	hasTools: boolean,
 	body: ChatCompletionRequest,
 	client: WebProviderClient,
-	upstream: AbortController,
 ): Promise<Response> {
 	// Await sendMessage BEFORE creating the SSE stream so that pre-stream
 	// errors (auth, rate-limit, model-not-available) return a proper HTTP
@@ -215,7 +177,6 @@ async function handleStreaming(
 		providerStream = await client.sendMessage({
 			message: prompt,
 			model,
-			signal: upstream.signal,
 			conversationId: body.conversation_id,
 			conversationName: body.conversation_name,
 			webSearch: body.web_search,
@@ -244,10 +205,6 @@ async function handleStreaming(
 				w.done();
 			}
 			w.close();
-		},
-		cancel() {
-			// Cliente fechou a conexão no meio da resposta.
-			upstream.abort();
 		},
 	});
 

@@ -10,19 +10,78 @@ import type { ApiClientConfig, NormalizedSendParams } from "../factory/types.ts"
 import { parseCookieHeader } from "../shared/cookie-parser.ts";
 import type { EvalResult } from "../shared/eval-helpers.ts";
 import { textToStream } from "../shared/stream-helpers.ts";
-import type { StreamResult } from "../types.ts";
-import { SessionExpiredError, withTimeout } from "../types.ts";
+import type { ModelInfo, StreamResult } from "../types.ts";
+import { ProviderApiError, SessionExpiredError, withTimeout } from "../types.ts";
 import type { ClaudeWebAuth } from "./auth.ts";
+import { type ChunkSink, createChunkStream } from "./chunk-stream.ts";
+import { classifyClaudeError, looksLikeRateLimitReply } from "./errors.ts";
 import { parseClaudeStream } from "./stream.ts";
 
+/** Até o claude.ai responder os cabeçalhos (ou a resposta inteira, sem streaming). */
 const SEND_TIMEOUT_MS = 120_000;
+const STREAM_IDLE_TIMEOUT_MS = 180_000;
+const STREAM_MAX_DURATION_MS = 600_000;
 const NATIVE_TOOLS_TTL_MS = 30 * 60 * 1000;
+/** Função exposta na aba que repassa os pedaços do SSE para o gateway. */
+const CHUNK_BINDING = "__tfgClaudeChunk";
+
+export const CLAUDE_WEB_MODELS: ModelInfo[] = [
+	{ id: "claude-sonnet-5", name: "Claude Sonnet 5" },
+	{ id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
+	{ id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+	{ id: "claude-opus-4-20250514", name: "Claude Opus 4" },
+	{ id: "claude-opus-4-6", name: "Claude Opus 4.6" },
+	{ id: "claude-haiku-4-20250514", name: "Claude Haiku 4" },
+	{ id: "claude-haiku-4-6", name: "Claude Haiku 4.6" },
+];
 
 type NativeToolTemplate = {
 	tools: unknown[];
 	toolStates?: unknown[];
 	personalizedStyles: unknown[];
 };
+
+/** `streamed`: a página está repassando o corpo por CHUNK_BINDING. */
+type CompletionResult =
+	| { ok: true; data: string; streamed: boolean }
+	| { ok: false; status: number; error: string };
+
+// A função exposta pertence à aba e sobrevive à recriação do cliente (evict
+// após sessão expirada) e ao hot reload; por isso o estado fica no globalThis.
+const chunkState = ((globalThis as { __tfgClaudeChunks?: unknown }).__tfgClaudeChunks ??= {
+	sinks: new Map<string, ChunkSink>(),
+	pages: new WeakSet<Page>(),
+}) as { sinks: Map<string, ChunkSink>; pages: WeakSet<Page> };
+
+async function ensureChunkBinding(page: Page): Promise<boolean> {
+	if (chunkState.pages.has(page)) return true;
+	try {
+		await page.exposeFunction(CHUNK_BINDING, (id: string, kind: string, payload: string) => {
+			const sink = chunkState.sinks.get(id);
+			if (!sink) return;
+			if (kind === "data") sink.push(payload);
+			else sink.end(kind === "error" ? payload || "Claude stream failed" : undefined);
+		});
+	} catch (err) {
+		if (!/already registered/i.test(String(err))) {
+			console.warn(`[ClaudeWeb] Streaming indisponível, usando resposta inteira: ${String(err)}`);
+			return false;
+		}
+	}
+	chunkState.pages.add(page);
+	return true;
+}
+
+/** Aborta o fetch que a aba está fazendo para este pedido. */
+async function abortInPage(page: Page, requestId: string): Promise<void> {
+	await page
+		.evaluate((id: string) => {
+			const aborts = (window as unknown as { __tfgClaudeAborts?: Map<string, AbortController> })
+				.__tfgClaudeAborts;
+			aborts?.get(id)?.abort();
+		}, requestId)
+		.catch(() => {});
+}
 
 /** UUID estável por conversa local; sem chave preserva o comportamento antigo. */
 async function conversationUuidForKey(key?: string): Promise<string> {
@@ -47,15 +106,7 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 		startUrl: "https://claude.ai/",
 		cookieDomain: ".claude.ai",
 		defaultModel: "claude-sonnet-5",
-		models: [
-			{ id: "claude-sonnet-5", name: "Claude Sonnet 5" },
-			{ id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
-			{ id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
-			{ id: "claude-opus-4-20250514", name: "Claude Opus 4" },
-			{ id: "claude-opus-4-6", name: "Claude Opus 4.6" },
-			{ id: "claude-haiku-4-20250514", name: "Claude Haiku 4" },
-			{ id: "claude-haiku-4-6", name: "Claude Haiku 4.6" },
-		],
+		models: CLAUDE_WEB_MODELS,
 	};
 
 	private readonly baseUrl = "https://claude.ai/api";
@@ -75,17 +126,34 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 	}
 
 	/**
+	 * Abre uma aba temporária no mesmo perfil. Navegar a aba principal
+	 * destruiria o contexto das respostas que ainda estão chegando por ela
+	 * ("Execution context was destroyed").
+	 */
+	private async withProbePage<T>(fn: (probe: Page) => Promise<T>): Promise<T> {
+		const page = await this.getPage();
+		const probe = await page.context().newPage();
+		try {
+			return await fn(probe);
+		} finally {
+			await probe.close().catch(() => {});
+		}
+	}
+
+	/**
 	 * Captura uma requisição da própria interface do Claude e reaproveita
 	 * somente a lista de ferramentas/estados liberados para esta conta. A
 	 * requisição de sondagem é abortada antes de chegar ao servidor.
 	 */
-	private async getNativeToolTemplate(page: Page): Promise<NativeToolTemplate> {
+	private async getNativeToolTemplate(): Promise<NativeToolTemplate> {
 		if (this.nativeToolTemplate && Date.now() < this.nativeToolTemplate.expiresAt) {
 			return structuredClone(this.nativeToolTemplate.value);
 		}
-		if (this.nativeToolTemplatePromise) return this.nativeToolTemplatePromise;
+		if (this.nativeToolTemplatePromise) {
+			return structuredClone(await this.nativeToolTemplatePromise);
+		}
 
-		this.nativeToolTemplatePromise = (async () => {
+		this.nativeToolTemplatePromise = this.withProbePage(async (probe) => {
 			let resolveCapture: ((value: NativeToolTemplate) => void) | null = null;
 			let rejectCapture: ((reason: Error) => void) | null = null;
 			const captured = new Promise<NativeToolTemplate>((resolve, reject) => {
@@ -96,7 +164,7 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 				url.origin === "https://claude.ai" &&
 				/\/api\/organizations\/[^/]+\/chat_conversations\/[^/]+\/completion$/.test(url.pathname);
 
-			await page.route(matchesCompletion, async (route) => {
+			await probe.route(matchesCompletion, async (route) => {
 				try {
 					const request = route.request();
 					const raw = request.postData();
@@ -124,29 +192,25 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 				}
 			});
 
-			try {
-				await page.goto("https://claude.ai/new", {
-					waitUntil: "domcontentloaded",
-					timeout: 60_000,
-				});
-				const input = page.locator("div[contenteditable='true']").first();
-				await input.waitFor({ state: "visible", timeout: 15_000 });
-				await input.fill("Olá");
-				await page.keyboard.press("Enter");
-				const template = await withTimeout(captured, 20_000, "Claude native tools capture");
-				this.nativeToolTemplate = {
-					value: structuredClone(template),
-					expiresAt: Date.now() + NATIVE_TOOLS_TTL_MS,
-				};
-				console.log(`[ClaudeWeb] Captured ${template.tools.length} native account tool(s)`);
-				return template;
-			} finally {
-				await page.unroute(matchesCompletion).catch(() => {});
-			}
-		})();
+			await probe.goto("https://claude.ai/new", {
+				waitUntil: "domcontentloaded",
+				timeout: 60_000,
+			});
+			const input = probe.locator("div[contenteditable='true']").first();
+			await input.waitFor({ state: "visible", timeout: 15_000 });
+			await input.fill("Olá");
+			await probe.keyboard.press("Enter");
+			const template = await withTimeout(captured, 20_000, "Claude native tools capture");
+			this.nativeToolTemplate = {
+				value: structuredClone(template),
+				expiresAt: Date.now() + NATIVE_TOOLS_TTL_MS,
+			};
+			console.log(`[ClaudeWeb] Captured ${template.tools.length} native account tool(s)`);
+			return template;
+		});
 
 		try {
-			return await this.nativeToolTemplatePromise;
+			return structuredClone(await this.nativeToolTemplatePromise);
 		} finally {
 			this.nativeToolTemplatePromise = null;
 		}
@@ -171,7 +235,22 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 		}
 	}
 
+	/** Contrato do BaseApiClient: resposta inteira, sem streaming. */
 	protected async callApi(page: Page, params: NormalizedSendParams): Promise<EvalResult> {
+		return this.requestCompletion(page, params, crypto.randomUUID(), false);
+	}
+
+	/**
+	 * Cria/reaproveita a conversa e faz o POST de completion dentro da aba.
+	 * Com `stream`, a aba devolve assim que os cabeçalhos chegam e repassa o
+	 * corpo por CHUNK_BINDING; sem ele, lê tudo e devolve o texto.
+	 */
+	private async requestCompletion(
+		page: Page,
+		params: NormalizedSendParams,
+		requestId: string,
+		stream: boolean,
+	): Promise<CompletionResult> {
 		const conversationUuid = await conversationUuidForKey(params.conversationId);
 		const orgId = this.organizationId;
 		const baseUrl = this.baseUrl;
@@ -182,7 +261,7 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 		let nativeTools: NativeToolTemplate | null = null;
 		if (params.webSearch) {
 			try {
-				nativeTools = await this.getNativeToolTemplate(page);
+				nativeTools = await this.getNativeToolTemplate();
 			} catch (err) {
 				return {
 					ok: false,
@@ -191,6 +270,7 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 				};
 			}
 		}
+		if (params.signal?.aborted) throw new Error("Claude request cancelled");
 
 		const evaluatePromise = page.evaluate(
 			async ({
@@ -202,85 +282,127 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 				message: msg,
 				conversationName: convName,
 				nativeTools: native,
-			}) => {
-				const createUrl = org
-					? `${apiBase}/organizations/${org}/chat_conversations`
-					: `${apiBase}/chat_conversations`;
-				const createConversation = (uuid: string) => fetch(createUrl, {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					credentials: "include",
-					body: JSON.stringify({ name: convName, uuid }),
-				});
-				const createRes = await createConversation(convUuid);
-				let conv: { uuid: string } = { uuid: convUuid };
-				if (!createRes.ok) {
-					const text = await createRes.text();
-					// UUID estável já existe: reutiliza a conversa em vez de criar outra.
-					const existingRes = await fetch(`${createUrl}/${convUuid}`, {
-						credentials: "include",
-					});
-					if (!existingRes.ok) {
-						// Conversas apagadas ou UUIDs antigos podem ficar inválidos na API.
-						// Recupera a chamada com um UUID v4 novo em vez de falhar a pesquisa.
-						const replacementUuid = crypto.randomUUID();
-						const replacementRes = await createConversation(replacementUuid);
-						if (!replacementRes.ok) {
-							const replacementText = await replacementRes.text();
-							return {
-								ok: false as const,
-								status: replacementRes.status,
-								error: `[create_conversation_retry] ${replacementRes.status} ${replacementText.slice(0, 500)}; original=${createRes.status} ${text.slice(0, 240)}`,
-							};
+				requestId: reqId,
+				binding,
+			}): Promise<CompletionResult> => {
+				const w = window as unknown as Record<string, any>;
+				const aborts: Map<string, AbortController> = (w.__tfgClaudeAborts ??= new Map());
+				const ctrl = new AbortController();
+				aborts.set(reqId, ctrl);
+				let handedOff = false;
+				try {
+					const createUrl = org
+						? `${apiBase}/organizations/${org}/chat_conversations`
+						: `${apiBase}/chat_conversations`;
+					const createConversation = (uuid: string) =>
+						fetch(createUrl, {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							credentials: "include",
+							body: JSON.stringify({ name: convName, uuid }),
+							signal: ctrl.signal,
+						});
+					const createRes = await createConversation(convUuid);
+					let conv: { uuid: string } = { uuid: convUuid };
+					if (!createRes.ok) {
+						const text = await createRes.text();
+						// UUID estável já existe: reutiliza a conversa em vez de criar outra.
+						const existingRes = await fetch(`${createUrl}/${convUuid}`, {
+							credentials: "include",
+							signal: ctrl.signal,
+						});
+						if (!existingRes.ok) {
+							// Conversas apagadas ou UUIDs antigos podem ficar inválidos na API.
+							// Recupera a chamada com um UUID v4 novo em vez de falhar a pesquisa.
+							const replacementUuid = crypto.randomUUID();
+							const replacementRes = await createConversation(replacementUuid);
+							if (!replacementRes.ok) {
+								const replacementText = await replacementRes.text();
+								return {
+									ok: false as const,
+									status: replacementRes.status,
+									error: `[create_conversation_retry] ${replacementRes.status} ${replacementText.slice(0, 500)}; original=${createRes.status} ${text.slice(0, 240)}`,
+								};
+							}
+							const replacement = (await replacementRes.json()) as { uuid?: string };
+							conv = { uuid: replacement.uuid || replacementUuid };
 						}
-						const replacement = (await replacementRes.json()) as { uuid?: string };
-						conv = { uuid: replacement.uuid || replacementUuid };
+					} else {
+						const created = (await createRes.json()) as { uuid?: string };
+						conv = { uuid: created.uuid || convUuid };
 					}
-				} else {
-					const created = (await createRes.json()) as { uuid?: string };
-					conv = { uuid: created.uuid || convUuid };
+					const completionUrl = org
+						? `${apiBase}/organizations/${org}/chat_conversations/${conv.uuid}/completion`
+						: `${apiBase}/chat_conversations/${conv.uuid}/completion`;
+					const completionRes = await fetch(completionUrl, {
+						method: "POST",
+						headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+						credentials: "include",
+						signal: ctrl.signal,
+						body: JSON.stringify({
+							prompt: msg,
+							parent_message_uuid: "00000000-0000-4000-8000-000000000000",
+							model: mdl,
+							timezone: tz,
+							rendering_mode: "messages",
+							attachments: [],
+							files: [],
+							locale: "en-US",
+							personalized_styles: native?.personalizedStyles || [],
+							sync_sources: [],
+							tools: native?.tools || [],
+							...(native?.toolStates ? { tool_states: native.toolStates } : {}),
+						}),
+					});
+					if (!completionRes.ok) {
+						const text = await completionRes.text();
+						return {
+							ok: false as const,
+							status: completionRes.status,
+							error: `[completion] ${completionRes.status} ${text.slice(0, 500)}`,
+						};
+					}
+					const reader = completionRes.body?.getReader();
+					if (!reader)
+						return { ok: false as const, status: 500, error: "No response body from Claude API" };
+
+					const push = binding ? w[binding] : null;
+					if (typeof push === "function") {
+						// Devolve já e repassa o corpo em segundo plano.
+						handedOff = true;
+						void (async () => {
+							const decoder = new TextDecoder();
+							try {
+								while (true) {
+									const { done, value } = await reader.read();
+									if (done) break;
+									const text = decoder.decode(value, { stream: true });
+									if (text) await push(reqId, "data", text);
+								}
+								const tail = decoder.decode();
+								if (tail) await push(reqId, "data", tail);
+								await push(reqId, "end", "");
+							} catch (err) {
+								const message = err instanceof Error ? err.message : String(err);
+								await Promise.resolve(push(reqId, "error", message)).catch(() => {});
+							} finally {
+								aborts.delete(reqId);
+							}
+						})();
+						return { ok: true as const, data: "", streamed: true };
+					}
+
+					const decoder = new TextDecoder();
+					let fullText = "";
+					while (true) {
+						const { done, value } = await reader.read();
+						if (done) break;
+						fullText += decoder.decode(value, { stream: true });
+					}
+					return { ok: true as const, data: fullText, streamed: false };
+				} finally {
+					if (!handedOff) aborts.delete(reqId);
 				}
-				const completionUrl = org
-					? `${apiBase}/organizations/${org}/chat_conversations/${conv.uuid}/completion`
-					: `${apiBase}/chat_conversations/${conv.uuid}/completion`;
-				const completionRes = await fetch(completionUrl, {
-					method: "POST",
-					headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-					credentials: "include",
-					body: JSON.stringify({
-						prompt: msg,
-						parent_message_uuid: "00000000-0000-4000-8000-000000000000",
-						model: mdl,
-						timezone: tz,
-						rendering_mode: "messages",
-						attachments: [],
-						files: [],
-						locale: "en-US",
-						personalized_styles: native?.personalizedStyles || [],
-						sync_sources: [],
-						tools: native?.tools || [],
-						...(native?.toolStates ? { tool_states: native.toolStates } : {}),
-					}),
-				});
-				if (!completionRes.ok) {
-					const text = await completionRes.text();
-					return {
-						ok: false as const,
-						status: completionRes.status,
-						error: `[completion] ${completionRes.status} ${text.slice(0, 500)}`,
-					};
-				}
-				const reader = completionRes.body?.getReader();
-				if (!reader)
-					return { ok: false as const, status: 500, error: "No response body from Claude API" };
-				const decoder = new TextDecoder();
-				let fullText = "";
-				while (true) {
-					const { done, value } = await reader.read();
-					if (done) break;
-					fullText += decoder.decode(value, { stream: true });
-				}
-				return { ok: true as const, data: fullText };
 			},
 			{
 				baseUrl,
@@ -291,17 +413,73 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 				message: params.message,
 				conversationName,
 				nativeTools,
+				requestId,
+				binding: stream ? CHUNK_BINDING : null,
 			},
 		);
-		return (await withTimeout(evaluatePromise, SEND_TIMEOUT_MS, "Claude request")) as EvalResult;
+		try {
+			return await withTimeout(evaluatePromise, SEND_TIMEOUT_MS, "Claude request");
+		} catch (err) {
+			await abortInPage(page, requestId);
+			throw err;
+		}
+	}
+
+	/**
+	 * Abre a resposta do Claude como stream. Quando a função exposta funciona,
+	 * os pedaços chegam enquanto o Claude escreve; senão, cai na resposta
+	 * inteira de uma vez (comportamento antigo).
+	 */
+	private async openCompletion(
+		page: Page,
+		params: NormalizedSendParams,
+	): Promise<EvalResult<ReadableStream<Uint8Array>>> {
+		const requestId = crypto.randomUUID();
+		const { signal } = params;
+		const onAbort = () => {
+			void abortInPage(page, requestId);
+			chunks?.sink.end("Claude request cancelled");
+		};
+		const release = () => {
+			chunkState.sinks.delete(requestId);
+			signal?.removeEventListener("abort", onAbort);
+		};
+
+		const chunks = (await ensureChunkBinding(page))
+			? createChunkStream({
+					label: "Claude stream",
+					idleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
+					maxDurationMs: STREAM_MAX_DURATION_MS,
+					onCancel: () => void abortInPage(page, requestId),
+					onSettled: release,
+				})
+			: null;
+		if (chunks) chunkState.sinks.set(requestId, chunks.sink);
+		signal?.addEventListener("abort", onAbort, { once: true });
+
+		let result: CompletionResult;
+		try {
+			result = await this.requestCompletion(page, params, requestId, Boolean(chunks));
+		} catch (err) {
+			chunks?.sink.end(String(err));
+			release();
+			throw err;
+		}
+
+		if (result.ok && result.streamed && chunks) return { ok: true, data: chunks.stream };
+		chunks?.sink.end();
+		release();
+		if (!result.ok) return result;
+		console.log(`[ClaudeWeb] Response length: ${result.data.length} bytes`);
+		return { ok: true, data: textToStream(result.data) };
 	}
 
 	/**
 	 * Custom sendMessage to handle Claude-specific error flows:
 	 * - 401 → SessionExpiredError + auto-refresh retry
-	 * - 403 (rate limit) → clear error
+	 * - 429 / limite de uso → ProviderApiError 429
 	 * - 403 (other) → DOM fallback
-	 * - 429 → rate limit error
+	 * - outros 4xx → ProviderApiError com o mesmo status
 	 */
 	override async sendMessage(params: {
 		message: string;
@@ -343,53 +521,20 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 			conversationName: params.conversationName,
 			webSearch: params.webSearch,
 		};
-		const result = await this.callApi(page, normalized);
-		if (!result.ok) {
-			const errBody = result.error ?? "";
-			const errLower = errBody.toLowerCase();
-			console.warn(`[ClaudeWeb] API error ${result.status}: ${errBody.slice(0, 500)}`);
+		const result = await this.openCompletion(page, normalized);
+		if (result.ok) return result.data;
 
-			if (result.status === 401) throw new SessionExpiredError(this.providerId, errBody);
+		const errBody = result.error ?? "";
+		console.warn(`[ClaudeWeb] API error ${result.status}: ${errBody.slice(0, 500)}`);
+		const failure = classifyClaudeError(this.providerId, result.status, errBody);
+		if (failure !== "dom-fallback") throw failure;
 
-			const errorCode = errBody.match(/"error_code"\s*:\s*"([^"]+)"/)?.[1] ?? "";
-			const errorMessage =
-				errBody.match(/"message"\s*:\s*"([^"]+)"/)?.[1] ?? `Claude API error ${result.status}`;
-
-			if (errorCode === "model_not_available" || /model.*not available/i.test(errLower))
-				throw new Error(errorMessage);
-
-			if (
-				result.status === 429 ||
-				/rate.?limit|out of (free )?messages|usage.?limit|quota|too many|exceeded/i.test(
-					errLower,
-				) ||
-				/limit.*reset|upgrade.*pro/i.test(errLower)
-			) {
-				throw new Error(
-					`Claude rate limit reached (HTTP ${result.status}). Please wait for the limit to reset or upgrade your plan.`,
-				);
-			}
-
-			if (result.status === 403) {
-				const userMessage = ClaudeWebClient.extractLastUserMessage(params.message);
-				console.log(
-					`[ClaudeWeb] 403 (unknown cause), falling back to DOM simulation (${userMessage.length} chars)`,
-				);
-				return this.chatCompletionsViaDOM({ message: userMessage, signal: params.signal });
-			}
-			throw new Error(errorMessage);
-		}
-		console.log(`[ClaudeWeb] Response length: ${result.data?.length || 0} bytes`);
-		return textToStream(result.data ?? "");
-	}
-
-	private static extractLastUserMessage(prompt: string): string {
-		const parts = prompt.split(/\n\nHuman:\s*/);
-		if (parts.length > 1) {
-			const last = parts[parts.length - 1]?.trim();
-			if (last) return last;
-		}
-		return prompt;
+		// O prompt inteiro (instruções + histórico), não só a última mensagem:
+		// sem isso a matéria saía sem as regras de escrita.
+		console.warn(
+			`[ClaudeWeb] 403 (unknown cause), falling back to DOM simulation (${params.message.length} chars)`,
+		);
+		return this.chatCompletionsViaDOM({ message: params.message, signal: params.signal });
 	}
 
 	async checkSession(): Promise<{ valid: boolean; reason?: string }> {
@@ -410,9 +555,12 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 		try {
 			this.page = null;
 			await this.getPage();
-			const page = this.page!;
-			await page.goto("https://claude.ai/", { waitUntil: "domcontentloaded", timeout: 15000 });
-			await page.waitForTimeout(2000);
+			// Recarrega o claude.ai numa aba à parte para renovar os cookies sem
+			// derrubar outras respostas que estão chegando pela aba principal.
+			await this.withProbePage(async (probe) => {
+				await probe.goto("https://claude.ai/", { waitUntil: "domcontentloaded", timeout: 15000 });
+				await probe.waitForTimeout(2000);
+			});
 			const check = await this.checkSession();
 			if (check.valid) {
 				this.organizationId = undefined;
@@ -463,7 +611,7 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 			if (params.signal?.aborted) throw new Error("Claude request cancelled");
 			await new Promise((r) => setTimeout(r, pollIntervalMs));
 			const result = await page.evaluate(() => {
-				const clean = (t: string) => t.replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
+				const clean = (t: string) => t.replace(/[​-‍﻿]/g, "").trim();
 				const assistantMessages = document.querySelectorAll(
 					'[data-is-streaming], [class*="response"], [class*="assistant"], [class*="markdown"]',
 				);
@@ -491,15 +639,9 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 			throw new Error(
 				"Claude DOM fallback: no assistant reply detected. Ensure claude.ai is open and logged in.",
 			);
-		const rateLimitPatterns = [
-			/you['']ve hit your limit/i,
-			/limits will reset/i,
-			/out of free messages/i,
-			/upgrade.*pro/i,
-			/usage limit/i,
-		];
-		if (rateLimitPatterns.some((r) => r.test(lastText)))
-			throw new Error(
+		if (looksLikeRateLimitReply(lastText))
+			throw new ProviderApiError(
+				429,
 				"Claude rate limit reached. Please wait for the limit to reset or upgrade your plan.",
 			);
 		const fakeSse = `data: ${JSON.stringify({ type: "content_block_delta", delta: { text: lastText } })}\n\ndata: [DONE]\n\n`;

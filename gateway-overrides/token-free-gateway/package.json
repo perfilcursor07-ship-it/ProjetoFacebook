@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "Overrides do token-free-gateway copiados por scripts/install-token-free-gateway-overrides.js"
+}

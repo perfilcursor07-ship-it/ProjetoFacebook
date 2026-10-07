@@ -5,11 +5,20 @@ const projectRoot = path.resolve(__dirname, '..');
 const sourceRoot = path.join(projectRoot, 'gateway-overrides', 'token-free-gateway');
 const targetRoot = path.join(projectRoot, '.tools', 'token-free-gateway');
 const required = process.argv.includes('--required');
+const strict = process.argv.includes('--strict');
+
+// Versão do token-free-gateway sobre a qual os overrides foram escritos.
+// Os arquivos abaixo substituem os originais inteiros: em outra versão eles
+// podem desfazer correções do gateway ou quebrar imports. Ao atualizar o
+// gateway, compare os originais com os overrides e atualize este número.
+const UPSTREAM_VERSION = '0.5.2';
 
 const files = [
   'src/openai/chat-completions.ts',
   'src/openai/types.ts',
+  'src/providers/claude/chunk-stream.ts',
   'src/providers/claude/client.ts',
+  'src/providers/claude/errors.ts',
   'src/providers/claude/index.ts',
   'src/providers/claude/stream.ts',
   'src/providers/deepseek/stream.ts',
@@ -52,6 +61,15 @@ const patches = [
       '\t\t"--disable-backgrounding-occluded-windows",',
     ].join('\n'),
   },
+  {
+    file: 'src/server.ts',
+    marca: 'handleChatCompletions(body, provider, req.signal)',
+    procurar: '\treturn handleChatCompletions(body, provider);',
+    trocar: [
+      '\t// viralizeai: cancela a geração no Chrome quando o cliente desconecta.',
+      '\treturn handleChatCompletions(body, provider, req.signal);',
+    ].join('\n'),
+  },
 ];
 
 if (!fs.existsSync(path.join(targetRoot, 'package.json'))) {
@@ -63,6 +81,21 @@ if (!fs.existsSync(path.join(targetRoot, 'package.json'))) {
   }
   console.warn(message);
   process.exit(0);
+}
+
+const installedVersion = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(targetRoot, 'package.json'), 'utf8')).version || '?';
+  } catch {
+    return '?';
+  }
+})();
+if (installedVersion !== UPSTREAM_VERSION) {
+  console.warn(
+    `[gateway-sync] ATENÇÃO: gateway instalado é ${installedVersion}, overrides feitos para ${UPSTREAM_VERSION}. ` +
+      'Confira se os arquivos sobrescritos ainda batem com esta versão.'
+  );
+  if (strict) process.exit(1);
 }
 
 let updated = 0;
