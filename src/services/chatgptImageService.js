@@ -869,4 +869,7 @@ module.exports = {
   cookiesDoHeader,
   verificarSessaoChatgpt,
   garantirSessaoChatgpt,
+  // Importação da biblioteca do ChatGPT para o banco de imagens.
+  credenciaisChatgpt,
+  baixarImagemDaPagina,
 };

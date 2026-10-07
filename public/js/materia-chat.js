@@ -947,6 +947,39 @@
     fecharParagrafo();
   }
 
+  /**
+   * Título como opção clicável: o trecho [[assim]] aparece destacado, como
+   * sai na arte, em vez dos colchetes crus.
+   */
+  function textoDoTitulo(alvo, titulo, atual = false) {
+    alvo.replaceChildren();
+    const marca = document.createElement('span');
+    marca.className = 'mia-pub-radio';
+    marca.setAttribute('aria-hidden', 'true');
+    const texto = document.createElement('span');
+    texto.className = 'mia-pub-titulo-texto';
+    String(titulo || '')
+      .split(/(\[\[.+?\]\])/g)
+      .filter(Boolean)
+      .forEach((parte) => {
+        const destaque = parte.match(/^\[\[(.+)\]\]$/);
+        if (destaque) {
+          const m = document.createElement('mark');
+          m.textContent = destaque[1];
+          texto.appendChild(m);
+        } else {
+          texto.appendChild(document.createTextNode(parte.replace(/\*\*/g, '')));
+        }
+      });
+    alvo.append(marca, texto);
+    if (atual) {
+      const selo = document.createElement('span');
+      selo.className = 'mia-pub-selo';
+      selo.textContent = 'Atual';
+      alvo.appendChild(selo);
+    }
+  }
+
   function criarBotao(texto, classe) {
     const b = document.createElement('button');
     b.type = 'button';
@@ -1280,42 +1313,28 @@
    * só roda quando o quadro aparece na tela e fica em cache na aba, para não
    * gastar créditos do buscador a cada vez que a conversa é reaberta.
    */
-  function faixaFotosSugeridas(mensagem, campoUrl, campoCredito) {
+  function faixaFotosSugeridas(mensagem, campoUrl, campoCredito, destino = null) {
     const wrap = document.createElement('div');
-    wrap.className = 'mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2';
-    const topo = document.createElement('div');
-    topo.className = 'flex flex-wrap items-center justify-between gap-2';
-    const label = document.createElement('p');
-    label.className = 'text-[11px] font-semibold uppercase tracking-wide text-slate-500';
-    label.textContent = 'Fotos sugeridas para a capa';
-    const buscarNovas = criarBotao(
-      'Buscar novas',
-      'rounded-md border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300 hover:border-violet-400 hover:text-white'
-    );
-    topo.appendChild(label);
-    topo.appendChild(buscarNovas);
+    wrap.className = 'mia-pub-sug';
     const busca = document.createElement('div');
-    busca.className = 'mt-1.5 flex gap-1.5';
+    busca.className = 'mia-pub-row';
     const campoBusca = document.createElement('input');
     campoBusca.type = 'search';
     campoBusca.placeholder = 'Buscar foto por palavra (ex.: Silas Malafaia)';
-    campoBusca.className =
-      'min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100 placeholder:text-slate-600 focus:border-violet-400 focus:outline-none';
-    const botaoBusca = criarBotao(
-      'Buscar',
-      'rounded-md border border-violet-500/50 px-2.5 py-1 text-[11px] font-semibold text-violet-200 hover:bg-violet-500/10'
-    );
-    busca.appendChild(campoBusca);
-    busca.appendChild(botaoBusca);
+    campoBusca.setAttribute('aria-label', 'Buscar foto por palavra');
+    campoBusca.className = 'mia-pub-input';
+    const botaoBusca = criarBotao('Buscar', 'mia-pub-btn mia-pub-btn--ghost');
+    const buscarNovas = criarBotao('↻', 'mia-pub-btn mia-pub-btn--ghost mia-pub-btn--icon');
+    buscarNovas.title = 'Buscar outras fotos relacionadas';
+    buscarNovas.setAttribute('aria-label', 'Buscar outras fotos relacionadas');
+    busca.append(campoBusca, botaoBusca, buscarNovas);
     const faixa = document.createElement('div');
-    faixa.className = 'mt-2 flex gap-1.5 overflow-x-auto pb-1';
+    faixa.className = 'mia-pub-thumbs';
     const meta = document.createElement('p');
-    meta.className = 'mt-1 text-[11px] text-slate-500';
+    meta.className = 'mia-pub-note';
     meta.textContent = 'Carregando fotos relacionadas…';
-    wrap.appendChild(topo);
-    wrap.appendChild(busca);
-    wrap.appendChild(faixa);
-    wrap.appendChild(meta);
+    wrap.append(busca, faixa, meta);
+    if (destino) destino.appendChild(wrap);
 
     const chaveCache = `mia-fotos-sugeridas:${mensagem.id}`;
     let botoes = [];
@@ -1334,11 +1353,8 @@
         campoCredito.value = creditoDaFoto(img);
         campoCredito.dataset.auto = '1';
       }
-      botoes.forEach((b) => {
-        b.classList.toggle('border-emerald-400', b === btn);
-        b.classList.toggle('border-slate-700', b !== btn);
-      });
-      meta.textContent = 'Foto escolhida — será usada na capa ao salvar o rascunho.';
+      botoes.forEach((b) => b.classList.toggle('is-on', b === btn));
+      meta.textContent = 'Foto escolhida ✓ — será usada na capa ao salvar.';
     }
 
     function desenhar(data) {
@@ -1353,23 +1369,20 @@
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.title = img.titulo || img.fonte || '';
-        btn.className =
-          'relative shrink-0 overflow-hidden rounded-md border border-slate-700 bg-slate-950 hover:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400';
-        btn.style.cssText = 'width:72px;height:90px;padding:0;flex:0 0 72px';
+        btn.className = 'mia-pub-thumb';
         const foto = document.createElement('img');
         foto.src = img.thumbnail || img.url;
         foto.alt = '';
         foto.loading = 'lazy';
         foto.decoding = 'async';
         foto.referrerPolicy = 'no-referrer';
-        foto.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
         foto.addEventListener('error', () => btn.remove(), { once: true });
         btn.appendChild(foto);
         if (img.origem === 'fonte') {
           // Imagem do próprio link (vídeo/post/reportagem).
           const etiqueta = document.createElement('span');
           etiqueta.textContent = 'Fonte';
-          etiqueta.className = 'absolute bottom-0 left-0 right-0 bg-emerald-600/90 py-px text-center text-[9px] font-semibold text-white';
+          etiqueta.className = 'mia-pub-thumb-selo';
           btn.appendChild(etiqueta);
           btn.title = 'Imagem do link da matéria';
         }
@@ -1377,7 +1390,7 @@
         botoes.push(btn);
         faixa.appendChild(btn);
       }
-      const partes = [data.aviso, data.pessoa, 'Clique numa miniatura para usar na capa'].filter(Boolean);
+      const partes = [data.aviso, data.pessoa, 'Clique numa foto para usar na capa'].filter(Boolean);
       meta.textContent = partes.join(' · ');
       // Avisa o quadro da matéria (capa automática e "pronta em 1 clique").
       campoUrl.dispatchEvent(new CustomEvent('mia-fotos-sugeridas', { detail: imagens }));
@@ -1588,17 +1601,49 @@
 
   function areaSalvar(mensagem, container, { livre = false } = {}) {
     const box = document.createElement('div');
-    box.className = 'mia-msg-panel mt-1';
+    box.className = 'mia-msg-panel mia-pub mt-1';
 
+    // Cabeçalho + 3 passos: título, capa e publicação. Cada passo só mostra
+    // o essencial; o resto fica em abas e no menu de atalhos.
+    const cabecalho = document.createElement('div');
+    cabecalho.className = 'mia-pub-head';
+    const cabecalhoTitulo = document.createElement('p');
+    cabecalhoTitulo.className = 'mia-pub-head-title';
+    cabecalhoTitulo.textContent = livre ? 'Transformar em matéria' : 'Pronta para publicar';
     const info = document.createElement('p');
-    info.className = 'text-xs text-slate-400';
+    info.className = 'mia-pub-head-sub';
     info.textContent = livre
-      ? 'Quer transformar esta resposta em matéria? Revise o título e salve como rascunho.'
-      : 'Gostou? Salve como rascunho — ou peça um ajuste no campo abaixo do chat.';
-    box.appendChild(info);
+      ? 'Revise o título, escolha a capa e salve como rascunho.'
+      : 'Confira o título, escolha a capa e publique — ou peça um ajuste no chat.';
+    cabecalho.append(cabecalhoTitulo, info);
+    box.appendChild(cabecalho);
+
+    function passo(numero, titulo, dica) {
+      const sec = document.createElement('section');
+      sec.className = 'mia-pub-step';
+      const topo = document.createElement('div');
+      topo.className = 'mia-pub-step-head';
+      const num = document.createElement('span');
+      num.className = 'mia-pub-step-num';
+      num.textContent = String(numero);
+      const textos = document.createElement('div');
+      const h = document.createElement('p');
+      h.className = 'mia-pub-step-title';
+      h.textContent = titulo;
+      textos.appendChild(h);
+      if (dica) {
+        const p = document.createElement('p');
+        p.className = 'mia-pub-step-hint';
+        p.textContent = dica;
+        textos.appendChild(p);
+      }
+      topo.append(num, textos);
+      sec.appendChild(topo);
+      return sec;
+    }
 
     const ajustesRapidos = document.createElement('div');
-    ajustesRapidos.className = 'mia-review-actions';
+    ajustesRapidos.className = 'mia-review-actions mia-pub-ajustes';
     for (const [rotulo, pedido] of [
       ['Encurtar', 'Encurte a matéria preservando os fatos principais e os créditos.'],
       ['Melhorar abertura', 'Reescreva a abertura com estrutura própria e o fato mais relevante, sem copiar a fonte nem acrescentar fatos.'],
@@ -1721,6 +1766,9 @@
     ajustesRapidos.appendChild(editarTexto);
     box.appendChild(ajustesRapidos);
 
+    const secTitulo = passo(1, 'Título', livre ? 'Revise o título do rascunho.' : 'Escolha um título sugerido ou escreva o seu.');
+    box.appendChild(secTitulo);
+
     /**
      * Botão "Corrigir texto": a IA só acerta ortografia, acentos e pontuação
      * do título que o editor escreveu; não troca palavras nem reescreve.
@@ -1730,8 +1778,7 @@
       botao.type = 'button';
       botao.textContent = 'Corrigir texto';
       botao.title = 'A IA corrige só ortografia, acentos e pontuação — não muda as suas palavras';
-      botao.className =
-        'shrink-0 rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-200 transition hover:border-emerald-500/60 hover:text-white disabled:cursor-not-allowed disabled:opacity-50';
+      botao.className = 'mia-pub-btn mia-pub-btn--ghost';
       const atualizar = () => {
         botao.disabled = campo.value.trim().length < 8;
       };
@@ -1753,10 +1800,10 @@
             campo.dispatchEvent(new Event('input', { bubbles: true }));
           }
           aviso.textContent = data.aviso || (data.alterado ? 'Título corrigido.' : 'Nenhuma correção necessária.');
-          aviso.className = `mt-1 text-[11px] ${data.aviso ? 'text-amber-300' : 'text-emerald-300'}`;
+          aviso.className = `mia-pub-note ${data.aviso ? 'is-warn' : 'is-ok'}`;
         } catch (err) {
           aviso.textContent = err.message || 'Não foi possível corrigir agora.';
-          aviso.className = 'mt-1 text-[11px] text-rose-300';
+          aviso.className = 'mia-pub-note is-err';
         } finally {
           botao.textContent = 'Corrigir texto';
           atualizar();
@@ -1773,14 +1820,13 @@
       tituloLivre.value = tituloRascunhoLivre(mensagem);
       tituloLivre.placeholder = 'Título da matéria';
       tituloLivre.setAttribute('aria-label', 'Título da matéria');
-      tituloLivre.className =
-        'min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-medium text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none';
+      tituloLivre.className = 'mia-pub-input';
       const linhaLivre = document.createElement('div');
-      linhaLivre.className = 'mt-2 flex gap-2';
+      linhaLivre.className = 'mia-pub-row';
       const avisoLivre = document.createElement('p');
-      avisoLivre.className = 'mt-1 text-[11px] text-slate-500';
+      avisoLivre.className = 'mia-pub-note';
       linhaLivre.append(tituloLivre, criarCorrecaoDeTitulo(tituloLivre, avisoLivre));
-      box.append(linhaLivre, avisoLivre);
+      secTitulo.append(linhaLivre, avisoLivre);
     }
 
     // No Claude Livre, as sugestões são pedidas antes de a resposta virar um
@@ -1795,34 +1841,29 @@
     let tituloProprio = null;
     let campoTituloProprio = null;
     let blocoTituloProprio = null;
-    const estiloOpcaoTitulo = (ativo) =>
-      'w-full rounded-md border px-2.5 py-1.5 text-left text-xs leading-snug transition ' +
-      (ativo
-        ? 'border-emerald-500 bg-emerald-500/10 text-emerald-200'
-        : 'border-slate-700 text-slate-300 hover:border-emerald-500/60 hover:text-white');
+    const estiloOpcaoTitulo = (ativo) => `mia-pub-titulo-op${ativo ? ' is-on' : ''}`;
     if (!livre && !mensagem.matterId) {
       blocoTituloProprio = document.createElement('div');
-      blocoTituloProprio.className = 'mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2';
+      blocoTituloProprio.className = 'mia-pub-proprio';
       const rotulo = document.createElement('label');
-      rotulo.className = 'text-[11px] font-semibold uppercase tracking-wide text-slate-500';
-      rotulo.textContent = 'Ou escreva seu próprio título';
+      rotulo.className = 'mia-pub-label';
+      rotulo.textContent = 'Ou escreva o seu título';
       const linha = document.createElement('div');
-      linha.className = 'mt-1.5 flex gap-2';
+      linha.className = 'mia-pub-row';
       campoTituloProprio = document.createElement('input');
       campoTituloProprio.type = 'text';
       campoTituloProprio.maxLength = 180;
       campoTituloProprio.id = `titulo-proprio-${mensagem.id}`;
       rotulo.htmlFor = campoTituloProprio.id;
       campoTituloProprio.placeholder = 'Digite o título que você quer usar';
-      campoTituloProprio.className =
-        'min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-medium text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none';
+      campoTituloProprio.className = 'mia-pub-input';
       const avisoProprio = document.createElement('p');
-      avisoProprio.className = 'mt-1 text-[11px] text-slate-500';
-      avisoProprio.textContent = 'O título escrito aqui substitui o sugerido ao salvar o rascunho.';
+      avisoProprio.className = 'mia-pub-note';
+      avisoProprio.textContent = 'Use [[trecho]] para destacar parte do título na arte.';
       campoTituloProprio.addEventListener('input', () => {
         const valor = campoTituloProprio.value.trim();
         tituloProprio = valor || null;
-        campoTituloProprio.classList.toggle('border-emerald-500', Boolean(valor));
+        campoTituloProprio.classList.toggle('is-on', Boolean(valor));
         if (valor) {
           // Título próprio em uso: nenhuma sugestão fica marcada.
           opcoesTitulos.forEach((opcao) => { opcao.className = estiloOpcaoTitulo(false); });
@@ -1832,7 +1873,7 @@
       });
       linha.append(campoTituloProprio, criarCorrecaoDeTitulo(campoTituloProprio, avisoProprio));
       blocoTituloProprio.append(rotulo, linha, avisoProprio);
-      box.appendChild(blocoTituloProprio);
+      secTitulo.appendChild(blocoTituloProprio);
     }
     const alternativos = Array.isArray(mensagem.titulosAlternativos)
       ? mensagem.titulosAlternativos.filter(Boolean).slice(0, 3)
@@ -1852,21 +1893,15 @@
       tituloPrincipalAtual = tituloPrincipal;
       if (!listaTitulos) {
         const wrap = document.createElement('div');
-        wrap.className = 'mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2';
-        const label = document.createElement('p');
-        label.className = 'text-[11px] font-semibold uppercase tracking-wide text-slate-500';
-        label.textContent = 'Títulos sugeridos pelo Claude';
-        wrap.appendChild(label);
+        wrap.className = 'mia-pub-titulos';
         listaTitulos = document.createElement('div');
-        listaTitulos.className = 'mt-1.5 grid gap-1.5';
+        listaTitulos.className = 'mia-pub-titulos-lista';
+        listaTitulos.setAttribute('role', 'radiogroup');
+        listaTitulos.setAttribute('aria-label', 'Títulos sugeridos');
         wrap.appendChild(listaTitulos);
-        const dica = document.createElement('p');
-        dica.className = 'mt-1.5 text-[11px] text-slate-500';
-        dica.textContent = 'Clique em um título para usá-lo no rascunho.';
-        wrap.appendChild(dica);
         // Sugestões acima do campo "Seu título", mesmo chegando depois.
-        if (blocoTituloProprio?.parentNode === box) box.insertBefore(wrap, blocoTituloProprio);
-        else box.appendChild(wrap);
+        if (blocoTituloProprio?.parentNode === secTitulo) secTitulo.insertBefore(wrap, blocoTituloProprio);
+        else secTitulo.appendChild(wrap);
       }
 
       listaTitulos.replaceChildren();
@@ -1878,18 +1913,20 @@
         // Escolher uma sugestão descarta o título próprio digitado.
         if (campoTituloProprio && campoTituloProprio.value) {
           campoTituloProprio.value = '';
-          campoTituloProprio.classList.remove('border-emerald-500');
+          campoTituloProprio.classList.remove('is-on');
           tituloProprio = null;
         }
         opcoesTitulos.forEach((opcao) => {
           opcao.className = estiloOpcaoTitulo(opcao === btn);
+          opcao.setAttribute('aria-checked', opcao === btn ? 'true' : 'false');
         });
       };
       for (const opcao of [tituloPrincipal, ...sugestoes]) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.dataset.titulo = opcao;
-        btn.textContent = opcao === tituloPrincipal ? `${opcao}  (atual)` : opcao;
+        btn.setAttribute('role', 'radio');
+        textoDoTitulo(btn, opcao, opcao === tituloPrincipal);
         btn.addEventListener('click', () => marcar(btn));
         opcoesTitulos.push(btn);
         listaTitulos.appendChild(btn);
@@ -1899,81 +1936,199 @@
 
     if (alternativos.length) mostrarTitulosAlternativos(alternativos);
 
-    const grid = document.createElement('div');
-    grid.className = 'mt-2 grid gap-2 md:grid-cols-2';
+    // ── Passo 2: capa ─────────────────────────────────────────────────────
+    // Prévia grande à esquerda; à direita, de onde vem a foto (abas):
+    // sugeridas, Minhas imagens (banco), gerar com IA ou link/arquivo.
     const imagem = document.createElement('input');
     imagem.type = 'url';
     imagem.setAttribute('aria-label', 'URL da imagem da capa');
-    imagem.placeholder = 'URL da imagem da capa (opcional)';
-    imagem.className =
-      'w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none';
+    imagem.placeholder = 'https://… (endereço da imagem)';
+    imagem.className = 'mia-pub-input';
     const credito = document.createElement('input');
     credito.type = 'text';
     credito.setAttribute('aria-label', 'Crédito da foto');
-    credito.placeholder = 'Crédito da foto (ex.: Reprodução/Instagram)';
-    credito.className = imagem.className;
-    grid.appendChild(imagem);
-    grid.appendChild(credito);
-    const opcoesImagem = document.createElement('details');
-    opcoesImagem.className = 'mia-image-options';
-    const resumoImagem = document.createElement('summary');
-    resumoImagem.textContent = 'Imagem de capa e crédito (opcional)';
-    opcoesImagem.appendChild(resumoImagem);
-    const dicaImagem = document.createElement('p');
-    dicaImagem.textContent = 'Ao salvar, o sistema tenta aproveitar a imagem extraída da fonte. Confira a foto no editor antes de publicar, ou informe outra URL abaixo.';
-    opcoesImagem.appendChild(dicaImagem);
-    opcoesImagem.appendChild(grid);
-    if (!mensagem.matterId) box.appendChild(faixaFotosSugeridas(mensagem, imagem, credito));
-    box.appendChild(opcoesImagem);
+    credito.placeholder = 'Ex.: Reprodução/Instagram';
+    credito.className = 'mia-pub-input';
+
+    const secCapa = passo(
+      2,
+      'Capa',
+      mensagem.matterId
+        ? 'Troque a foto do rascunho por uma de Minhas imagens, gere com IA ou recorte.'
+        : 'Sem escolher nada, o sistema usa a imagem da fonte ao salvar.'
+    );
+    box.appendChild(secCapa);
+    const capaGrid = document.createElement('div');
+    capaGrid.className = 'mia-pub-capa';
+    secCapa.appendChild(capaGrid);
 
     // Capa: prévia da foto escolhida + recorte livre, igual ao editor da
     // matéria. Antes de salvar o recorte fica pendente e é aplicado assim que
     // o rascunho existir; depois de salvo, recorta direto a foto do rascunho.
     let recortePendente = null;
     const capa = document.createElement('div');
-    capa.className = 'mt-2 flex flex-wrap items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-2';
+    capa.className = 'mia-pub-previa';
     const moldura = document.createElement('div');
-    moldura.className = 'relative hidden shrink-0 overflow-hidden rounded-md border border-slate-700 bg-slate-900';
-    moldura.style.cssText = 'width:64px;height:80px';
+    moldura.className = 'mia-pub-moldura is-vazia';
     const previa = document.createElement('img');
     previa.alt = 'Prévia da capa';
     previa.referrerPolicy = 'no-referrer';
     previa.style.cssText = 'position:absolute;max-width:none;display:block';
-    moldura.appendChild(previa);
-    const capaTexto = document.createElement('div');
-    capaTexto.className = 'min-w-0 flex-1';
-    const capaTitulo = document.createElement('p');
-    capaTitulo.className = 'text-[11px] font-semibold uppercase tracking-wide text-slate-500';
+    const vazia = document.createElement('span');
+    vazia.className = 'mia-pub-moldura-vazia';
+    vazia.textContent = 'Sem foto escolhida';
+    const capaTitulo = document.createElement('span');
+    capaTitulo.className = 'mia-pub-moldura-selo';
     capaTitulo.textContent = 'Imagem destacada';
+    moldura.append(previa, vazia, capaTitulo);
     const capaAviso = document.createElement('p');
-    capaAviso.className = 'text-[11px] text-slate-400';
-    capaTexto.append(capaTitulo, capaAviso);
-    const recortar = criarBotao(
-      'Recortar foto',
-      'rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-50'
-    );
-    capa.append(moldura, capaTexto, recortar);
-    box.appendChild(capa);
+    capaAviso.className = 'mia-pub-note';
+    capaAviso.setAttribute('aria-live', 'polite');
+    const recortar = criarBotao('✂ Recortar', 'mia-pub-btn mia-pub-btn--ghost mia-pub-btn--block');
+    recortar.title = 'Escolher a parte da foto que aparece na capa (e criar versões com IA)';
+    capa.append(moldura, recortar, capaAviso);
+
+    const fontes = document.createElement('div');
+    fontes.className = 'mia-pub-fontes';
+    const abas = document.createElement('div');
+    abas.className = 'mia-pub-abas';
+    abas.setAttribute('role', 'tablist');
+    abas.setAttribute('aria-label', 'De onde vem a foto da capa');
+    const paineis = document.createElement('div');
+    paineis.className = 'mia-pub-paineis';
+    const abasCriadas = new Map();
+    function criarAba(id, rotulo, aoAbrir) {
+      const botao = document.createElement('button');
+      botao.type = 'button';
+      botao.className = 'mia-pub-aba';
+      botao.setAttribute('role', 'tab');
+      botao.setAttribute('aria-selected', 'false');
+      botao.textContent = rotulo;
+      const painel = document.createElement('div');
+      painel.className = 'mia-pub-painel';
+      painel.setAttribute('role', 'tabpanel');
+      painel.hidden = true;
+      let aberta = false;
+      botao.addEventListener('click', () => {
+        for (const outra of abasCriadas.values()) {
+          const ativa = outra.botao === botao;
+          outra.botao.setAttribute('aria-selected', ativa ? 'true' : 'false');
+          outra.botao.classList.toggle('is-on', ativa);
+          outra.painel.hidden = !ativa;
+        }
+        if (!aberta) {
+          aberta = true;
+          aoAbrir?.(painel);
+        }
+      });
+      abas.appendChild(botao);
+      paineis.appendChild(painel);
+      abasCriadas.set(id, { botao, painel });
+      return painel;
+    }
+
+    function usarImagemDoBanco(item) {
+      if (!item?.url) return;
+      if (mensagem.matterId) {
+        // Rascunho já salvo: troca a foto e refaz a arte direto.
+        capaAviso.textContent = 'Aplicando a imagem no rascunho…';
+        api(`/api/materias-ia/matters/${mensagem.matterId}/aplicar-imagem-url`, {
+          method: 'POST',
+          body: JSON.stringify({ imageUrl: item.url, titulo: mensagem.titulo || '', creditoFixo: item.credito }),
+        })
+          .then((data) => {
+            mostrarArte(data.imagemUrl);
+            capaAviso.textContent = 'Imagem do banco aplicada no rascunho ✓';
+          })
+          .catch((err) => { capaAviso.textContent = err.message; });
+        return;
+      }
+      imagem.value = item.url;
+      imagem.dispatchEvent(new Event('input', { bubbles: true }));
+      if (!credito.value.trim() || credito.dataset.auto === '1') {
+        credito.value = item.credito || 'Reprodução/Internet';
+        credito.dataset.auto = '1';
+      }
+      capaTitulo.textContent = 'Minhas imagens';
+      capaAviso.textContent = 'Imagem do banco escolhida ✓ — será usada ao salvar. Use “Recortar” para ajustar.';
+    }
+
+    if (!mensagem.matterId) {
+      faixaFotosSugeridas(mensagem, imagem, credito, criarAba('sugeridas', 'Sugeridas'));
+    }
+    criarAba('banco', 'Minhas imagens', (painel) => {
+      if (window.BancoImagens) window.BancoImagens.grade(painel, { onEscolher: usarImagemDoBanco });
+      else painel.textContent = 'Recarregue a página para abrir Minhas imagens.';
+    });
+    const painelIa = criarAba('ia', '⚡ Gerar com IA');
+    if (!mensagem.matterId) {
+      const painelLink = criarAba('link', 'Link ou arquivo');
+      const rotuloUrl = document.createElement('label');
+      rotuloUrl.className = 'mia-pub-label';
+      rotuloUrl.textContent = 'Colar o endereço de uma imagem';
+      const arquivo = document.createElement('input');
+      arquivo.type = 'file';
+      arquivo.accept = 'image/png,image/jpeg,image/webp';
+      arquivo.className = 'sr-only';
+      const enviarArquivo = criarBotao('Enviar do computador', 'mia-pub-btn mia-pub-btn--ghost');
+      const avisoArquivo = document.createElement('p');
+      avisoArquivo.className = 'mia-pub-note';
+      avisoArquivo.textContent = 'A imagem enviada também fica guardada em Minhas imagens.';
+      enviarArquivo.addEventListener('click', () => arquivo.click());
+      arquivo.addEventListener('change', async () => {
+        const f = arquivo.files?.[0];
+        arquivo.value = '';
+        if (!f || !window.BancoImagens) return;
+        enviarArquivo.disabled = true;
+        avisoArquivo.textContent = 'Enviando…';
+        try {
+          const data = await window.BancoImagens.enviarArquivos([f]);
+          const item = data.itens?.[0];
+          if (item) usarImagemDoBanco({ ...item, credito: 'Reprodução/Internet' });
+          avisoArquivo.textContent = 'Imagem enviada ✓ (guardada em Minhas imagens).';
+        } catch (err) {
+          avisoArquivo.textContent = err.message;
+        } finally {
+          enviarArquivo.disabled = false;
+        }
+      });
+      const linhaArquivo = document.createElement('div');
+      linhaArquivo.className = 'mia-pub-row';
+      linhaArquivo.append(enviarArquivo, arquivo);
+      painelLink.append(rotuloUrl, imagem, linhaArquivo, avisoArquivo);
+    }
+
+    const rotuloCredito = document.createElement('label');
+    rotuloCredito.className = 'mia-pub-credito';
+    const rotuloCreditoTexto = document.createElement('span');
+    rotuloCreditoTexto.textContent = 'Crédito da foto';
+    rotuloCredito.append(rotuloCreditoTexto, credito);
+    fontes.append(abas, paineis);
+    if (!mensagem.matterId) fontes.appendChild(rotuloCredito);
+    capaGrid.append(capa, fontes);
 
     /** Mostra só a área recortada da foto dentro da moldura 4:5. */
     function desenharPrevia(url, area = null) {
       if (!url) {
-        moldura.classList.add('hidden');
+        moldura.classList.add('is-vazia');
+        previa.removeAttribute('src');
         capaAviso.textContent = mensagem.matterId
           ? 'Recorte a foto usada no rascunho.'
-          : 'Escolha uma foto sugerida (ou cole a URL) para recortar. Sem foto, o sistema usa a imagem da fonte ao salvar.';
+          : 'Escolha uma foto ao lado. Sem foto, o sistema usa a imagem da fonte ao salvar.';
         return;
       }
-      moldura.classList.remove('hidden');
+      moldura.classList.remove('is-vazia');
       const aplicar = () => {
+        const W = moldura.clientWidth || 144;
+        const H = moldura.clientHeight || 180;
         const a = area || { left: 0, top: 0, width: 1, height: 1 };
-        const escala = Math.max(64 / (a.width * previa.naturalWidth || 1), 80 / (a.height * previa.naturalHeight || 1));
+        const escala = Math.max(W / (a.width * previa.naturalWidth || 1), H / (a.height * previa.naturalHeight || 1));
         const w = previa.naturalWidth * escala;
         const h = previa.naturalHeight * escala;
         previa.style.width = `${w}px`;
         previa.style.height = `${h}px`;
-        previa.style.left = `${-a.left * w - (a.width * w - 64) / 2}px`;
-        previa.style.top = `${-a.top * h - (a.height * h - 80) / 2}px`;
+        previa.style.left = `${-a.left * w - (a.width * w - W) / 2}px`;
+        previa.style.top = `${-a.top * h - (a.height * h - H) / 2}px`;
       };
       previa.onload = aplicar;
       if (previa.getAttribute('src') !== url) previa.src = url;
@@ -2002,7 +2157,7 @@
     imagem.addEventListener('input', () => {
       recortePendente = null;
       desenharPrevia(imagem.value.trim());
-      if (imagem.value.trim()) capaAviso.textContent = 'Foto escolhida. Use “Recortar foto” para escolher a parte que aparece na capa.';
+      if (imagem.value.trim()) capaAviso.textContent = 'Foto escolhida ✓ Use “Recortar” para escolher a parte que aparece na capa.';
     });
 
     recortar.addEventListener('click', async () => {
@@ -2068,7 +2223,7 @@
           }
           desenharPrevia(data.imagem);
           capaTitulo.textContent = 'Imagem da fonte';
-          capaAviso.textContent = 'Imagem do link (vídeo, post ou matéria) já é a capa. Troque clicando numa foto sugerida, ou use “Recortar foto” / “Capa com IA”.';
+          capaAviso.textContent = 'A imagem do link (vídeo, post ou matéria) já é a capa. Para trocar, escolha outra ao lado.';
         })
         .catch(() => {});
     }
@@ -2078,7 +2233,7 @@
           if (!matter?.imagem_url) return;
           desenharPrevia(matter.imagem_url);
           capaTitulo.textContent = 'Arte da matéria';
-          capaAviso.textContent = 'Use “Recortar foto” para ajustar a parte da foto que aparece.';
+          capaAviso.textContent = 'Use “Recortar” para ajustar a parte da foto que aparece.';
         })
         .catch(() => {});
     }
@@ -2086,17 +2241,16 @@
     // Capa com IA em segundo plano: gera a versão sem texto da foto enquanto o
     // editor revisa a matéria. Com "gerar sozinho" ligado, começa assim que a
     // resposta chega e as fotos sugeridas carregam.
-    const linhaIa = document.createElement('div');
-    linhaIa.className = 'mt-1.5 flex flex-wrap items-center gap-3 text-[11px] text-slate-400';
-    const capaIa = criarBotao(
-      '⚡ Capa com IA',
-      'rounded-md border border-violet-500/50 bg-violet-500/10 px-2.5 py-1 text-[11px] font-semibold text-violet-100 hover:bg-violet-500/20 disabled:opacity-60'
-    );
+    const capaIa = criarBotao('⚡ Gerar capa com IA', 'mia-pub-btn mia-pub-btn--ia');
+    const explicaIa = document.createElement('p');
+    explicaIa.className = 'mia-pub-note';
+    explicaIa.textContent = 'Cria uma versão nova e sem texto da foto escolhida (ou da primeira sugerida). Leva alguns minutos — dá para continuar revisando. A imagem também fica guardada em Minhas imagens.';
+    const avancado = criarBotao('Pedido personalizado, ilustração simbólica ou recuperar imagem…', 'mia-pub-link');
+    avancado.addEventListener('click', () => recortar.click());
     const rotuloAuto = document.createElement('label');
-    rotuloAuto.className = 'inline-flex cursor-pointer items-center gap-1.5';
+    rotuloAuto.className = 'mia-pub-check';
     const autoIa = document.createElement('input');
     autoIa.type = 'checkbox';
-    autoIa.className = 'rounded border-slate-600 bg-slate-950 text-violet-500';
     try {
       autoIa.checked = localStorage.getItem('mia-capa-ia-auto') === '1';
     } catch {
@@ -2110,18 +2264,13 @@
       }
     });
     rotuloAuto.append(autoIa, document.createTextNode('Gerar sozinho nas próximas matérias'));
-    // Atalhos: gera a capa e já publica/agenda quando ela ficar pronta.
-    const capaIaPublicar = criarBotao(
-      '⚡ Capa com IA + publicar agora',
-      'rounded-md border border-sky-400/60 bg-sky-500/15 px-2.5 py-1 text-[11px] font-semibold text-sky-100 hover:bg-sky-500/25 disabled:opacity-50'
-    );
-    const capaIaAgendar = criarBotao(
-      '⚡ Capa com IA + agendar',
-      'rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-50'
-    );
+    painelIa.append(capaIa, explicaIa, rotuloAuto, avancado);
+    // Atalhos (menu ⚡ do passo 3): gera a capa e já publica/agenda quando ela ficar pronta.
+    const capaIaPublicar = criarBotao('⚡ Capa com IA + publicar agora', 'mia-pub-menu-item');
+    const capaIaAgendar = criarBotao('⚡ Capa com IA + agendar', 'mia-pub-menu-item');
     capaIaAgendar.title = 'Gera a capa com IA e agenda 30 min após a última matéria agendada';
-    linhaIa.append(capaIa, capaIaPublicar, capaIaAgendar, rotuloAuto);
-    box.appendChild(linhaIa);
+    // Abre na primeira aba (sugeridas antes de salvar; Minhas imagens depois).
+    abasCriadas.values().next().value?.botao.click();
 
     let fotosSugeridas = [];
     let capaIaPromessa = null;
@@ -2161,7 +2310,7 @@
           while (data.status !== 'ready') {
             if (data.status === 'error') throw new Error(data.error || `O ${geradorImagemNome} não conseguiu gerar a imagem.`);
             if (Date.now() > limite) {
-              throw new Error(`A geração continua no ${geradorImagemNome}. Use “Recortar foto” › “Pegar imagem nova gerada” em alguns minutos.`);
+              throw new Error(`A geração continua no ${geradorImagemNome}. Use “Recortar” › “Pegar imagem nova gerada” em alguns minutos.`);
             }
             await new Promise((r) => setTimeout(r, 2500));
             const res = await fetch(`${base}/gerar-chatgpt/${encodeURIComponent(data.jobId)}`, {
@@ -2178,13 +2327,13 @@
           if (mensagem.matterId) {
             // Salvo enquanto gerava (ou já estava salvo): aplica direto no rascunho.
             await aplicarRecorteNoRascunho(mensagem.matterId, { left: 0, top: 0, width: 1, height: 1 }, url);
-            capaAviso.textContent = 'Capa com IA aplicada no rascunho ✓ — use “Recortar foto” para ajustar.';
+            capaAviso.textContent = 'Capa com IA aplicada no rascunho ✓ — use “Recortar” para ajustar.';
           } else {
             imagem.value = url;
             recortePendente = null;
             desenharPrevia(url);
             capaTitulo.textContent = 'Capa gerada com IA';
-            capaAviso.textContent = 'Capa com IA pronta ✓ — será usada ao salvar. Use “Recortar foto” para ajustar.';
+            capaAviso.textContent = 'Capa com IA pronta ✓ — será usada ao salvar. Use “Recortar” para ajustar.';
           }
           return url;
         } catch (err) {
@@ -2192,7 +2341,7 @@
           return null;
         } finally {
           capaIa.disabled = false;
-          capaIa.textContent = '⚡ Capa com IA';
+          capaIa.textContent = '⚡ Gerar capa com IA';
           capaIaPromessa = null;
         }
       })();
@@ -2208,21 +2357,21 @@
       }
     });
 
+    // ── Passo 3: publicação ───────────────────────────────────────────────
+    const secPublicar = passo(3, 'Publicar', 'Salve para revisar depois, publique agora ou agende.');
     const acoes = document.createElement('div');
-    acoes.className = 'mt-2 grid gap-2 sm:flex sm:flex-wrap sm:items-center';
+    acoes.className = 'mia-pub-acoes';
 
-    const salvar = criarBotao(
-      'Salvar como rascunho',
-      'rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400'
-    );
+    const salvar = criarBotao('Salvar rascunho', 'mia-pub-btn mia-pub-btn--primary');
     const sugerirTitulos = livre
       ? criarBotao(
-          alternativos.length ? 'Gerar outros 3 com Claude' : 'Sugerir 3 com Claude',
-          'rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/20'
+          alternativos.length ? '✨ Gerar outros 3 títulos' : '✨ Sugerir 3 títulos',
+          'mia-pub-btn mia-pub-btn--ghost'
         )
       : null;
-    const aviso = document.createElement('span');
-    aviso.className = 'text-xs text-slate-400';
+    const aviso = document.createElement('p');
+    aviso.className = 'mia-pub-status';
+    aviso.setAttribute('aria-live', 'polite');
 
     sugerirTitulos?.addEventListener('click', async () => {
       sugerirTitulos.disabled = true;
@@ -2255,14 +2404,14 @@
       link.href = `/materias-ia/${id}`;
       link.target = '_blank';
       link.rel = 'noopener';
-      link.className = 'text-emerald-300 underline hover:text-emerald-200';
+      link.className = 'mia-pub-link-ok';
       link.textContent = texto || `Rascunho #${id} — abrir`;
       aviso.appendChild(link);
     }
     function marcarSalvo() {
       salvar.disabled = true;
-      salvar.textContent = 'Rascunho salvo';
-      salvar.classList.add('opacity-60');
+      salvar.textContent = 'Rascunho salvo ✓';
+      salvar.classList.add('is-feito');
     }
     async function garantirRascunho() {
       if (mensagem.matterId) return mensagem.matterId;
@@ -2297,43 +2446,43 @@
       return salvando;
     }
 
-    const publicarAgora = criarBotao(
-      'Publicar agora',
-      'rounded-lg border border-sky-400/60 bg-sky-500/15 px-3 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-500/25 disabled:opacity-50'
-    );
-    const agendarBtn = criarBotao(
-      'Agendar',
-      'rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-50'
-    );
+    const publicarAgora = criarBotao('Publicar agora', 'mia-pub-btn mia-pub-btn--sky');
+    const agendarBtn = criarBotao('Agendar…', 'mia-pub-btn mia-pub-btn--amber');
+    agendarBtn.setAttribute('aria-expanded', 'false');
 
     // Linha de agendamento: abre ao clicar em "Agendar".
     const linhaAgenda = document.createElement('div');
-    linhaAgenda.className = 'mt-2 hidden flex-wrap items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 p-2';
+    linhaAgenda.className = 'mia-pub-agenda hidden';
     const campoData = document.createElement('input');
     campoData.type = 'datetime-local';
     campoData.setAttribute('aria-label', 'Data e horário do agendamento (Araguaína)');
-    campoData.className =
-      'rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100 focus:border-amber-400 focus:outline-none';
-    const mais30 = criarBotao(
-      '+30 min após o último',
-      'hidden rounded border border-amber-500/40 px-2 py-1 text-[11px] text-amber-100 hover:bg-amber-500/10'
-    );
-    const confirmarAgenda = criarBotao(
-      'Confirmar agendamento',
-      'rounded-md bg-amber-500 px-3 py-1 text-xs font-semibold text-slate-950 hover:bg-amber-400 disabled:opacity-50'
-    );
+    campoData.className = 'mia-pub-input mia-pub-input--auto';
+    const mais30 = criarBotao('+30 min após o último', 'hidden mia-pub-btn mia-pub-btn--ghost mia-pub-btn--sm');
+    const confirmarAgenda = criarBotao('Confirmar agendamento', 'mia-pub-btn mia-pub-btn--amber-solid mia-pub-btn--sm');
     const fuso = document.createElement('span');
-    fuso.className = 'text-[10px] uppercase tracking-wide text-amber-300/60';
+    fuso.className = 'mia-pub-fuso';
     fuso.textContent = 'Horário de Araguaína';
     linhaAgenda.append(campoData, mais30, confirmarAgenda, fuso);
 
     // "Matéria pronta em 1 clique": salva com a capa (a escolhida, a da IA se
     // estiver gerando, ou a 1ª sugerida) e agenda no próximo horário livre.
-    const prontaBtn = criarBotao(
-      '⚡ Pronta e agendar',
-      'rounded-lg border border-violet-400/60 bg-violet-500/15 px-3 py-1.5 text-xs font-semibold text-violet-100 hover:bg-violet-500/25 disabled:opacity-50'
-    );
+    const prontaBtn = criarBotao('⚡ Pronta e agendar no próximo horário', 'mia-pub-menu-item');
     prontaBtn.title = 'Salva o rascunho com a capa e agenda 30 min após a última matéria agendada';
+
+    // Menu de atalhos: tudo o que faz mais de uma coisa num clique só.
+    const atalhos = document.createElement('details');
+    atalhos.className = 'mia-pub-atalhos';
+    const atalhosResumo = document.createElement('summary');
+    atalhosResumo.className = 'mia-pub-btn mia-pub-btn--ghost';
+    atalhosResumo.textContent = '⚡ Atalhos';
+    atalhosResumo.title = 'Fazer tudo num clique';
+    const atalhosMenu = document.createElement('div');
+    atalhosMenu.className = 'mia-pub-menu';
+    atalhosMenu.append(prontaBtn, capaIaPublicar, capaIaAgendar);
+    atalhosMenu.addEventListener('click', (e) => {
+      if (e.target.closest('button')) atalhos.open = false;
+    });
+    atalhos.append(atalhosResumo, atalhosMenu);
 
     function bloquearAcoes(sim) {
       publicarAgora.disabled = sim;
@@ -2350,8 +2499,9 @@
       prontaBtn.classList.add('hidden');
       capaIaPublicar.classList.add('hidden');
       capaIaAgendar.classList.add('hidden');
+      atalhos.classList.add('hidden');
       linhaAgenda.classList.add('hidden');
-      linhaAgenda.classList.remove('flex');
+      agendarBtn.setAttribute('aria-expanded', 'false');
     }
 
     /** Horário local de Araguaína (UTC−3) daqui a 30 min, no formato do datetime-local. */
@@ -2469,7 +2619,7 @@
     agendarBtn.addEventListener('click', async () => {
       const abrir = linhaAgenda.classList.contains('hidden');
       linhaAgenda.classList.toggle('hidden', !abrir);
-      linhaAgenda.classList.toggle('flex', abrir);
+      agendarBtn.setAttribute('aria-expanded', abrir ? 'true' : 'false');
       if (!abrir) return;
       campoData.focus();
       try {
@@ -2508,14 +2658,15 @@
       }
     });
 
-    if (sugerirTitulos) acoes.appendChild(sugerirTitulos);
-    acoes.appendChild(salvar);
-    acoes.appendChild(publicarAgora);
-    acoes.appendChild(agendarBtn);
-    acoes.appendChild(prontaBtn);
-    acoes.appendChild(aviso);
-    box.appendChild(acoes);
-    box.appendChild(linhaAgenda);
+    if (sugerirTitulos) {
+      const linhaSugerir = document.createElement('div');
+      linhaSugerir.className = 'mia-pub-row';
+      linhaSugerir.appendChild(sugerirTitulos);
+      secTitulo.appendChild(linhaSugerir);
+    }
+    acoes.append(salvar, publicarAgora, agendarBtn, atalhos);
+    secPublicar.append(acoes, linhaAgenda, aviso);
+    box.appendChild(secPublicar);
 
     if (mensagem.matterId) {
       marcarSalvo();

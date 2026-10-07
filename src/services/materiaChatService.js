@@ -4850,7 +4850,9 @@ async function salvarMateriaDoChat({
     imagemUrl && (
       /^https?:\/\//i.test(imagemUrl) ||
       // Imagem gerada com ChatGPT no próprio chat, guardada no storage do usuário.
-      new RegExp(`^/media/fontes/user_${Number(userId)}/chat_[0-9]+_[0-9]+_[a-f0-9]+\\.jpg$`, 'i').test(imagemUrl)
+      new RegExp(`^/media/fontes/user_${Number(userId)}/chat_[0-9]+_[0-9]+_[a-f0-9]+\\.jpg$`, 'i').test(imagemUrl) ||
+      // Imagem escolhida no banco de imagens do editor.
+      require('./bancoImagensService').ehUrlDoBanco(imagemUrl, userId)
     )
       ? imagemUrl
       : null;

@@ -126,6 +126,7 @@ app.use('/api/publications', requireAuth, require('./routes/publications'));
 app.use('/api/dots', requireAuth, require('./routes/dots'));
 app.use('/api/materias-ia/chat-extras', requireAuth, require('./routes/materiaChatExtras'));
 app.use('/api/materias-ia', requireAuth, require('./routes/materiasIa'));
+app.use('/api/banco-imagens', requireAuth, require('./routes/bancoImagens'));
 app.use('/api/biblioteca', requireAuth, require('./routes/biblioteca'));
 app.use('/api/cookies', requireAuth, require('./routes/cookies'));
 // Endpoint antigo, mantido por compatibilidade: delega para /api/cookies/youtube.

@@ -1610,16 +1610,24 @@ async function aplicarImagemUrl(req, res, next) {
       CREDITO_IMAGEM_FALLBACK,
     } = require('../services/editorialGuidelinesFb');
     let imagemAutor = CREDITO_IMAGEM_FALLBACK;
-    try {
-      const identificado = await deepseekService.identificarAutorImagem({
-        autor: req.body?.autor || null,
-        fonte: req.body?.fonte || null,
-        titulo: req.body?.imagemTitulo || req.body?.title || null,
-        origem: req.body?.origem || null,
-      });
-      imagemAutor = identificado || CREDITO_IMAGEM_FALLBACK;
-    } catch {
-      imagemAutor = CREDITO_IMAGEM_FALLBACK;
+    // Imagem do banco do editor: o crédito já é conhecido (ex.: gerada por IA).
+    const creditoDoBanco = require('../services/bancoImagensService').ehUrlDoBanco(imageUrl, req.session.userId)
+      ? String(req.body?.creditoFixo || '').trim().slice(0, 80)
+      : '';
+    if (creditoDoBanco) {
+      imagemAutor = creditoDoBanco;
+    } else {
+      try {
+        const identificado = await deepseekService.identificarAutorImagem({
+          autor: req.body?.autor || null,
+          fonte: req.body?.fonte || null,
+          titulo: req.body?.imagemTitulo || req.body?.title || null,
+          origem: req.body?.origem || null,
+        });
+        imagemAutor = identificado || CREDITO_IMAGEM_FALLBACK;
+      } catch {
+        imagemAutor = CREDITO_IMAGEM_FALLBACK;
+      }
     }
 
     // Trocar a imagem destacada não altera o texto da matéria: só o campo

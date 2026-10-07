@@ -751,6 +751,12 @@
               <% } %>
             <% } %>
 
+              <button type="button" id="btn-banco-imagens"
+                class="flex w-full items-center justify-center gap-1.5 rounded border border-emerald-500/50 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-500/20"
+                title="Imagens limpas (sem título) já geradas com IA, enviadas ou importadas do ChatGPT/Grok">
+                Minhas imagens (sem gerar de novo)
+              </button>
+
               <button type="button" id="btn-sugerir-imagens"
                 class="w-full rounded border border-violet-500/40 px-2.5 py-1.5 text-[11px] font-semibold text-violet-200 hover:bg-violet-500/10">
                 Buscar novas sugestões
@@ -1027,5 +1033,7 @@
       update();
     })();
   </script>
-  <script src="/js/materia-ia-editar.js?v=20261005gerador1"></script>
+  <link rel="stylesheet" href="/css/banco-imagens.css?v=20261007banco2" />
+  <script src="/js/banco-imagens.js?v=20261007banco2"></script>
+  <script src="/js/materia-ia-editar.js?v=20261007banco1"></script>
 <%- include('partials/app-end') %>

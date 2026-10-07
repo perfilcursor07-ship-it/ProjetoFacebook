@@ -1,0 +1,169 @@
+/* Minhas imagens — banco de fotos limpas para a capa (banco-imagens.js) */
+.bi-fundo, .bi-mini {
+  --bi-bg: #0b111c;
+  --bi-surface: #101826;
+  --bi-surface-2: #152033;
+  --bi-border: #1f2b3c;
+  --bi-border-strong: #2e4056;
+  --bi-text: #e8edf5;
+  --bi-muted: #9fb0c6;
+  --bi-faint: #6d7d92;
+  --bi-accent: #34d399;
+  --bi-accent-soft: rgb(52 211 153 / 13%);
+  --bi-violet: #a78bfa;
+  --bi-danger: #fda4af;
+}
+.bi-ico { display: inline-flex; width: 1rem; height: 1rem; flex: 0 0 auto; }
+.bi-ico svg { width: 100%; height: 100%; }
+.bi-fundo [hidden], .bi-mini [hidden] { display: none !important; }
+.bi-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* —— Janela —— */
+.bi-fundo {
+  position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center;
+  padding: 1rem; background: rgb(2 6 15 / 78%); backdrop-filter: blur(6px);
+  animation: bi-entra .16s ease-out;
+}
+@keyframes bi-entra { from { opacity: 0; } }
+.bi-janela {
+  position: relative; display: flex; flex-direction: column; width: min(68rem, 100%); max-height: min(52rem, 100%);
+  overflow: hidden; border: 1px solid var(--bi-border-strong); border-radius: 1rem; background: var(--bi-bg); color: var(--bi-text);
+  box-shadow: 0 40px 80px -30px rgb(0 0 0 / 90%);
+}
+.bi-janela.is-soltando::after {
+  content: 'Solte para enviar ao banco'; position: absolute; inset: .5rem; display: grid; place-items: center;
+  border: 2px dashed var(--bi-accent); border-radius: .8rem; background: rgb(6 9 16 / 88%);
+  color: #a7f3d0; font-weight: 700; font-size: 1rem; pointer-events: none;
+}
+.bi-topo { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1.1rem 1.25rem .6rem; }
+.bi-topo h2 { margin: 0; font-size: 1.1rem; font-weight: 700; }
+.bi-topo p { margin: .25rem 0 0; color: var(--bi-muted); font-size: .8rem; line-height: 1.5; max-width: 42rem; }
+.bi-fechar {
+  display: grid; place-items: center; width: 2.1rem; height: 2.1rem; border-radius: .6rem; border: 1px solid transparent;
+  background: transparent; color: var(--bi-muted); cursor: pointer;
+}
+.bi-fechar:hover { background: rgb(255 255 255 / 6%); color: var(--bi-text); }
+.bi-barra { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: .35rem 1.25rem .6rem; }
+.bi-busca {
+  display: flex; align-items: center; gap: .5rem; flex: 1 1 14rem; min-width: 0; padding: 0 .75rem; height: 2.4rem;
+  border: 1px solid var(--bi-border); border-radius: .65rem; background: var(--bi-surface); color: var(--bi-faint);
+}
+.bi-busca:focus-within { border-color: rgb(52 211 153 / 50%); }
+.bi-busca input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--bi-text); font-size: .85rem; outline: none; }
+.bi-barra-acoes { display: flex; align-items: center; gap: .5rem; }
+.bi-btn {
+  display: inline-flex; align-items: center; gap: .45rem; height: 2.4rem; padding: 0 .9rem; border-radius: .65rem;
+  border: 1px solid var(--bi-border-strong); background: transparent; color: var(--bi-text); font-size: .8rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap; list-style: none; transition: background .15s, border-color .15s;
+}
+.bi-btn::-webkit-details-marker { display: none; }
+.bi-btn:hover { background: rgb(255 255 255 / 5%); }
+.bi-btn:disabled { opacity: .55; cursor: wait; }
+.bi-btn--primary { border-color: transparent; background: var(--bi-accent); color: #04140d; }
+.bi-btn--primary:hover { background: #6ee7b7; }
+.bi-btn.is-ocupado { opacity: .6; pointer-events: none; }
+.bi-menu { position: relative; }
+.bi-menu-lista {
+  position: absolute; right: 0; top: calc(100% + .35rem); z-index: 5; display: grid; gap: .15rem; width: 18rem; padding: .35rem;
+  border: 1px solid var(--bi-border-strong); border-radius: .75rem; background: var(--bi-surface); box-shadow: 0 20px 40px -18px #000;
+}
+.bi-menu-lista button {
+  display: grid; gap: .1rem; padding: .55rem .65rem; border: 0; border-radius: .5rem; background: transparent;
+  color: var(--bi-text); text-align: left; cursor: pointer;
+}
+.bi-menu-lista button:hover { background: var(--bi-surface-2); }
+.bi-menu-lista strong { font-size: .8rem; }
+.bi-menu-lista small { color: var(--bi-muted); font-size: .7rem; line-height: 1.35; }
+.bi-filtros { display: flex; gap: .35rem; padding: 0 1.25rem .7rem; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--bi-border); }
+.bi-filtro {
+  display: inline-flex; align-items: center; gap: .4rem; padding: .38rem .8rem; border-radius: 999px; border: 1px solid var(--bi-border);
+  background: transparent; color: var(--bi-muted); font-size: .76rem; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.bi-filtro:hover { color: var(--bi-text); }
+.bi-filtro[aria-selected='true'] { background: var(--bi-accent-soft); border-color: rgb(52 211 153 / 45%); color: #a7f3d0; }
+.bi-filtro-n:not(:empty) { padding: 0 .4rem; border-radius: 999px; background: rgb(255 255 255 / 8%); font-size: .66rem; }
+.bi-corpo { flex: 1; min-height: 12rem; overflow-y: auto; padding: 1rem 1.25rem; }
+.bi-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: .85rem; }
+.bi-mais { margin: 1rem auto 0; display: flex; }
+.bi-status { margin: .75rem 0 0; min-height: 1rem; color: var(--bi-muted); font-size: .78rem; text-align: center; }
+.bi-status[data-tom='erro'] { color: var(--bi-danger); }
+.bi-status[data-tom='ok'] { color: #6ee7b7; }
+.bi-dica { margin: 0; padding: .6rem 1.25rem .85rem; border-top: 1px solid var(--bi-border); color: var(--bi-faint); font-size: .72rem; }
+.bi-vazio {
+  grid-column: 1 / -1; display: grid; justify-items: center; gap: .4rem; padding: 2.5rem 1rem; text-align: center; color: var(--bi-muted);
+  border: 1px dashed var(--bi-border-strong); border-radius: .9rem;
+}
+.bi-vazio .bi-ico { width: 1.8rem; height: 1.8rem; color: var(--bi-faint); }
+.bi-vazio strong { color: var(--bi-text); font-size: .9rem; }
+.bi-vazio span { font-size: .78rem; max-width: 26rem; line-height: 1.5; }
+
+/* —— Cartão —— */
+.bi-card { position: relative; min-width: 0; }
+.bi-card-usar {
+  position: relative; display: block; width: 100%; aspect-ratio: 4 / 5; padding: 0; overflow: hidden; cursor: pointer;
+  border: 1px solid var(--bi-border); border-radius: .75rem; background: var(--bi-surface);
+  transition: border-color .15s, transform .15s, box-shadow .15s;
+}
+.bi-card-usar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.bi-card-usar:hover, .bi-card-usar:focus-visible {
+  border-color: rgb(52 211 153 / 70%); transform: translateY(-2px); box-shadow: 0 14px 28px -16px rgb(0 0 0 / 90%); outline: none;
+}
+.bi-card.is-escolhida .bi-card-usar { border-color: var(--bi-accent); box-shadow: 0 0 0 2px rgb(52 211 153 / 45%); }
+.bi-card-hover {
+  position: absolute; inset: auto 0 0; padding: 1.6rem .5rem .55rem; text-align: center; font-size: .74rem; font-weight: 700; color: #fff;
+  background: linear-gradient(180deg, transparent, rgb(2 6 15 / 88%)); opacity: 0; transition: opacity .15s;
+}
+.bi-card-usar:hover .bi-card-hover, .bi-card-usar:focus-visible .bi-card-hover { opacity: 1; }
+.bi-badge {
+  position: absolute; top: .4rem; left: .4rem; padding: .1rem .4rem; border-radius: .35rem; font-size: .6rem; font-weight: 700;
+  letter-spacing: .02em; text-transform: uppercase; color: #e9e3ff; background: rgb(76 29 149 / 82%); backdrop-filter: blur(4px);
+}
+.bi-badge--upload { background: rgb(12 74 110 / 85%); color: #e0f2fe; }
+.bi-badge--sistema { background: rgb(30 41 59 / 88%); color: #cbd5e1; }
+.bi-badge--grok { background: rgb(17 17 17 / 88%); color: #fafafa; }
+.bi-card-legenda {
+  margin: .35rem .1rem 0; overflow: hidden; color: var(--bi-muted); font-size: .7rem; line-height: 1.35;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.bi-card-legenda small { color: var(--bi-faint); }
+.bi-card-apagar {
+  position: absolute; top: .35rem; right: .35rem; display: grid; place-items: center; width: 1.75rem; height: 1.75rem;
+  border: 0; border-radius: .45rem; background: rgb(2 6 15 / 72%); color: #fecdd3; opacity: 0; cursor: pointer; transition: opacity .15s;
+}
+.bi-card-apagar .bi-ico { width: .85rem; height: .85rem; }
+.bi-card:hover .bi-card-apagar, .bi-card-apagar:focus-visible { opacity: 1; }
+.bi-card-apagar:hover { background: rgb(159 18 57 / 85%); color: #fff; }
+@media (hover: none) { .bi-card-apagar { opacity: .85; } }
+.bi-card--esqueleto {
+  aspect-ratio: 4 / 5; border-radius: .75rem; background: linear-gradient(100deg, var(--bi-surface) 30%, var(--bi-surface-2) 50%, var(--bi-surface) 70%);
+  background-size: 300% 100%; animation: bi-brilho 1.2s linear infinite;
+}
+@keyframes bi-brilho { to { background-position: -150% 0; } }
+
+/* —— Grade compacta (dentro do quadro da capa) —— */
+.bi-mini-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr)); gap: .5rem; }
+.bi-mini .bi-card-usar { border-radius: .55rem; }
+.bi-mini .bi-badge { top: .25rem; left: .25rem; font-size: .52rem; padding: .05rem .3rem; }
+.bi-mini-tudo {
+  display: grid; place-content: center; justify-items: center; gap: .35rem; aspect-ratio: 4 / 5; padding: .3rem;
+  border: 1px dashed var(--bi-border-strong); border-radius: .55rem; background: transparent; color: var(--bi-muted);
+  font-size: .68rem; font-weight: 600; text-align: center; cursor: pointer;
+}
+.bi-mini-tudo:hover { border-color: rgb(52 211 153 / 60%); color: #a7f3d0; background: var(--bi-accent-soft); }
+.bi-mini-aviso { margin: .55rem 0 0; color: var(--bi-faint); font-size: .72rem; line-height: 1.4; }
+
+@media (max-width: 640px) {
+  .bi-fundo { padding: 0; align-items: stretch; }
+  .bi-janela { max-height: none; border-radius: 0; }
+  .bi-topo, .bi-barra, .bi-corpo { padding-left: 1rem; padding-right: 1rem; }
+  .bi-filtros { padding-left: 1rem; padding-right: 1rem; }
+  .bi-barra-acoes { width: 100%; }
+  .bi-barra-acoes > * { flex: 1; }
+  .bi-barra-acoes .bi-btn { width: 100%; justify-content: center; }
+  .bi-grade { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+  .bi-menu-lista { left: 0; right: auto; width: min(18rem, 90vw); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bi-fundo, .bi-card--esqueleto { animation: none; }
+  .bi-card-usar { transition: none; }
+}

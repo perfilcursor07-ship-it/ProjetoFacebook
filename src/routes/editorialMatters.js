@@ -26,6 +26,14 @@ function cleanupChatgptImageJobs() {
   }
 }
 
+/**
+ * Cópia da imagem limpa (sem título/marca) no banco de imagens, para o editor
+ * reaproveitar depois sem gerar de novo. Nunca atrapalha a geração.
+ */
+function guardarNoBanco(publicUrl, { origem = 'ia', ...dados }) {
+  require('../services/bancoImagensService').registrarEmSegundoPlano({ publicUrl, origem, ...dados });
+}
+
 function publicChatgptImageJob(job) {
   return {
     ok: job.status !== 'error',
@@ -93,6 +101,12 @@ router.post('/matters/:id/arte', (req, res, next) => {
         userId: req.session.userId,
         matterId,
         buffer: req.file.buffer,
+      });
+      guardarNoBanco(storedSource.publicUrl, {
+        userId: req.session.userId,
+        origem: 'upload',
+        titulo: matter.titulo,
+        matterId,
       });
       const artwork = await composeMatterArtwork({
         userId: req.session.userId,
@@ -420,6 +434,13 @@ router.post('/matters/:id/arte/gerar-chatgpt', async (req, res, next) => {
           model: generated.model,
           gerador: generated.gerador,
         };
+        guardarNoBanco(storedSource.publicUrl, {
+          userId,
+          gerador: generated.gerador,
+          titulo: requestedTitle,
+          prompt: generated.prompt,
+          matterId,
+        });
       } catch (err) {
         if (storedSource) removeMatterSourceImage(storedSource.publicUrl);
         job.status = 'error';
@@ -485,6 +506,12 @@ router.post('/matters/:id/arte/recuperar-chatgpt', async (req, res, next) => {
       matterId,
       buffer: generated.buffer,
     });
+    guardarNoBanco(storedSource.publicUrl, {
+      userId: req.session.userId,
+      gerador: generated.gerador,
+      titulo: matter.titulo,
+      matterId,
+    });
     return res.json({
       ok: true,
       imagemFonteUrl: storedSource.publicUrl,
@@ -524,6 +551,8 @@ function fonteValidaDoChat(url, userId) {
   const valor = String(url || '').trim();
   if (/^https?:\/\//i.test(valor)) return valor.slice(0, 1500);
   const propria = new RegExp(`^/media/fontes/user_${Number(userId)}/[a-z]+_[0-9]+_[0-9]+_[a-f0-9]+\\.jpg$`, 'i');
+  // Foto escolhida no banco de imagens do editor.
+  if (require('../services/bancoImagensService').ehUrlDoBanco(valor, userId)) return valor;
   return propria.test(valor) ? valor : '';
 }
 
@@ -575,6 +604,12 @@ router.post('/chat/mensagens/:messageId/arte/gerar-chatgpt', async (req, res, ne
           model: generated.model,
           gerador: generated.gerador,
         };
+        guardarNoBanco(storedSource.publicUrl, {
+          userId,
+          gerador: generated.gerador,
+          titulo: String(req.body?.titulo || row.titulo || '').trim(),
+          prompt: generated.prompt,
+        });
       } catch (err) {
         if (storedSource) removeMatterSourceImage(storedSource.publicUrl);
         job.status = 'error';
@@ -622,6 +657,11 @@ router.post('/chat/mensagens/:messageId/arte/recuperar-chatgpt', async (req, res
       matterId: 0,
       prefixo: `chat_${row.id}`,
       buffer: generated.buffer,
+    });
+    guardarNoBanco(storedSource.publicUrl, {
+      userId: req.session.userId,
+      gerador: generated.gerador,
+      titulo: row.titulo,
     });
     return res.json({ ok: true, imagemFonteUrl: storedSource.publicUrl, model: generated.model });
   } catch (err) {

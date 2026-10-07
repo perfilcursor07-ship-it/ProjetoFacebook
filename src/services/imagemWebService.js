@@ -331,4 +331,11 @@ async function recuperarImagem(id, { recoveryKey }) {
   }
 }
 
-module.exports = { PROVEDORES, gerarImagem, recuperarImagem };
+module.exports = {
+  PROVEDORES,
+  gerarImagem,
+  recuperarImagem,
+  // Importação das imagens do Grok para o banco de imagens.
+  abrirAba,
+  baixarImagem,
+};

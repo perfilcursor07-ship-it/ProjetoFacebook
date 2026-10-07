@@ -2290,6 +2290,39 @@
     }
   }
 
+  // Minhas imagens: reaproveita uma foto limpa já gerada/enviada como capa.
+  document.getElementById('btn-banco-imagens')?.addEventListener('click', () => {
+    if (!window.BancoImagens) return setStatus('Recarregue a página para abrir Minhas imagens.', true);
+    window.BancoImagens.abrir({
+      titulo: 'Escolher imagem para a capa',
+      onEscolher: async (item) => {
+        setSuggestLoading(true);
+        setStatus('Aguarde, aplicando a imagem…');
+        try {
+          const r = await fetch('/api/materias-ia/matters/' + cfg.id + '/aplicar-imagem-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageUrl: item.url, titulo: tituloEl?.value || '', creditoFixo: item.credito }),
+          });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || 'Falha ao aplicar imagem');
+          if (j.imagemUrl && imgEl) {
+            setArtImage(j.imagemUrl, { matter: j.matter, imagemFonteUrl: j.imagemFonteUrl || j.imagemFonte });
+            imgWrap?.classList.remove('hidden');
+          }
+          if (fonteCreditoEl && j.matter && 'fonte_credito' in j.matter) {
+            fonteCreditoEl.value = j.matter.fonte_credito || '';
+          }
+          setStatus('Imagem de Minhas imagens aplicada ✓');
+        } catch (err) {
+          setStatus(err.message, true);
+        } finally {
+          setSuggestLoading(false);
+        }
+      },
+    });
+  });
+
   document.getElementById('btn-sugerir-imagens')?.addEventListener('click', async () => {
     const btn = document.getElementById('btn-sugerir-imagens');
     const original = btn?.textContent;
