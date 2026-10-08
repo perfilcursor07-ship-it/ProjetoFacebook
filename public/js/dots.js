@@ -775,7 +775,9 @@
   function seloMateria(m) {
     if (m.status === 'publicado') return '<span class="d-selo d-selo--ok">✅ Publicada</span>';
     if (m.status === 'agendado') return `<span class="d-selo d-selo--alerta">📅 ${diaHora(m.agendada_para)}</span>`;
-    if (m.status === 'erro') return '<span class="d-selo d-selo--erro">⚠️ Erro ao publicar</span>';
+    if (m.status === 'erro') return `<span class="d-selo d-selo--erro" title="${escapar(m.erro || '')}">⚠️ Erro ao publicar</span>`;
+    // Rascunho com motivo: a fila recusou (notícia repetida, sem foto…).
+    if (m.erro) return `<span class="d-selo d-selo--erro" title="${escapar(m.erro)}">⚠️ Não saiu — ${escapar(m.erro.slice(0, 80))}</span>`;
     return '<span class="d-selo">📝 Rascunho</span>';
   }
 
@@ -1180,7 +1182,7 @@
       ? `Mensagem para ${dot.nome}`
       : 'Diga o assunto e onde procurar…';
     el.mais.hidden = Boolean(dot);
-    if (dot) fecharAjustes();
+    if (dot && !editandoId) fecharAjustes();
     atualizarResumoAjustes();
     if (!trocou && html === ultimoHtmlConversa) return;
     // Só desce sozinho quando o editor já estava no fim (ou trocou de conversa).
@@ -1405,6 +1407,8 @@
     erro: $('dm-erro'),
   };
   let focoAntesDoModal = null;
+  /** Id do dot sendo editado no modal; null = modal de dot novo. */
+  let editandoId = null;
 
   function erroNoModal(texto) {
     modal.erro.textContent = texto || '';
@@ -1425,6 +1429,7 @@
     requestAnimationFrame(() => (modal.pedido.value.trim() ? el.nome : modal.pedido).focus());
   }
   function fecharAjustes() {
+    if (editandoId) sairDaEdicao();
     el.ajustes.hidden = true;
     document.body.classList.remove('dm-aberto');
     el.mais.setAttribute('aria-expanded', 'false');
@@ -1503,6 +1508,7 @@
 
   /** Salvar: cria o dot, fecha o modal e abre a conversa dele. */
   async function salvarDoModal() {
+    if (editandoId) return salvarEdicao();
     const objetivo = modal.pedido.value.trim();
     if (!objetivo) {
       erroNoModal('Escreva o que o dot deve fazer.');
@@ -1554,6 +1560,146 @@
       );
       await carregar();
       if (r.id) selecionar(r.id);
+    } catch (err) {
+      erroNoModal(err.message);
+    } finally {
+      modal.salvar.disabled = false;
+      modal.salvar.classList.remove('is-carregando');
+      modal.salvar.querySelector('span').textContent = 'Salvar';
+    }
+  }
+
+  // ------------------------------------------------- modal "Editar dot"
+  //
+  // O mesmo modal do dot novo, preenchido com o que o dot usa hoje. Salvar
+  // manda só um PATCH: o histórico e a contagem do dia continuam.
+
+  const tituloModal = $('dm-titulo');
+  const exemplosModal = el.ajustes?.querySelector('.dm-exemplos');
+
+  function marcarRadio(nome, valor) {
+    const radio = document.querySelector(`input[name="${nome}"][value="${valor}"]`);
+    if (radio) radio.checked = true;
+  }
+
+  /** Põe o valor no select; se a opção não existir (valor antigo), cria. */
+  function escolherNoSelect(select, valor, texto) {
+    if (!select) return;
+    const v = valor === null || valor === undefined ? '' : String(valor);
+    if (![...select.options].some((o) => o.value === v)) select.append(new Option(texto || v, v));
+    select.value = v;
+  }
+
+  function preencherCampos(dot) {
+    el.nome.value = dot.nome || '';
+    modal.pedido.value = dot.objetivo || '';
+    marcarRadio('dot-destino', dot.destino || 'rascunho');
+    marcarRadio('dot-imagem', dot.modo_imagem || 'original');
+    escolherNoSelect(el.saidaQtd, dot.saida_quantidade || 1);
+    escolherNoSelect(el.saidaMin, dot.saida_minutos || 15, `${dot.saida_minutos} min`);
+    escolherNoSelect(el.pagina, dot.facebook_page_id || '', dot.pagina || `Página ${dot.facebook_page_id}`);
+    const dias = String(dot.dias_semana || '').split(',').map(Number).filter(Boolean);
+    for (const b of el.dias.querySelectorAll('.d-dia')) {
+      const ligado = !dias.length || dias.includes(Number(b.dataset.dia));
+      b.classList.toggle('is-on', ligado);
+      b.setAttribute('aria-pressed', String(ligado));
+    }
+    escolherNoSelect(el.horaInicio, dot.hora_inicio ?? '');
+    escolherNoSelect(el.horaFim, dot.hora_fim ?? '');
+    escolherNoSelect(el.scan, dot.scan_minutos || 60, `${dot.scan_minutos} min`);
+    el.limite.value = String(dot.limite_dia || 20);
+    if (el.provedor) escolherNoSelect(el.provedor, dot.provedor || 'auto');
+    ajustarDestino();
+    ajustarImagem();
+  }
+
+  /** Volta os campos ao padrão do dot novo. */
+  function restaurarPadroes() {
+    el.nome.value = '';
+    modal.pedido.value = '';
+    marcarRadio('dot-destino', 'rascunho');
+    marcarRadio('dot-imagem', 'original');
+    el.saidaQtd.value = '1';
+    el.saidaMin.value = '15';
+    for (const b of el.dias.querySelectorAll('.d-dia')) {
+      b.classList.add('is-on');
+      b.setAttribute('aria-pressed', 'true');
+    }
+    el.horaInicio.value = '';
+    el.horaFim.value = '';
+    el.scan.value = '60';
+    el.limite.value = '20';
+    if (el.provedor) el.provedor.value = 'auto';
+    const padrao = paginasCache.find((p) => p.is_default);
+    el.pagina.value = padrao ? String(padrao.id) : '';
+    ajustarDestino();
+    ajustarImagem();
+  }
+
+  function abrirEdicao(dot) {
+    editandoId = String(dot.id);
+    previaModal = null;
+    modal.previa.hidden = true;
+    modal.previa.innerHTML = '';
+    tituloModal.textContent = `Editar “${dot.nome}”`;
+    modal.ver.hidden = true;
+    if (exemplosModal) exemplosModal.hidden = true;
+    preencherCampos(dot);
+    abrirAjustes();
+  }
+
+  function sairDaEdicao() {
+    editandoId = null;
+    tituloModal.textContent = 'Novo dot';
+    modal.ver.hidden = false;
+    if (exemplosModal) exemplosModal.hidden = false;
+    restaurarPadroes();
+  }
+
+  async function salvarEdicao() {
+    const id = editandoId;
+    const dot = ultimaLista.find((d) => String(d.id) === id);
+    const objetivo = modal.pedido.value.trim();
+    const nome = el.nome.value.trim();
+    if (!nome) {
+      erroNoModal('Dê um nome ao dot.');
+      return el.nome.focus();
+    }
+    if (!objetivo) {
+      erroNoModal('Escreva o que o dot deve fazer.');
+      return modal.pedido.focus();
+    }
+    const destino = destinoEscolhido();
+    if (destino !== 'rascunho' && !el.pagina.value) {
+      erroNoModal(`Para ${destino === 'agendar' ? 'agendar' : 'publicar'}, escolha a página em “Publicar em”.`);
+      return el.pagina.focus();
+    }
+    const mudouPedido = objetivo !== String(dot?.objetivo || '').trim();
+    erroNoModal('');
+    modal.salvar.disabled = true;
+    modal.salvar.classList.add('is-carregando');
+    modal.salvar.querySelector('span').textContent = mudouPedido ? 'Procurando as fontes…' : 'Salvando…';
+    try {
+      const r = await api(`/api/dots/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          nome,
+          objetivo,
+          provedor: el.provedor?.value || 'auto',
+          facebook_page_id: el.pagina.value || null,
+          ...configuracaoDaTela(),
+        }),
+      });
+      const falhas = Array.isArray(r.problemas) ? r.problemas : [];
+      detalhes.delete(id);
+      fecharAjustes();
+      avisar(
+        falhas.length
+          ? `Dot atualizado, mas não entraram: ${falhas.slice(0, 3).join(' | ')}`
+          : 'Dot atualizado. Vale a partir da próxima matéria.',
+        falhas.length > 0
+      );
+      await carregar();
     } catch (err) {
       erroNoModal(err.message);
     } finally {
@@ -2158,7 +2304,7 @@
         ? { icone: 'pausa', texto: 'Pausar', acao: 'pausar' }
         : { icone: 'play', texto: 'Retomar', acao: 'retomar' },
       'separador',
-      { icone: 'lapis', texto: 'Renomear', acao: 'renomear' },
+      { icone: 'lapis', texto: 'Editar dot', acao: 'editar' },
       { icone: 'engrenagem', texto: 'Configuração', acao: 'configuracao' },
       'separador',
       { icone: 'lixo', texto: 'Excluir dot', acao: 'excluir', perigo: true },
@@ -2179,23 +2325,14 @@
       selecionar(id);
       return true;
     }
+    if (acao === 'editar') {
+      abrirEdicao(dot);
+      return true;
+    }
     if (acao === 'configuracao') {
       if (selecionado !== String(id)) selecionar(id);
       abrirPainel('config');
       return true;
-    }
-    if (acao === 'renomear') {
-      const nome = await dialogo({ titulo: 'Renomear dot', confirmar: 'Salvar', campo: { valor: dot.nome, rotulo: 'Novo nome' } });
-      if (!nome || nome === dot.nome) return false;
-      try {
-        await api(`/api/dots/${id}`, { method: 'PATCH', body: JSON.stringify({ nome }) });
-        avisar('Nome salvo.');
-        await carregar();
-        return true;
-      } catch (err) {
-        avisar(err.message, true);
-        return false;
-      }
     }
     if (acao === 'excluir') {
       const ok = await dialogo({

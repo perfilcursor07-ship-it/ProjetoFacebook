@@ -57,12 +57,20 @@ router.post('/', (req, res, next) =>
     })
   ));
 
-router.patch('/:id', (req, res, next) =>
+router.patch('/:id', (req, res, next) => {
+  const body = req.body || {};
+  // Só repassa o que veio: campo ausente fica como está no dot.
+  const jornada = Object.fromEntries(
+    Object.entries(configuracaoDoCorpo(body)).filter(([campo, valor]) => campo !== 'gerar_imagem_com_texto' && valor !== undefined)
+  );
   responder(res, next, dotsService.atualizar(req.session.userId, Number(req.params.id), {
-    ...(req.body?.nome !== undefined ? { nome: req.body.nome } : {}),
-    ...(req.body?.provedor !== undefined ? { provedor: req.body.provedor } : {}),
-    ...(req.body?.objetivo !== undefined ? { objetivo: req.body.objetivo } : {}),
-  })));
+    ...(body.nome !== undefined ? { nome: body.nome } : {}),
+    ...(body.provedor !== undefined ? { provedor: body.provedor } : {}),
+    ...(body.objetivo !== undefined ? { objetivo: body.objetivo } : {}),
+    ...(body.facebook_page_id !== undefined ? { facebookPageId: body.facebook_page_id || null } : {}),
+    ...jornada,
+  }));
+});
 
 router.get('/:id', (req, res, next) =>
   responder(res, next, dotsService.detalhe(req.session.userId, Number(req.params.id))));

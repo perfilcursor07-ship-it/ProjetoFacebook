@@ -1617,6 +1617,15 @@ async function agendarSaida(dot, matterId, posicao, { imediato = false } = {}) {
       payload: JSON.stringify({ action: 'publish', matterId, origem: 'dots' }),
     });
 
+    // O mesmo post pode já estar pré-agendado pela agenda automática da
+    // Biblioteca (status 'pendente'). Sem confirmar esse item, a fila recusava
+    // publicar ("só publica depois de Confirmar") e a sincronização da agenda
+    // devolvia a matéria para 'pronto' — o dot agendava e ela caía em rascunho.
+    // O botão Agendar das Matérias já fazia isto; o dot não fazia.
+    await require('./bibliotecaAgendaService')
+      .sincronizarAgendamentoDaMateria(dot.user_id, matterId, quando)
+      .catch((err) => console.warn(`[dots #${dot.id}] confirmar agenda da matéria ${matterId}: ${err.message}`));
+
     // Guarda o próximo horário livre para a volta seguinte não atropelar.
     if (!imediato) {
       await db(TABELA)
@@ -2128,6 +2137,13 @@ async function listar(userId) {
       materias_por_volta: d.materias_por_volta || 1,
       modo_imagem: d.modo_imagem || 'original',
       agendar_minutos: d.agendar_minutos,
+      // Para o "Editar dot" abrir com o que está valendo.
+      dias_semana: d.dias_semana || null,
+      hora_inicio: d.hora_inicio ?? null,
+      hora_fim: d.hora_fim ?? null,
+      scan_minutos: d.scan_minutos || 60,
+      saida_quantidade: d.saida_quantidade || d.materias_por_volta || 1,
+      saida_minutos: d.saida_minutos || d.intervalo_minutos || 15,
       provedor: d.provedor || 'auto',
       facebook_page_id: d.facebook_page_id || null,
       // Sem página escolhida, a matéria cai na página padrão da conta na hora
@@ -2152,6 +2168,8 @@ function materiaParaTela(m) {
     imagem: m.imagem_url || null,
     status: m.status,
     agendada_para: m.scheduled_at,
+    // Por que não saiu (fila recusou, notícia repetida, foto sem imagem…).
+    erro: m.status === 'publicado' ? null : m.error_message || null,
     link: m.fb_post_url || null,
     facebook_page_id: m.facebook_page_id || null,
     pagina: m.page_name || null,
@@ -2201,6 +2219,7 @@ async function detalhe(userId, dotId) {
         'm.imagem_url',
         'm.status',
         'm.scheduled_at',
+        'm.error_message',
         'pub.fb_post_url',
         'm.facebook_page_id',
         'm.created_at',
@@ -2387,8 +2406,18 @@ async function alterarEstado(userId, dotId, estado) {
   return { estado };
 }
 
-/** Atualiza nome e/ou provedor. Campo ausente fica como está. */
-async function atualizar(userId, dotId, { nome, provedor, objetivo }) {
+/** Campos da tela que o "Editar dot" pode mudar (os mesmos da criação). */
+const CAMPOS_JORNADA = [
+  'dias_semana', 'hora_inicio', 'hora_fim', 'scan_minutos', 'destino',
+  'saida_quantidade', 'saida_minutos', 'limite_dia', 'modo_imagem',
+];
+
+/**
+ * Atualiza o dot. Campo ausente fica como está. Jornada, destino, ritmo,
+ * imagem e página seguem as mesmas regras da criação; o que não veio é
+ * completado com o valor atual do dot.
+ */
+async function atualizar(userId, dotId, { nome, provedor, objetivo, facebookPageId, ...jornada }) {
   const dot = await db(TABELA).where({ id: dotId, user_id: userId }).first();
   if (!dot) throw erro('Dot não encontrado.', 404);
 
@@ -2400,6 +2429,44 @@ async function atualizar(userId, dotId, { nome, provedor, objetivo }) {
   }
   if (provedor !== undefined) dados.provedor = normalizarProvedor(provedor);
 
+  const mudouJornada = CAMPOS_JORNADA.some((c) => jornada[c] !== undefined);
+  if (mudouJornada || facebookPageId !== undefined) {
+    const atual = {
+      dias_semana: dot.dias_semana || '1,2,3,4,5,6,7',
+      hora_inicio: dot.hora_inicio,
+      hora_fim: dot.hora_fim,
+      scan_minutos: dot.scan_minutos,
+      destino: dot.destino,
+      saida_quantidade: dot.saida_quantidade || dot.materias_por_volta,
+      saida_minutos: dot.saida_minutos || dot.intervalo_minutos,
+      limite_dia: dot.limite_dia,
+      modo_imagem: dot.modo_imagem,
+    };
+    const pedido = Object.fromEntries(CAMPOS_JORNADA.filter((c) => jornada[c] !== undefined).map((c) => [c, jornada[c]]));
+    const config = normalizarJornada({ ...atual, ...pedido });
+    const paginaId = await paginaDoEditor(
+      userId,
+      facebookPageId !== undefined ? facebookPageId : dot.facebook_page_id,
+      config.destino
+    );
+    Object.assign(dados, {
+      intervalo_minutos: config.saida_minutos,
+      scan_minutos: config.scan_minutos,
+      limite_dia: config.limite_dia,
+      facebook_page_id: paginaId,
+      destino: config.destino,
+      materias_por_volta: config.saida_quantidade,
+      modo_imagem: config.modo_imagem,
+      agendar_minutos: config.destino === 'agendar' ? config.saida_minutos : null,
+      dias_semana: config.dias_semana,
+      hora_inicio: config.hora_inicio,
+      hora_fim: config.hora_fim,
+      saida_quantidade: config.saida_quantidade,
+      saida_minutos: config.saida_minutos,
+      plano: JSON.stringify({ ...parseJson(dot.plano, {}), ...config }),
+    });
+  }
+
   // Mudar o que o dot deve fazer exigia apagar e recriar, perdendo o histórico
   // e a contagem do dia. Aqui o pedido é reinterpretado e as páginas novas
   // entram, mantendo o resto da configuração como está.
@@ -2410,7 +2477,8 @@ async function atualizar(userId, dotId, { nome, provedor, objetivo }) {
     if (texto.length > 8000) throw erro('O objetivo está longo demais (máximo 8000 caracteres).');
 
     if (texto !== String(dot.objetivo || '').trim()) {
-      const anterior = parseJson(dot.plano, {});
+      // Com a jornada editada junto, o plano já traz a configuração nova.
+      const anterior = dados.plano ? JSON.parse(dados.plano) : parseJson(dot.plano, {});
       // Fonte já achada pelo nome não é procurada de novo, e o que o editor
       // acrescentou ou tirou pelo painel continua valendo.
       const plano = await montarPlano(texto, { anterior });
