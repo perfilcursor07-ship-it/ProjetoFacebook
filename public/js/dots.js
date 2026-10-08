@@ -354,12 +354,7 @@
   async function api(url, opcoes = {}) {
     const resp = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opcoes });
     const dados = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      const err = new Error(dados.error || dados.message || `Erro ${resp.status}`);
-      err.code = dados.code || null;
-      err.dados = dados.dados || null;
-      throw err;
-    }
+    if (!resp.ok) throw new Error(dados.error || dados.message || `Erro ${resp.status}`);
     return dados;
   }
 
@@ -2078,27 +2073,11 @@
         if (!escolha) return;
         travar('Publicando…');
         await garantirPagina(m, escolha.paginaId);
-        const publicar = (confirmarRepetida = false) => api(`/api/materias-ia/matters/${m.id}/publicar`, {
+        const r = await api(`/api/materias-ia/matters/${m.id}/publicar`, {
           method: 'POST',
-          body: JSON.stringify({ facebook_page_id: Number(escolha.paginaId), tipo_publicacao: 'auto', confirmarRepetida }),
+          body: JSON.stringify({ facebook_page_id: Number(escolha.paginaId), tipo_publicacao: 'auto' }),
         });
-        let r;
-        try {
-          r = await publicar();
-        } catch (err) {
-          // A página já tem a mesma notícia: pergunta em vez de virar rascunho.
-          if (err.code !== 'NOTICIA_REPETIDA') throw err;
-          const mesmoAssim = await dialogo({ titulo: 'Notícia repetida', texto: err.message, confirmar: 'Publicar mesmo assim' });
-          if (!mesmoAssim) {
-            if (botao) {
-              botao.disabled = false;
-              botao.innerHTML = original;
-            }
-            return;
-          }
-          r = await publicar(true);
-        }
-        avisar(r.queued ? 'Na fila de publicação — sai em instantes.' : 'Publicada ✓');
+        avisar(`${r.queued ? 'Na fila de publicação — sai em instantes.' : 'Publicada ✓'}${r.avisoRepetida ? ` (atenção: ${r.avisoRepetida})` : ''}`);
       } else if (acao === 'agendar') {
         const escolha = await dialogoAgendar(m, dot);
         if (!escolha) return;

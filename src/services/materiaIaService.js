@@ -757,20 +757,15 @@ async function publicarMateriaIndividualAgora(userId, matterId, overrides = {}) 
 
   // A mesma notícia não sai duas vezes na mesma página por publicação
   // automática. Antes isto só gerava um aviso no log e publicava assim mesmo.
-  // Clique do editor em "Publicar agora" (manual) não é automático: ele era
-  // barrado aqui e a matéria voltava a rascunho sem ele pedir. Agora o editor
-  // é avisado e decide; confirmando (ignorarRepetida), publica.
-  if (automatica && page?.id && !overrides.ignorarRepetida) {
+  // Clique do editor em "Publicar agora" (manual) NÃO passa por esta trava:
+  // ele era barrado aqui e a matéria voltava a rascunho sem ele pedir. O
+  // editor já confirmou que quer publicar — a decisão é dele.
+  let avisoRepetida = null;
+  if (automatica && page?.id && overrides.manual) {
+    const igual = await mesmaNoticiaJaNaPagina({ userId, pageId: page.id, matter }).catch(() => null);
+    if (igual) avisoRepetida = `a página já tinha notícia parecida (matéria #${igual.id})`;
+  } else if (automatica && page?.id) {
     const igual = await mesmaNoticiaJaNaPagina({ userId, pageId: page.id, matter });
-    if (igual && overrides.manual) {
-      const err = new Error(
-        `A página já publicou esta notícia nos últimos 3 dias (matéria #${igual.id}${igual.titulo ? ` — “${String(igual.titulo).slice(0, 90)}”` : ''}). Publicar mesmo assim?`
-      );
-      err.status = 409;
-      err.code = 'NOTICIA_REPETIDA';
-      err.dados = { repetidaId: igual.id, titulo: igual.titulo || null };
-      throw err;
-    }
     if (igual) {
       const motivo = `Não publicada: a página já tem a mesma notícia (matéria #${igual.id}).`;
       console.warn(`[publicar] BLOQUEADO #${matter.id} — ${motivo}`);
@@ -1114,6 +1109,7 @@ async function publicarMateriaIndividualAgora(userId, matterId, overrides = {}) 
         xPublicado: published.xPublicado,
         xPostUrl: published.xPostUrl,
         xErro: published.xErro,
+        avisoRepetida,
       };
     } catch (err) {
       const publishDispatch = require('./publishDispatch');
@@ -1155,7 +1151,7 @@ async function publicarMateriaIndividualAgora(userId, matterId, overrides = {}) 
     }
   });
 
-  return { matterId: matter.id, publicationId: pubId, queued: true };
+  return { matterId: matter.id, publicationId: pubId, queued: true, avisoRepetida };
 }
 
 /**

@@ -840,9 +840,8 @@ router.post('/matters/:id/publicar', async (req, res, next) => {
       materia: req.body.materia,
       sync: Boolean(req.body.sync),
       forcar: Boolean(req.body.forcar || req.body.republicar),
-      // Clique do editor: notícia repetida vira pergunta, não rascunho.
+      // Clique do editor: publica mesmo com notícia parecida (só aviso).
       manual: true,
-      ignorarRepetida: req.body.confirmarRepetida === true,
       publicar_facebook: pedidoFacebook,
       publicar_instagram: pedidoInstagram,
       publicar_x: pedidoX,
