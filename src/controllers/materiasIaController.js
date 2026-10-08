@@ -374,6 +374,10 @@ async function publicar(req, res, next) {
       imagem_url: body.imagem_url || body.imagemUrl,
       sync: Boolean(body.sync),
       forcar: Boolean(body.forcar || body.republicar),
+      // Esta rota é sempre clique do editor: notícia repetida vira pergunta
+      // (409 NOTICIA_REPETIDA), não rascunho; confirmarRepetida publica.
+      manual: true,
+      ignorarRepetida: body.confirmarRepetida === true,
       publicar_facebook:
         body.publicarFacebook ?? body.publicar_facebook ?? body.facebook ?? null,
       publicar_instagram:

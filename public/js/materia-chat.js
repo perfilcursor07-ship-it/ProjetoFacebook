@@ -157,6 +157,8 @@
     if (!res.ok) {
       const err = new Error(data?.error || `Falha na requisição (${res.status})`);
       err.status = res.status;
+      err.code = data?.code || null;
+      err.dados = data?.dados || null;
       throw err;
     }
     return data;
@@ -2572,10 +2574,24 @@
       try {
         const id = await garantirRascunho();
         aviso.textContent = 'Publicando — pode levar alguns segundos…';
-        const data = await api(`/api/materias-ia/matters/${id}/publicar`, {
+        const publicar = (confirmarRepetida = false) => api(`/api/materias-ia/matters/${id}/publicar`, {
           method: 'POST',
-          body: JSON.stringify({ tipoPublicacao: 'auto', publicarFacebook: true, sync: true }),
+          body: JSON.stringify({ tipoPublicacao: 'auto', publicarFacebook: true, sync: true, confirmarRepetida }),
         });
+        let data;
+        try {
+          data = await publicar();
+        } catch (err) {
+          // A página já tem a mesma notícia: o editor decide, nada vira rascunho sozinho.
+          if (err.code !== 'NOTICIA_REPETIDA') throw err;
+          if (!window.confirm(err.message)) {
+            aviso.textContent = `Não publicada — a página já tem esta notícia (matéria #${err.dados?.repetidaId || '?'}). Rascunho #${id} salvo.`;
+            bloquearAcoes(false);
+            return;
+          }
+          aviso.textContent = 'Publicando mesmo assim…';
+          data = await publicar(true);
+        }
         if (data.queued) {
           finalizar(`Na fila de publicação — Rascunho #${id}`, id);
         } else {

@@ -152,6 +152,9 @@ app.use((err, _req, res, _next) => {
   if (res.headersSent) return;
   res.status(status).json({
     error: err.message || 'Erro interno do servidor',
+    // Erros de negócio que a tela trata (ex.: NOTICIA_REPETIDA pede confirmação).
+    ...(status < 500 && typeof err.code === 'string' ? { code: err.code } : {}),
+    ...(status < 500 && err.dados ? { dados: err.dados } : {}),
   });
 });
 
