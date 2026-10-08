@@ -398,6 +398,17 @@ async function adicionarPaginaDoPrimary(req, res) {
   });
   const Users = require('../models/Users');
   await Users.setDefaultFacebookPageId(req.session.userId, result.id);
+  // Confere já as páginas de TODOS os usuários: as da conta antiga que são
+  // esta mesma Página passam a publicar pelo Primary; as outras somem das listas.
+  const contaAyrshare = require('../services/ayrshareContaService');
+  contaAyrshare.limparCache();
+  setImmediate(() => {
+    db('facebook_pages')
+      .select()
+      .then((todas) => contaAyrshare.sincronizarPaginas(todas, { forcar: true }))
+      .then((r) => console.info(`[ayrshare-conta] após Primary: ${r.verificadas} conferida(s), ${r.curadas.length} corrigida(s), ${r.fora.length} fora da conta`))
+      .catch((err) => console.warn('[ayrshare-conta] conferência geral:', err.message));
+  });
   res.json({
     ok: true,
     page: result,

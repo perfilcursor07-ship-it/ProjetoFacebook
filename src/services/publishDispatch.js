@@ -196,7 +196,24 @@ async function publishContent({
       throw err;
     }
 
-    const profileKey = String(freshPage.ayrshare_profile_key || '').trim();
+    const contaAyrshare = require('./ayrshareContaService');
+    // Página marcada fora da conta Ayrshare atual: confere de novo (a conta
+    // pode ter voltado) antes de recusar com uma explicação clara.
+    if (freshPage.ayrshare_fora_da_conta && freshPage.ayrshare_fora_da_conta !== '0') {
+      const conferida = await contaAyrshare.verificarPagina(freshPage, { forcar: true });
+      if (conferida.estado === 'fora') {
+        const err = new Error(
+          `A Página “${freshPage.page_name}” não está na conta Ayrshare atual (${conferida.motivo || 'Profile Key de outra conta'}). ` +
+            'Em /paginas, adicione a página da conta nova e marque-a como padrão.'
+        );
+        err.status = 422;
+        err.code = 'AYRSHARE_PAGINA_FORA_DA_CONTA';
+        throw err;
+      }
+      if (conferida.curada) freshPage.ayrshare_profile_key = null;
+    }
+
+    let profileKey = String(freshPage.ayrshare_profile_key || '').trim();
 
     // Sem Profile Key a Ayrshare publica no Primary Profile. Com várias páginas,
     // isso só é seguro quando o editor marcou explicitamente esta como padrão e
@@ -206,7 +223,11 @@ async function publishContent({
       const paginas = await pagesForUser(userId);
       if (paginas.length > 1) {
         const paginaPadraoId = await defaultPageIdForUser(userId);
-        if (Number(freshPage.id) !== Number(paginaPadraoId)) {
+        // A própria Página do Primary Profile (mesmo id/nome) é segura mesmo
+        // sem ser a padrão: o post vai exatamente para ela.
+        const contaAtual = await contaAyrshare.contaAtual().catch(() => ({ ok: false }));
+        const ehAPaginaDoPrimary = contaAtual.ok && contaAyrshare.ehDoPrimary(freshPage, contaAtual.primary) === true;
+        if (!ehAPaginaDoPrimary && Number(freshPage.id) !== Number(paginaPadraoId)) {
           const err = new Error(
             `A Página “${freshPage.page_name}” está sem Profile Key da Ayrshare. ` +
               'Somente a Página padrão pode usar o Primary Profile; para esta, cole o Profile Key do User Profile em /paginas.'
@@ -303,7 +324,7 @@ async function publishContent({
     // funcionam nas redes Meta; uma falha do X também vira apenas um aviso.
     let resultMeta = null;
     if (publicarFacebook || querInstagram) {
-      resultMeta = await ayrshareService.publishToFacebook({
+      const payloadMeta = () => ({
         post: content,
         filePath: localFile || null,
         imageUrl: localFile ? null : remoteUrl || imageUrl || null,
@@ -314,6 +335,32 @@ async function publishContent({
         publicarInstagram: querInstagram,
         publicarX: false,
       });
+      try {
+        resultMeta = await ayrshareService.publishToFacebook(payloadMeta());
+      } catch (err) {
+        // "The Profile Key is invalid": chave da conta Ayrshare antiga. Se a
+        // página é a do Primary Profile da conta nova, a chave é apagada e o
+        // post sai pelo Primary (uma única nova tentativa).
+        if (!profileKey || !contaAyrshare.profileKeyInvalido(err)) throw err;
+        const conferida = await contaAyrshare.verificarPagina(freshPage, { forcar: true });
+        if (!conferida.curada) {
+          const erro = new Error(
+            `A Página “${freshPage.page_name}” usa um Profile Key que não existe na conta Ayrshare atual (provavelmente da conta antiga). ` +
+              (conferida.estado === 'fora'
+                ? 'Ela foi escondida das listas: em /paginas, adicione a página da conta nova e marque-a como padrão.'
+                : 'Confira o Profile Key em /paginas.')
+          );
+          erro.status = 422;
+          erro.code = 'AYRSHARE_PROFILE_KEY_DA_CONTA_ANTIGA';
+          throw erro;
+        }
+        console.info('[publish] Profile Key da conta antiga removido; publicando pelo Primary Profile', {
+          pageId: freshPage.id,
+          page: freshPage.page_name,
+        });
+        profileKey = '';
+        resultMeta = await ayrshareService.publishToFacebook(payloadMeta());
+      }
     }
 
     let resultX = null;

@@ -237,14 +237,29 @@
       } catch (err) { status.textContent = err.message; }
       finally { btn.disabled = false; }
     });
+    /** Páginas que não estão na conta Ayrshare atual (escondidas das listas). */
+    function avisoForaDaConta(lista) {
+      if (!lista || !lista.length) return '';
+      const itens = lista
+        .map((p) => '<li><strong class="text-slate-200">' + escapeHtml(p.page_name) + '</strong>' +
+          (p.motivo ? ' — ' + escapeHtml(p.motivo) : '') + '</li>')
+        .join('');
+      return '<details class="mb-4 rounded-lg border border-amber-700/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-100">' +
+        '<summary class="cursor-pointer">' + lista.length + ' página(s) escondida(s): não estão na conta Ayrshare atual</summary>' +
+        '<ul class="mt-2 list-disc space-y-1 pl-5 text-amber-100/90">' + itens + '</ul>' +
+        '<p class="mt-2 text-amber-200/70">Elas não aparecem nas listas nem recebem publicações. Se reconectar a página na Ayrshare, ela volta sozinha na próxima conferência.</p>' +
+        '</details>';
+    }
+
     async function loadAyrshare() {
       try {
-        const res = await fetch('/api/facebook/pages');
+        // sincronizar=1: confere as páginas com a conta Ayrshare atual antes de listar.
+        const res = await fetch('/api/facebook/pages?sincronizar=1');
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Falha ao carregar');
 
         if (!data.conectado || !(data.pages || []).length) {
-          contentEl.innerHTML = `
+          contentEl.innerHTML = avisoForaDaConta(data.paginas_fora_da_conta) + `
             <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-8 text-center">
               <p class="text-slate-300">Nenhuma página listada no app ainda.</p>
               <p class="mt-2 text-sm text-slate-500">
@@ -327,7 +342,7 @@
           })
           .join('');
 
-        contentEl.innerHTML = `
+        contentEl.innerHTML = avisoForaDaConta(data.paginas_fora_da_conta) + `
           <p class="text-xs text-slate-500 mb-4">
             A <strong class="font-medium text-slate-400">página padrão</strong> desta conta define para onde vão as
             matérias. As telas de matéria não têm mais seletor de Página: o destino é sempre a padrão marcada aqui.

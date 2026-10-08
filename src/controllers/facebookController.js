@@ -121,7 +121,26 @@ async function listPages(req, res, next) {
       }
     }
 
-    const pages = await FacebookPages.findByAccount(account.id);
+    // Confere as páginas com a conta Ayrshare atual (troca de conta deixa
+    // páginas com Profile Key que não existe mais). ?sincronizar=1 espera o
+    // resultado (tela /paginas); nas outras telas roda em segundo plano.
+    const contaAyrshare = require('../services/ayrshareContaService');
+    const { pagesForUser, foraDaConta } = require('../services/facebookPageResolver');
+    if (contaAyrshare.provedorAyrshare()) {
+      const sincronizar = contaAyrshare.sincronizarPaginas(
+        await pagesForUser(req.session.userId, { incluirForaDaConta: true }),
+        { forcar: req.query.sincronizar === '1' && req.query.forcar === '1' }
+      ).catch((err) => console.warn('[ayrshare-conta] sincronizar:', err.message));
+      if (req.query.sincronizar === '1') {
+        await Promise.race([sincronizar, new Promise((r) => setTimeout(r, 15_000))]);
+      }
+    }
+
+    const todasDaConta = await FacebookPages.findByAccount(account.id);
+    const pages = todasDaConta.filter((p) => !foraDaConta(p));
+    const paginasForaDaConta = todasDaConta
+      .filter((p) => foraDaConta(p))
+      .map((p) => ({ id: p.id, page_name: p.page_name, motivo: p.ayrshare_motivo || null }));
     const ppConn = postpulseService.isConfigured()
       ? await PostpulseConnections.findByUser(req.session.userId)
       : null;
@@ -143,6 +162,7 @@ async function listPages(req, res, next) {
 
     res.json({
       conectado: true,
+      paginas_fora_da_conta: paginasForaDaConta,
       oauth: oauthConnected,
       fb_user_id: account.fb_user_id,
       expira_em: account.expires_at,
