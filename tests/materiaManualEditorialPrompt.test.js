@@ -25,7 +25,7 @@ test('prompt da matéria manual exige redação original e fatos somente da apur
   assert.match(prompt, /até 2\.200 caracteres no total/i);
 });
 
-test('prompt preserva rodapé, hashtags e chamada do JM sem fechamento opinativo', () => {
+test('prompt preserva rodapé, hashtags e chamada do JM com o fechamento da matéria modelo', () => {
   const prompt = blocoEstiloJmNoticia({ pesquisa: false });
 
   assert.match(prompt, /Exatamente 5 hashtags pertinentes/i);
@@ -33,8 +33,11 @@ test('prompt preserva rodapé, hashtags e chamada do JM sem fechamento opinativo
   assert.match(prompt, /Siga o JM Notícia/i);
   assert.match(prompt, /Fonte:\*\* nome — URL real/i);
   assert.match(prompt, /Foto:\*\* crédito real/i);
-  assert.match(prompt, /não inclua pergunta para engajamento/i);
-  assert.match(prompt, /Opinião, lição, alerta moral ou oração no fechamento/i);
+  // Fechamento igual ao da matéria que viralizou: frase curta de impacto,
+  // nunca oração, lição de moral ou pergunta de engajamento.
+  assert.match(prompt, /UMA frase curta de impacto/i);
+  assert.match(prompt, /Proibido fechar com oração, “Amém”, sermão, lição de moral, pergunta/i);
+  assert.match(prompt, /MODELO DE ESTRUTURA — copie a FORMA, NUNCA os fatos/i);
   assert.match(prompt, /segundo a publicação/i);
   assert.match(prompt, /não recuse escrever/i);
 });
@@ -50,7 +53,8 @@ test('critérios compartilhados distinguem pesquisa ligada e desligada', () => {
   for (const prompt of [comPesquisa, semPesquisa]) {
     assert.match(prompt, /3 a 6 parágrafos/i);
     assert.match(prompt, /2\.200 caracteres/i);
-    assert.match(prompt, /lição moral, oração ou pergunta de engajamento/i);
+    assert.match(prompt, /Proibido fechar com oração, “Amém”, sermão, lição de moral, pergunta/i);
+    assert.match(prompt, /PADRÃO DA MATÉRIA QUE VIRALIZOU/);
     assert.match(prompt, /reacendeu o debate/i);
   }
 });
@@ -62,7 +66,8 @@ test('geradores direto e pesquisado recebem os critérios editoriais compartilha
   );
 
   assert.match(source, /blocoCriteriosMateriaManual\(\{ pesquisa: false \}\)/);
-  assert.match(source, /blocoCriteriosMateriaManual\(\{ pesquisa: true \}\)/);
+  // O pesquisado já recebe o modelo pelo blocoEstiloNewsGospel: sem repetir.
+  assert.match(source, /blocoCriteriosMateriaManual\(\{ pesquisa: true, comModelo: false \}\)/);
 });
 
 test('apuração prioriza fontes de domínios independentes', () => {

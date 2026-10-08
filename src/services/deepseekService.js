@@ -2,6 +2,7 @@ const axios = require('axios');
 const { env } = require('../config/env');
 const {
   MAX_MATERIA_CHARS,
+  ALVO_CORPO_TEXTO,
   sortearFaixaChars,
   classificarVolumeFonte,
   blocoRegraTamanhoAdaptativo,
@@ -712,7 +713,7 @@ async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
     '3) Fechamento no fato jornalístico — PROIBIDO oração / “Que Deus…” / “Seguimos em oração” / “Amém” nas últimas linhas.',
     'Exemplo de aspas: Ele afirma: "Eu entendi que sem Deus eu não era nada".',
     'O campo "titulo" = MANCHETE CURTA (máx. 90 caracteres). NÃO cole a legenda/transcrição no título.',
-    'Separe parágrafos com linha em branco. Alvo: 1750–1950 caracteres; nunca ultrapasse 2050 contando as hashtags.',
+    `Separe parágrafos com linha em branco. Alvo: ${ALVO_CORPO_TEXTO} caracteres; nunca ultrapasse ${MAX_MATERIA_CHARS} contando as hashtags.`,
     'Se a base for longa, condense preservando os dados principais; se for curta, complete com contexto real até o máximo.',
     tema ? `Ângulo / tipo de matéria pedido pelo usuário: ${tema}` : null,
     titulo ? `Título/contexto do vídeo de origem: ${String(titulo).slice(0, 120)}` : null,
@@ -732,7 +733,7 @@ async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
       basePrompt,
       '',
       'ALERTA: sua resposta anterior ficou quase igual à transcrição inteira.',
-      'Reescreva no estilo News Gospel: lead + desenvolvimento; encerre no fato (sem oração final).',
+      'Reescreva no padrão da matéria que viralizou: lead com os nomes + um parágrafo por personagem + frase curta de impacto no fim (sem oração final).',
       'Mantenha apenas 1–3 frases curtas entre aspas ("…") tiradas da fala — o resto NÃO pode ser cópia.',
       'NÃO feche com oração, “Que Deus…” ou “Amém”.',
     ].join('\n');
@@ -846,7 +847,7 @@ ${furoReportagem ? `MODO FURO / MINIMATÉRIA (obrigatório):
 - Se a fonte for LONGA: condense no tamanho máximo Face/Insta, preservando os dados principais.
 - Se a fonte for CURTA: amplie com contexto real da apuração até o tamanho máximo — sem inventar.
 - Encontre o FURO: o ângulo mais jornalístico e específico.
-- Estrutura: lead (quem + fato) + desenvolvimento com aspas; encerre no fato (sem oração final).
+- Estrutura: lead (quem + fato + nomes) + um parágrafo por personagem/desdobramento com números e comparação + frase curta de impacto no fim (sem oração final).
 - OBRIGATÓRIO: preserve no máximo 3 falas literais entre aspas ("…"), cada uma em parágrafo próprio de até 2 linhas (~90 caracteres), só as importantes para o contexto quando houver declaração na apuração.
 - Título próprio — nunca copie a manchete da fonte.
 - Não inclua bloco "Fontes:" — o sistema anexa créditos da origem e da imagem.` : ''}
@@ -1002,9 +1003,9 @@ async function gerarMateriaNoticiaFacebook({
     `ESTILO DO TÍTULO: ${estiloTitulo}`,
     `VOLUME DA FONTE: ${volumeFonte.toUpperCase()}.`,
     blocoRegraTamanhoAdaptativo(faixa, volumeFonte),
-    `EXTENSÃO OBRIGATÓRIA DO CORPO: ${faixa.min}–${faixa.max} caracteres (sem hashtags). Meta: perto de ${faixa.max}.`,
+    `EXTENSÃO DO CORPO: ${faixa.min}–${faixa.max} caracteres (sem hashtags), como a matéria que viralizou. Não encha para chegar ao teto.`,
     'FORMATAÇÃO: no máximo 5 parágrafos, cada um com no máximo 5 linhas (~220 caracteres), separados por linha em branco.',
-    'ESTRUTURA: (1) lead com quem + fato; (2) desenvolvimento com dados principais + aspas reais; (3) encerre no fato — sem oração / “Que Deus…” / “Amém”.',
+    'ESTRUTURA: (1) lead com quem + fato + nomes; (2) um parágrafo por personagem/desdobramento com dados principais, números e comparação antes × agora; (3) frase curta de impacto no fim — sem oração / “Que Deus…” / “Amém”.',
     nicho ? `Nicho/palavras-chave: ${nicho}` : null,
     emAlta ? 'Contexto: assunto em alta agora.' : null,
     redeSocial
@@ -1057,7 +1058,7 @@ async function gerarMateriaNoticiaFacebook({
     'Se faltar detalhe factual nas fontes, generalise (“segundo informações divulgadas”) ou omita — NUNCA invente nome, número, data ou citação.',
     'Quando houver fala documentada, use aspas em pelo menos uma frase literal no corpo.',
     'NÃO inclua créditos/Fontes no campo materia — o sistema anexa automaticamente (uma vez só).',
-    'NÃO feche com oração, “Que Deus…”, “Seguimos em oração” nem “Amém” nas últimas linhas — encerre no fato.',
+    'NÃO feche com oração, “Que Deus…”, “Seguimos em oração” nem “Amém” nas últimas linhas — feche com a frase curta de impacto do padrão.',
     'MODELO DE TOM (inspire-se, não copie): "O ator X tem se dedicado ao chamado…", "Em meio à devastação… uma notícia trouxe esperança…".',
     blocoTituloMarcaArte(marcaModeloArte),
   ]
@@ -1114,8 +1115,8 @@ async function gerarMateriaNoticiaFacebook({
           ...systemBlocosComAprendizado,
           {
             role: 'user',
-            content: `Matéria ABAIXO DO MÁXIMO Face/Insta (${qualidade.chars} caracteres; alvo ${faixa.min}–${faixa.max}).
-Amplie até perto de ${faixa.max} caracteres SEM inventar fatos nem muletas de IA.
+            content: `Matéria CURTA DEMAIS (${qualidade.chars} caracteres; alvo ${faixa.min}–${faixa.max}).
+Amplie para dentro do alvo SEM inventar fatos nem muletas de IA.
 Use só contexto real da apuração (quem é, lugar, carreira/ministério, desdobramento). Sem oração nas últimas linhas.
 Mantenha o mesmo ângulo e as falas literais.
 
@@ -2517,7 +2518,7 @@ Regras:
 - O título pode melhorar levemente (máx. 110 chars) se as novas infos mudarem o gancho; senão mantenha próximo do atual.
 - A matéria deve ficar mais forte e completa: use as infos extras (fatos, nomes, números, contexto) sem inventar o que não estiver no texto atual nem nas extras.
 - Português do Brasil, parágrafos curtos separados por linha em branco (\\n\\n).
-- Ideal 1750–1950 caracteres no corpo; o texto com hashtags não pode ultrapassar 2050.
+- Ideal ${ALVO_CORPO_TEXTO} caracteres no corpo; o texto com hashtags não pode ultrapassar ${MAX_MATERIA_CHARS}.
 - 3 a 5 hashtags sem # no JSON.
 - Sem pedir like, sem clickbait mentiroso, sem Caps Lock excessivo.
 - Preserve o bloco "Fontes:" se já existir no texto atual.`,
@@ -3126,7 +3127,7 @@ async function gerarMateriaComPesquisa({
 
 ${blocoEstiloNewsGospel()}
 
-${blocoCriteriosMateriaManual({ pesquisa: true })}
+${blocoCriteriosMateriaManual({ pesquisa: true, comModelo: false })}
 
 REGRA DE OURO — só fato real:
 - Use apenas o que estiver no pedido do usuário e nos TRECHOS DAS FONTES.
@@ -3293,6 +3294,7 @@ NÃO CORTE (isto é trabalho correto do redator, não erro):
 - Ligação lógica entre dois fatos que estão nas fontes (ex.: fonte diz "gerou um legado" e "família de 5 filhos"; escrever que o legado se reflete na família é válido).
 - Contexto descritivo já contido nas fontes (quem é a pessoa, onde congrega, desde quando, números da família).
 - Ordem, divisão em parágrafos, subtítulos e escolha de ângulo — isso é edição, não invenção.
+- A frase curta de impacto no fim (ex.: "O povo não esqueceu e as urnas deram a resposta.") quando ela só resume o sentido dos fatos já narrados, sem fato, número ou nome novo. É padrão editorial da página.
 - Se o fato está na fonte e só a redação mudou, MANTENHA a frase como o redator escreveu.
 
 Regras da devolução:
@@ -3760,6 +3762,7 @@ ${pesquisaAmpliada ? `- A primeira janela não confirmou o fato; o sistema ampli
     : { alvo: 'até 2.200 caracteres no total', paragrafos: '3 a 6', minimo: 550 };
   const blocoTamanhoMateria = `TAMANHO E PROFUNDIDADE DESTA RESPOSTA (padrão JM Notícia):
   - Escreva de ${perfilTamanho.paragrafos} parágrafos, variando de acordo com a densidade do fato.
+  - Corpo de ${ALVO_CORPO_TEXTO} caracteres, como a matéria que viralizou (nota menor quando o material for curto).
   - A peça inteira — título, âncora, corpo, fonte, foto, 5 hashtags e “Siga o JM Notícia.” — deve ter ${perfilTamanho.alvo}.
   - Não estique para atingir uma metragem. Cada parágrafo precisa acrescentar fato, contexto, número, declaração ou contraponto documentado.
   - Se o material for curto, entregue uma nota proporcional sem inventar contexto; se for abundante, selecione os elementos mais relevantes.`;
@@ -3839,7 +3842,7 @@ ${blocoPlanejamentoDaResposta}
   · 1ª linha = **TÍTULO FORTE** (máx. 110 caracteres visíveis, sem a palavra Título).
   · 2ª linha (depois de uma linha em branco) = **ÂNCORA EM CAIXA ALTA** (frase factual; não repetir o título).
   · Depois, 3 a 6 parágrafos conforme a densidade do fato. Não repita mecanicamente a mesma quantidade.
-  · Encerre no último fato relevante; não inclua pergunta artificial para comentários nem conclusão opinativa.
+  · Feche com a frase curta de impacto do padrão (parágrafo próprio, sem fato novo); não inclua pergunta artificial para comentários, oração nem lição de moral.
   · **Fonte:** nome — URL real. Depois **Foto:** em outra linha.
   · EXATAMENTE 5 hashtags, a última #JMNotícia. Depois **Siga o JM Notícia.**
   · É UMA matéria só: comece direto pelo título. NUNCA escreva "### MATERIA 1".

@@ -1,8 +1,9 @@
 /**
  * Diretrizes editoriais para matérias de Página do Facebook / Instagram.
- * Regra de tamanho: sempre mirar o TETO útil do feed (Face + Insta).
+ * Regra de tamanho: corpo de 1.000–1.400 caracteres, como a matéria do JM que
+ * viralizou (~1.050). Antes mirava o teto do feed (1.750–1.950) e a IA enchia.
  * - Fonte longa → condensar preservando os dados principais.
- * - Fonte curta → ampliar com contexto real da apuração.
+ * - Fonte curta → nota proporcional, sem inventar para chegar ao alvo.
  */
 
 /** Limite duro da legenda do Instagram, incluindo fonte, foto e hashtags. */
@@ -10,8 +11,11 @@ const INSTAGRAM_CAPTION_MAX_CHARS = 2200;
 /** Teto do corpo; o corte final ainda reserva o limite de 2.200 para o Instagram. */
 const MAX_MATERIA_CHARS = 2050;
 
-/** Alvo do corpo sem créditos, para a legenda final chegar perto de 2.000–2.200. */
-const FAIXA_CORPO_FB = Object.freeze({ min: 1750, max: 1950 });
+/** Alvo do corpo sem créditos — o tamanho da matéria que viralizou. */
+const FAIXA_CORPO_FB = Object.freeze({ min: 1000, max: 1400 });
+
+/** "1.000–1.400" para os prompts: um só lugar define o alvo. */
+const ALVO_CORPO_TEXTO = `${FAIXA_CORPO_FB.min.toLocaleString('pt-BR')}–${FAIXA_CORPO_FB.max.toLocaleString('pt-BR')}`;
 
 /** Abaixo disso a fonte é tratada como “texto pequeno” (precisa expandir). */
 const FONTE_CURTA_CHARS = 700;
@@ -89,7 +93,7 @@ function limparTitulosAlternativosDoBloco(texto) {
 }
 
 function sortearFaixaChars() {
-  // Sempre o mesmo alvo: tamanho máximo útil para Face/Insta.
+  // Sempre o mesmo alvo: o tamanho da matéria que viralizou.
   return { min: FAIXA_CORPO_FB.min, max: FAIXA_CORPO_FB.max };
 }
 
@@ -108,22 +112,19 @@ function blocoRegraTamanhoAdaptativo(faixa, volumeFonte) {
   const alvo = `${faixa.min}–${faixa.max}`;
   if (volumeFonte === 'longa') {
     return `TAMANHO (fonte LONGA — CONDENSE):
-- A apuração é extensa. CONDENSE até ${alvo} caracteres (máx. Face/Insta).
-- Preserve os dados principais: nomes, números, datas, lugares, decisões e até 3 falas literais.
-- Corte só repetição, enrolação e detalhes secundários — nunca o furo.
-- O texto final deve chegar PERTO do máximo (${faixa.max}), não ficar telegráfico.`;
+- A apuração é extensa. CONDENSE para ${alvo} caracteres no corpo.
+- Preserve os dados principais: nomes, números, comparações e decisões. Escolha os fatos mais fortes.
+- Corte repetição, enrolação e detalhes secundários — nunca o furo.
+- Não passe de ${faixa.max} caracteres no corpo.`;
   }
   if (volumeFonte === 'curta') {
     return `TAMANHO (fonte CURTA — AMPLIE):
-- A apuração é curta. AMPLIE até ${alvo} caracteres (máx. Face/Insta).
-- Use só contexto REAL da apuração: quem é a pessoa, o que já se sabe dela, lugar, ministério/carreira, desdobramento e fechamento de fé.
-- NÃO invente fatos, números, cargos nem citações.
-- O texto final deve chegar PERTO do máximo (${faixa.max}) — matéria completa, não bilhete.`;
+- A apuração é curta. Mire ${alvo} caracteres usando só contexto REAL da apuração: quem é a pessoa, lugar, ministério/carreira, números e desdobramento.
+- NÃO invente fatos, números, cargos nem citações. Se a apuração não sustentar o alvo, entregue uma nota menor e proporcional.`;
   }
   return `TAMANHO (fonte MÉDIA — COMPLETE):
-- Reescreva a narrativa e preencha até ${alvo} caracteres (máx. Face/Insta).
-- Preserve os dados principais e desenvolva com contexto real da apuração.
-- Meta: perto de ${faixa.max} caracteres no corpo.`;
+- Reescreva a narrativa em ${alvo} caracteres no corpo.
+- Preserve os dados principais e desenvolva com contexto real da apuração, sem encher.`;
 }
 
 function sortearEstiloLead() {
@@ -150,9 +151,9 @@ function sortearEstiloTitulo() {
 
 function sortearVozRedator() {
   const vozes = [
-    'Redator de portal gospel (estilo News Gospel): jornalístico, claro e caloroso; apresenta a pessoa, conta o fato e fecha no fato — sem sensacionalismo e sem oração final.',
+    'Redator de portal gospel (estilo News Gospel): jornalístico, claro e caloroso; apresenta a pessoa, conta o fato e fecha com a frase curta de impacto do padrão — sem sensacionalismo e sem oração final.',
     'Repórter de testemunho cristão: prioriza nomes, contexto (igreja, cidade, carreira) e falas reais entre aspas; tom respeitoso e próximo do leitor.',
-    'Redator de notícia com esperança: narra o fato com precisão e encerra no desenvolvimento jornalístico — sem oração, sem “amém”, sem pedido de fé no fechamento.',
+    'Redator de notícia com esperança: narra o fato com precisão e encerra com a frase curta de impacto do padrão — sem oração, sem “amém”, sem pedido de fé no fechamento.',
     'Cronista gospel leve: frases médias bem encadeadas, linguagem acessível, sem muletas de IA nem pedido de like.',
     'Repórter de fé e cultura: situar quem é a pessoa (TV, ministério, cargo), o que mudou e por que isso importa — sem oração nas últimas linhas.',
   ];
@@ -171,8 +172,49 @@ function pareceFormatoJmNoticia(texto) {
   );
 }
 
+/**
+ * Matéria do JM Notícia que viralizou (eleições 2026, 1º turno). O editor pediu
+ * que toda matéria, em qualquer modelo (ChatGPT, Claude, DeepSeek…), siga a
+ * estrutura dela. Vai no prompt como MODELO DE ESTRUTURA — os fatos dela nunca
+ * podem aparecer em outra matéria.
+ */
+const MATERIA_MODELO_VIRAL = `O primeiro turno das Eleições 2026, realizado neste domingo (4), terminou com resultados desfavoráveis para três personalidades conhecidas do público evangélico: Eliziane Gama, Otoni de Paula e Kleber Lucas.
+
+No Maranhão, a senadora Eliziane Gama (PT), que buscava a reeleição, terminou em quinto lugar, com 694.121 votos (9,75%). Em 2018, quando conquistou a vaga, havia recebido mais de 1,5 milhão de votos. Sua aproximação com Lula e sua atuação na CPMI do 8 de Janeiro foram alvos de críticas de setores evangélicos conservadores.
+
+No Rio de Janeiro, o pastor Otoni de Paula (PSD), que rompeu com o bolsonarismo e declarou apoio a Lula, não conseguiu renovar o mandato de deputado federal. Sua votação caiu de 158.507 votos, em 2022, para 19.364 neste domingo.
+
+Já o cantor gospel e pastor Kleber Lucas, integrante da chapa petista de Benedita da Silva ao Senado, também ficou sem a suplência. Benedita terminou em terceiro lugar, atrás de Carlos Portinho e Carlos Jordy (PL).
+
+O povo não esqueceu e as urnas deram a resposta.`;
+
+/** Como fechar a matéria — igual à que viralizou. Usado em todos os prompts. */
+const REGRA_FECHAMENTO_VIRAL =
+  'Feche com UMA frase curta de impacto, em parágrafo próprio (até ~70 caracteres), que resuma o sentido dos fatos já narrados para o público da página — como “O povo não esqueceu e as urnas deram a resposta.” Ela não traz fato novo, número, nome ou acusação. Proibido fechar com oração, “Amém”, sermão, lição de moral, pergunta ou pedido de like/compartilhamento.';
+
+/**
+ * Critérios da matéria que viralizou, para qualquer modelo. Fica nos blocos
+ * fixos do prompt (sem sorteio) para o cache de prompt continuar valendo.
+ */
+function blocoMateriaModeloViral() {
+  return `PADRÃO DA MATÉRIA QUE VIRALIZOU (siga em TODA matéria, qualquer que seja o assunto):
+1) LEAD que entrega a notícia inteira na 1ª frase: o fato + quando + por que importa para o público da página (evangélico/conservador) + os NOMES envolvidos já no lead. Ex.: “terminou com resultados desfavoráveis para três personalidades conhecidas do público evangélico: A, B e C.”
+2) UM PARÁGRAFO POR PERSONAGEM OU DESDOBRAMENTO, na mesma ordem em que aparecem no lead. Abra situando lugar/quem é: “No Maranhão, a senadora X (PT), que buscava…”, “Já o cantor gospel e pastor Y…”.
+3) IDENTIFICAÇÃO COMPLETA: cargo/ministério + nome + partido ou igreja entre parênteses, quando estiver na apuração.
+4) NÚMEROS CONCRETOS E COMPARAÇÃO ANTES × AGORA: votos, percentuais, posição, valores, datas — e o contraste com o passado (“Em 2018 havia recebido mais de 1,5 milhão”; “caiu de 158.507 para 19.364”). O contraste é o que prende o leitor. Só números que estão na apuração.
+5) O PORQUÊ PELO OLHAR DO PÚBLICO: uma frase de contexto que liga o fato aos valores do leitor (posições, alianças, decisões ou críticas que o público conhece), atribuída quando for crítica de terceiros (“foram alvos de críticas de setores evangélicos conservadores”).
+6) PARÁGRAFOS CURTOS, de 2 a 3 frases diretas, cada frase com um fato. Sem adjetivo inflado, sem enrolação, sem aspas obrigatórias.
+7) FECHAMENTO: ${REGRA_FECHAMENTO_VIRAL}
+8) HASHTAGS: o evento/tema + o nome de cada personagem em CamelCase + o público (ex.: #Eleições2026 #ElizianeGama #OtoniDePaula #KleberLucas #Evangélicos) e a tag da página.
+
+MODELO DE ESTRUTURA — copie a FORMA, NUNCA os fatos, nomes ou números deste exemplo:
+<<<
+${MATERIA_MODELO_VIRAL}
+>>>`;
+}
+
 /** Núcleo factual compartilhado pelo chat e pelos geradores que retornam JSON. */
-function blocoCriteriosMateriaManual({ pesquisa = false } = {}) {
+function blocoCriteriosMateriaManual({ pesquisa = false, comModelo = true } = {}) {
   const regraFonte = pesquisa
     ? `- Cruze no mínimo duas fontes independentes sobre o mesmo fato.
 - Acrescente ao menos um elemento factual que não esteja na fonte principal: dado, contexto anterior, decisão documentada, número comparativo ou outro lado.`
@@ -187,9 +229,11 @@ function blocoCriteriosMateriaManual({ pesquisa = false } = {}) {
 ${regraFonte}
 - Produza de 3 a 6 parágrafos conforme a quantidade de fatos. Não aumente o texto com repetição ou enrolação.
 - Inclua contexto factual verificável somente quando ele estiver documentado na apuração.
-- Encerre no último fato relevante. Não use opinião, lição moral, oração ou pergunta de engajamento.
+- ${REGRA_FECHAMENTO_VIRAL}
 - Não use muletas como “é importante destacar”, “vale ressaltar” ou “reacendeu o debate”.
-- O texto completo publicado deve respeitar o limite de 2.200 caracteres.`;
+- Corpo de ${ALVO_CORPO_TEXTO} caracteres, como a matéria modelo. O texto completo publicado deve respeitar o limite de 2.200 caracteres.${comModelo ? `
+
+${blocoMateriaModeloViral()}` : ''}`;
 }
 
 /**
@@ -235,14 +279,14 @@ ESTRUTURA
 - Entregue somente a matéria pronta, começando diretamente pelo título. Nada de “Claro”, “Segue a matéria” ou comentários ao editor.
 - Título forte e fiel aos fatos na primeira linha, em negrito markdown.
 - Em seguida, uma âncora em CAIXA ALTA e negrito, sem repetir o título.
-- Corpo com 3 a 6 parágrafos, variando conforme a densidade do fato. Não use sempre o mesmo número.
+- Corpo com 3 a 6 parágrafos, variando conforme a densidade do fato: lead, um parágrafo por personagem/desdobramento e a frase de impacto.
 - Cubra quem, o quê, onde, contexto, números e os lados envolvidos somente quando estiverem documentados.
-- Encerre no último fato relevante. Não inclua pergunta para engajamento, conclusão opinativa ou interpretação da IA.
+- ${REGRA_FECHAMENTO_VIRAL}
 - Fonte em linha separada: **Fonte:** nome — URL real. Nunca invente URL.
 - Foto em outra linha: **Foto:** crédito real; se não existir, **Foto:** Reprodução Internet.
 - Exatamente 5 hashtags pertinentes; a quinta e última é #JMNotícia.
 - Última linha: **Siga o JM Notícia.**
-- Alvo: até 2.200 caracteres no total, incluindo título, âncora, fonte, foto, hashtags e chamada final.
+- Corpo de ${ALVO_CORPO_TEXTO} caracteres (tamanho da matéria modelo). Teto: até 2.200 caracteres no total, incluindo título, âncora, fonte, foto, hashtags e chamada final.
 
 IMAGEM
 - Se a imagem for gerada por IA, marque-a como ilustração na própria arte e sinalize isso na publicação.
@@ -250,17 +294,19 @@ IMAGEM
 - Foto de terceiro exige crédito e, de preferência, frame de fonte oficial ou banco de imagem livre.
 
 PROIBIDO
-- Opinião, lição, alerta moral ou oração no fechamento.
+- Lição de moral, sermão, alerta espiritual ou oração no fechamento (a frase curta de impacto do padrão é permitida e esperada).
 - Muletas de IA: “é importante destacar”, “vale ressaltar”, “reacendeu o debate”, “em um cenário cada vez mais” e equivalentes.
 - Pedido de like, “não perca”, “assista até o final” ou pergunta artificial para gerar comentários.
 - Emoji, preâmbulo, títulos alternativos dentro do corpo, notas ao editor ou texto depois de “Siga o JM Notícia.”
+
+${blocoMateriaModeloViral()}
 
 FORMATO VISUAL MANTIDO PELO SISTEMA:
 **TÍTULO FORTE**
 
 **ÂNCORA EM CAIXA ALTA**
 
-[3 a 6 parágrafos]
+[lead com os nomes + 1 parágrafo por personagem/desdobramento + frase curta de impacto]
 
 **Fonte:** Nome — URL
 
@@ -277,7 +323,7 @@ ESTILO NEWS GOSPEL — MINIMATÉRIA (obrigatório):
 1) LEAD: apresente quem/o quê com contexto (nome, o que a pessoa é conhecida por, cidade, ministério, carreira). Uma ou duas frases fortes.
 2) DESENVOLVIMENTO: minimatéria do conteúdo original. Se a fonte for grande, condense preservando os dados principais; se for pequena, use somente o contexto real disponível e entregue uma nota proporcional.
 3) Use no máximo 3 falas literais entre aspas ("…"), cada uma em parágrafo próprio de até 2 linhas (~90 caracteres), só as importantes para o contexto quando houver na fonte — introduza com "afirmou", "declarou", "contou", "disse".
-4) FECHAMENTO: encerre no fato / última informação jornalística. PROIBIDO terminar com oração, “Que Deus…”, “Seguimos em oração”, “Amém”, pedido de fé ou as 1–2 últimas linhas só de reflexão espiritual.
+4) FECHAMENTO: ${REGRA_FECHAMENTO_VIRAL} PROIBIDO também “Que Deus…”, “Seguimos em oração”, pedido de fé ou as 1–2 últimas linhas só de reflexão espiritual.
 5) TOM: jornalístico + evangélico caloroso. Sem clickbait.
 6) FORMATO: de 3 a 6 parágrafos, conforme a densidade dos fatos, separados por linha em branco (\\n\\n). Texto puro, sem HTML/markdown, repetição ou emoji obrigatório no final.
 7) PROIBIDO: colar a fonte inteira; inventar citações; "não perca", "assista até o final", "compartilhe com quem precisa".
@@ -285,7 +331,9 @@ ESTILO NEWS GOSPEL — MINIMATÉRIA (obrigatório):
 9) VOZ PRÓPRIA — NÃO COMENTE A FONTE: escreva a NOTÍCIA como reportagem nossa, nunca como resenha do que outro site publicou.
    PROIBIDO narrar o veículo: "o site X publicou", "em matéria publicada pelo portal X", "a reportagem do X afirma que", "a publicação destaca", "o artigo explica", "segundo o texto do site".
    O lead começa pelo FATO (quem + o que aconteceu), nunca pelo veículo.
-   Se precisar atribuir, use a forma padrão e só DEPOIS do lead: "Segundo o <veículo>, …" ou "Ainda de acordo com o <veículo>, …" — no máximo 2 atribuições no texto inteiro.`;
+   Se precisar atribuir, use a forma padrão e só DEPOIS do lead: "Segundo o <veículo>, …" ou "Ainda de acordo com o <veículo>, …" — no máximo 2 atribuições no texto inteiro.
+
+${blocoMateriaModeloViral()}`;
 }
 
 function sortearTemperatura(investigativa = false) {
@@ -1426,7 +1474,7 @@ DIRETRIZES FACEBOOK + INSTAGRAM / MINIMATÉRIA:
 - Gancho forte nos primeiros ~120 caracteres (quem + fato).
 - 3 a 5 hashtags no campo hashtags, SEM espaços internos, sem # no valor.
 - Muletas PROIBIDAS: ${FRASES_PROIBIDAS_IA.slice(0, 22).map((f) => `"${f}"`).join(', ')}…
-- FECHAMENTO: no fato jornalístico — PROIBIDO oração / “Que Deus…” / “Seguimos em oração” / “Amém” nas últimas linhas.
+- FECHAMENTO: frase curta de impacto do padrão (ver abaixo) — PROIBIDO oração / “Que Deus…” / “Seguimos em oração” / “Amém” nas últimas linhas.
 - NÃO inclua bloco Fontes:/Fonte: no corpo — o sistema anexa créditos uma única vez.
 
 ${blocoEstiloNewsGospel()}`;
@@ -1435,7 +1483,7 @@ ${blocoEstiloNewsGospel()}`;
 /** Parte que muda a cada matéria: faixa de tamanho sorteada e volume da fonte. */
 function blocoRegrasFacebookVariavel(faixa, volumeFonte = 'media') {
   return `ALVO DESTA MATÉRIA:
-- Meta de tamanho: SEMPRE o máximo útil do feed (${faixa.min}–${faixa.max} chars no corpo; teto ${MAX_MATERIA_CHARS} com créditos/hashtags).
+- Meta de tamanho: ${faixa.min}–${faixa.max} chars no corpo, como a matéria que viralizou (teto ${MAX_MATERIA_CHARS} com créditos/hashtags).
 
 ${blocoRegraTamanhoAdaptativo(faixa, volumeFonte)}`;
 }
@@ -1461,6 +1509,7 @@ module.exports = {
   INSTAGRAM_CAPTION_MAX_CHARS,
   MAX_MATERIA_CHARS,
   FAIXA_CORPO_FB,
+  ALVO_CORPO_TEXTO,
   FONTE_CURTA_CHARS,
   FONTE_LONGA_CHARS,
   FRASES_PROIBIDAS_IA,
@@ -1490,6 +1539,8 @@ module.exports = {
   blocoEstiloNewsGospel,
   blocoCriteriosMateriaManual,
   blocoEstiloJmNoticia,
+  blocoMateriaModeloViral,
+  REGRA_FECHAMENTO_VIRAL,
   pareceFormatoJmNoticia,
   mensagemAvisoQualidade,
   formatFacebookCaption,

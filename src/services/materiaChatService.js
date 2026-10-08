@@ -5075,7 +5075,7 @@ function montarInformacoesDaPauta(pauta) {
     'Com a pesquisa ligada, cruze no mínimo duas fontes independentes e acrescente um elemento factual ausente na fonte principal.',
     'Sem pesquisa, use somente o link, a legenda, a transcrição ou o texto enviado, atribuindo alegações quando necessário.',
     'Escreva de 3 a 6 parágrafos, sem enrolação, e inclua contexto factual verificável quando estiver documentado.',
-    'Encerre no último fato relevante, sem opinião, lição moral, oração ou pergunta de engajamento.',
+    'Siga o padrão da matéria que viralizou: lead com os nomes, um parágrafo por personagem, números com comparação antes × agora e frase curta de impacto no fim (sem oração, lição de moral ou pergunta de engajamento).',
     'Não use muletas como “é importante destacar” ou “reacendeu o debate”.',
     'Respeite o limite de 2.200 caracteres no texto completo.',
     '',
