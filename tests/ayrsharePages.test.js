@@ -81,3 +81,130 @@ test('template e scripts renderizam para administrador, usuário e outro provedo
     }
   }
 });
+
+/** transaction falsa: guarda as páginas inseridas/alteradas. */
+function bancoFalso(t, { paginas = [] } = {}) {
+  const rows = paginas;
+  let account = { id: 9, user_id: 7 };
+  t.mock.method(db, 'transaction', async (run) => {
+    const trx = (table) => {
+      let filtro = null;
+      const query = {
+        where(cond) { filtro = cond; return this; }, forUpdate() { return this; },
+        async first() { return table === 'users' ? { id: 7 } : account; },
+        then(resolve, reject) { return Promise.resolve(rows).then(resolve, reject); },
+        async insert(row) {
+          if (table === 'facebook_accounts') account = { ...row, id: 9 };
+          else rows.push({ ...row, id: 20 + rows.length });
+          return [20 + rows.length - 1];
+        },
+        async update(patch) { Object.assign(rows.find((r) => r.id === filtro.id), patch); },
+      };
+      return query;
+    };
+    trx.fn = { now: () => new Date() };
+    return run(trx);
+  });
+  return rows;
+}
+
+async function chamarAddPage(body) {
+  let result, error;
+  await controller.addPage({ session: { userId: 7 }, body }, { json: (data) => { result = data; } }, (err) => { error = err; });
+  return { result, error };
+}
+
+test('conta só com Primary Profile: adiciona a página sem Profile Key e marca como padrão', async (t) => {
+  const Users = require('../src/models/Users');
+  const rows = bancoFalso(t);
+  let padrao = null;
+  t.mock.method(Users, 'setDefaultFacebookPageId', async (_u, id) => { padrao = id; });
+  t.mock.method(service, 'diagnosticarConta', async () => ({
+    ok: true,
+    primary: { refId: 'r1', title: 'Primary', facebookConnected: true, facebookPageName: 'JM Notícia', facebookPageId: '555' },
+  }));
+  const { result, error } = await chamarAddPage({ primary: true });
+  assert.equal(error, undefined);
+  assert.equal(result.page.page_name, 'JM Notícia');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].page_id, '555');
+  assert.equal(rows[0].ayrshare_profile_key, null);
+  assert.equal(padrao, rows[0].id);
+  assert.match(result.aviso, /sem Profile Key/);
+});
+
+test('página que tinha Profile Key da conta antiga passa a usar o Primary Profile', async (t) => {
+  const Users = require('../src/models/Users');
+  const rows = bancoFalso(t, { paginas: [{ id: 3, page_id: '555', page_name: 'JM', ayrshare_profile_key: 'CHAVE-ANTIGA' }] });
+  t.mock.method(Users, 'setDefaultFacebookPageId', async () => {});
+  t.mock.method(service, 'diagnosticarConta', async () => ({
+    ok: true,
+    primary: { refId: 'r1', facebookConnected: true, facebookPageName: 'JM Notícia', facebookPageId: '555' },
+  }));
+  const { result } = await chamarAddPage({ primary: true });
+  assert.equal(result.page.existing, true);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].ayrshare_profile_key, null);
+});
+
+test('Primary Profile sem Facebook ou API Key do servidor velha: mensagens claras e nada gravado', async (t) => {
+  const rows = bancoFalso(t);
+  const diag = t.mock.method(service, 'diagnosticarConta', async () => ({ ok: true, primary: { facebookConnected: false } }));
+  let r = await chamarAddPage({ primary: true });
+  assert.equal(r.error.status, 422);
+  assert.match(r.error.message, /Social Accounts/);
+  diag.mock.mockImplementation(async () => ({ ok: false, status: 401, motivo: 'API Key not valid' }));
+  r = await chamarAddPage({ primary: true });
+  assert.match(r.error.message, /AYRSHARE_API_KEY no \.env/);
+  assert.equal(rows.length, 0);
+});
+
+test('Profile Key recusado: explica se é a chave do servidor, uma API Key colada ou chave errada', async (t) => {
+  bancoFalso(t);
+  t.mock.method(service, 'isAyrshareApiKey', () => false);
+  t.mock.method(service, 'fetchProfileByKey', async () => { throw Object.assign(new Error('401'), { response: { status: 401 } }); });
+  const diag = t.mock.method(service, 'diagnosticarConta', async () => ({ ok: false, status: 401 }));
+  const comoApiKey = t.mock.method(service, 'valeComoApiKey', async () => true);
+
+  let r = await chamarAddPage({ profile_key: 'AAAA1111-BBBB2222-CCCC3333-DDDD4444' });
+  assert.match(r.error.message, /AYRSHARE_API_KEY no \.env do servidor/);
+
+  diag.mock.mockImplementation(async () => ({ ok: true, primary: {} }));
+  r = await chamarAddPage({ profile_key: 'AAAA1111-BBBB2222-CCCC3333-DDDD4444' });
+  assert.match(r.error.message, /Isso é a API Key de uma conta Ayrshare/);
+
+  comoApiKey.mock.mockImplementation(async () => false);
+  r = await chamarAddPage({ profile_key: 'AAAA1111-BBBB2222-CCCC3333-DDDD4444' });
+  assert.match(r.error.message, /Primary Profile/);
+  assert.equal(r.error.status, 422);
+});
+
+test('RefId colado aponta para o botão do Primary Profile', async () => {
+  const r = await chamarAddPage({ profile_key: '1aec54c9efc13d155f4910ea45a3fb1fd0f45fd2' });
+  assert.equal(r.error.status, 400);
+  assert.match(r.error.message, /RefId/);
+  assert.match(r.error.message, /Primary Profile/);
+});
+
+test('buscar perfis: plano sem User Profiles ainda mostra o Primary Profile; chave velha dá erro claro', async (t) => {
+  t.mock.method(service, 'diagnosticarConta', async () => ({
+    ok: true,
+    primary: { title: 'Primary', facebookConnected: true, facebookPageName: 'JM Notícia' },
+  }));
+  t.mock.method(service, 'listProfiles', async () => { throw new Error('plan'); });
+  t.mock.method(service, 'finalDaApiKey', () => '73EE');
+  let dados, erro;
+  const res = { set() {}, json: (d) => { dados = d; } };
+  await controller.listProfiles({ query: {} }, res, (e) => { erro = e; });
+  assert.equal(erro, undefined);
+  assert.deepEqual(dados.profiles, []);
+  assert.equal(dados.primary.facebook_page_name, 'JM Notícia');
+  assert.equal(dados.api_key_final, '73EE');
+  assert.match(dados.aviso, /Primary Profile/);
+  assert.ok(!JSON.stringify(dados).includes('apiKey'));
+
+  service.diagnosticarConta.mock.mockImplementation(async () => ({ ok: false, status: 401 }));
+  await controller.listProfiles({ query: {} }, res, (e) => { erro = e; });
+  assert.equal(erro.status, 502);
+  assert.match(erro.message, /AYRSHARE_API_KEY/);
+});

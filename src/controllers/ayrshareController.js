@@ -309,28 +309,121 @@ async function setX(req, res, next) {
   }
 }
 
+const MSG_CHAVE_DO_SERVIDOR =
+  'A API Key configurada no servidor não é aceita pela Ayrshare. Se você trocou de conta, ' +
+  'troque AYRSHARE_API_KEY no .env do servidor pela API Key da conta nova (API Dashboard da Ayrshare) e reinicie o app (pm2 restart).';
+
+/** Primary Profile da conta: é a página da conta quando não há User Profiles. */
+function resumoDoPrimary(primary) {
+  if (!primary) return null;
+  return {
+    title: primary.title || 'Primary Profile',
+    facebook_connected: Boolean(primary.facebookConnected),
+    facebook_page_name: primary.facebookPageName || null,
+  };
+}
+
 async function listProfiles(req, res, next) {
   try {
     res.set('Cache-Control', 'no-store');
-    res.json(await ayrshareService.listProfiles({ cursor: String(req.query.cursor || '').slice(0, 2000) || null }));
+    const cursor = String(req.query.cursor || '').slice(0, 2000) || null;
+    const conta = cursor ? null : await ayrshareService.diagnosticarConta();
+    if (conta && !conta.ok) {
+      throw Object.assign(new Error(conta.status === 401 || conta.status === 403 ? MSG_CHAVE_DO_SERVIDOR : `A Ayrshare não respondeu: ${conta.motivo}`), { status: 502 });
+    }
+    let lista = { profiles: [], next_cursor: null };
+    let aviso = null;
+    try {
+      lista = await ayrshareService.listProfiles({ cursor });
+    } catch {
+      // Plano sem User Profiles: só existe o Primary Profile — e ele basta.
+      aviso = 'Esta conta não tem User Profiles (ou o plano não permite listá-los). Use a página do Primary Profile.';
+    }
+    res.json({
+      ...lista,
+      primary: resumoDoPrimary(conta?.primary),
+      api_key_final: ayrshareService.finalDaApiKey(),
+      aviso,
+    });
   } catch (err) {
-    next(Object.assign(new Error('Não foi possível buscar os perfis. Confira o acesso a User Profiles na Ayrshare ou adicione pelo Profile Key abaixo.'), { status: 502 }));
+    next(err.status ? err : Object.assign(new Error('Não foi possível buscar os perfis na Ayrshare.'), { status: 502 }));
   }
+}
+
+/**
+ * Por que o Profile Key não validou? Separa os três casos comuns: API Key do
+ * servidor velha (troca de conta), API Key colada no lugar do Profile Key e
+ * chave errada de verdade.
+ */
+async function explicarFalhaDoProfileKey(valor) {
+  const conta = await ayrshareService.diagnosticarConta();
+  if (!conta.ok && (conta.status === 401 || conta.status === 403)) return MSG_CHAVE_DO_SERVIDOR;
+  if (await ayrshareService.valeComoApiKey(valor)) {
+    return 'Isso é a API Key de uma conta Ayrshare, não um Profile Key. Se for a conta nova, ela vai em AYRSHARE_API_KEY no .env do servidor. ' +
+      'Conta só com o Primary Profile não tem Profile Key: use “Adicionar a página do Primary Profile”.';
+  }
+  return 'A Ayrshare não validou o Profile Key. Confira a chave (tela Profile Key do User Profile) e tente novamente. ' +
+    'Se a conta só tem o Primary Profile, não existe Profile Key: use “Adicionar a página do Primary Profile”.';
+}
+
+/**
+ * Página do Primary Profile (conta sem User Profiles): fica sem Profile Key e
+ * vira a página padrão — o envio sem Profile Key só é liberado para a padrão.
+ */
+async function adicionarPaginaDoPrimary(req, res) {
+  const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
+  const conta = await ayrshareService.diagnosticarConta();
+  if (!conta.ok) fail(conta.status === 401 || conta.status === 403 ? MSG_CHAVE_DO_SERVIDOR : `A Ayrshare não respondeu: ${conta.motivo}`, 422);
+  const primary = conta.primary;
+  if (!primary.facebookConnected) fail('O Primary Profile da Ayrshare ainda não tem Página do Facebook conectada. Conecte em Social Accounts na Ayrshare e tente de novo.', 422);
+  const pageName = primary.facebookPageName || primary.title || 'Página do Primary Profile';
+  const pageId = String(primary.facebookPageId || `ayrshare:primary:${primary.refId || 'conta'}`).slice(0, 64);
+  const db = require('../config/db');
+  const result = await db.transaction(async (trx) => {
+    await trx('users').where({ id: req.session.userId }).forUpdate().first();
+    let account = await trx('facebook_accounts').where({ user_id: req.session.userId }).first();
+    if (!account) {
+      await trx('facebook_accounts').insert({ user_id: req.session.userId, fb_user_id: `ayrshare:${req.session.userId}`, access_token: 'ayrshare:stub' });
+      account = await trx('facebook_accounts').where({ user_id: req.session.userId }).first();
+    }
+    const pages = await trx('facebook_pages').where({ facebook_account_id: account.id });
+    const existing = pages.find((p) => p.page_id === pageId);
+    if (existing) {
+      // Era de User Profile da conta antiga: passa a usar o Primary Profile.
+      await trx('facebook_pages').where({ id: existing.id }).update({ ayrshare_profile_key: null, page_name: String(pageName).slice(0, 255), updated_at: trx.fn.now() });
+      return { id: existing.id, page_name: pageName, existing: true };
+    }
+    const [id] = await trx('facebook_pages').insert({ facebook_account_id: account.id, page_id: pageId, page_name: String(pageName).slice(0, 255), page_access_token: 'ayrshare:stub', ayrshare_profile_key: null });
+    return { id, page_name: pageName, existing: false };
+  });
+  const Users = require('../models/Users');
+  await Users.setDefaultFacebookPageId(req.session.userId, result.id);
+  res.json({
+    ok: true,
+    page: result,
+    aviso: 'Página do Primary Profile adicionada e marcada como padrão. Ela publica sem Profile Key. ' +
+      'Páginas com Profile Key da conta antiga não funcionam com a API Key nova: remova-as abaixo.',
+  });
 }
 
 async function addPage(req, res, next) {
   try {
+    if (req.body?.primary === true) return await adicionarPaginaDoPrimary(req, res);
     const key = String(req.body?.profile_key || '').trim();
     const refId = String(req.body?.ref_id || '').trim();
     const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
     if (!key || key.length > 128) fail('Cole o Profile Key do perfil que deseja adicionar.');
-    if (ayrshareService.looksLikeRefId(key)) fail('Esse valor é o RefId. Abra o perfil na Ayrshare e copie a chave na tela Profile Key.');
-    if (ayrshareService.isAyrshareApiKey(key)) fail('Use o Profile Key deste perfil, não a API Key geral.');
+    if (ayrshareService.looksLikeRefId(key)) {
+      fail('Esse valor é o RefId (aparece em User Profiles), não o Profile Key. Se a conta só tem o Primary Profile, ela não tem Profile Key: use “Adicionar a página do Primary Profile”.');
+    }
+    if (ayrshareService.isAyrshareApiKey(key)) {
+      fail('Essa é a API Key da conta (já configurada no servidor), não um Profile Key. Se a conta só tem o Primary Profile, use “Adicionar a página do Primary Profile”.');
+    }
     let profile;
     try { profile = await ayrshareService.fetchProfileByKey(key); }
-    catch { fail('A Ayrshare não validou o Profile Key. Confira a chave e tente novamente.', 422); }
+    catch { fail(await explicarFalhaDoProfileKey(key), 422); }
     if (refId && profile.refId !== refId) fail('O Profile Key pertence a outro perfil. Copie a chave do perfil selecionado.', 422);
-    if (profile.isPrimary || !profile.refId) fail('Selecione um User Profile válido da Ayrshare.', 422);
+    if (profile.isPrimary || !profile.refId) fail('Essa chave aponta para o Primary Profile. Use “Adicionar a página do Primary Profile”.', 422);
     if (!profile.facebookConnected) fail('Este perfil ainda não tem Facebook conectado. Conecte a Página em Social Accounts na Ayrshare e tente novamente.', 422);
     const pageId = String(profile.facebookPageId || `ayrshare:${profile.refId}`);
     const pageName = profile.facebookPageName || profile.title;

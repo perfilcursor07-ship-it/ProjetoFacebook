@@ -554,6 +554,46 @@ async function listProfiles({ cursor = null } = {}) {
   };
 }
 
+/**
+ * A API Key configurada no servidor ainda vale? (troca de conta na Ayrshare
+ * deixa o .env com a chave antiga e TODA validação passa a falhar.)
+ * Devolve { ok, status, primary } — primary = dados do Primary Profile.
+ */
+async function diagnosticarConta() {
+  if (!isConfigured()) return { ok: false, status: null, motivo: 'sem-chave' };
+  try {
+    const primary = await fetchProfileByKey(null, { permitirPrimary: true });
+    return { ok: true, status: 200, primary };
+  } catch (err) {
+    return { ok: false, status: err.response?.status || null, motivo: apiErrorMessage(err) };
+  }
+}
+
+/**
+ * O valor colado é a API Key de alguma conta Ayrshare? (o editor costuma
+ * colar a API Key ou o RefId no lugar do Profile Key). Só conversa com a
+ * própria Ayrshare, que é a dona da chave.
+ */
+async function valeComoApiKey(valor) {
+  const chave = String(valor || '').trim();
+  if (!chave) return false;
+  try {
+    await axios.get(`${API}/user`, {
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${chave}` },
+      timeout: 15000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Últimos 4 caracteres da API Key do servidor: o editor confere qual conta está ligada. */
+function finalDaApiKey() {
+  const chave = String(env.ayrshare?.apiKey || '').trim();
+  return chave.length >= 8 ? chave.slice(-4) : null;
+}
+
 async function fetchProfileByKey(profileKey, { permitirPrimary = false } = {}) {
   assertConfigured();
   const key = String(profileKey || '').trim();
@@ -1301,6 +1341,9 @@ module.exports = {
   publicMediaUrlFromLocal,
   looksLikeRefId,
   isAyrshareApiKey,
+  diagnosticarConta,
+  valeComoApiKey,
+  finalDaApiKey,
   isTwitterByoConfigured,
   looksLikeAyrshareId,
   fetchProfileByKey,

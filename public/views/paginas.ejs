@@ -13,7 +13,7 @@
     <% if (useAyrshare) { %>
         <p class="dots-sub">
       Publicação via <strong class="font-medium text-emerald-300">Ayrshare</strong>.
-      Um User Profile na Ayrshare = uma Página Facebook. Cole o <strong class="font-medium text-slate-300">Profile Key</strong> de cada profile.
+      Um User Profile na Ayrshare = uma Página Facebook (cole o <strong class="font-medium text-slate-300">Profile Key</strong> de cada um). Conta com uma Página só usa o Primary Profile, sem chave.
         </p>
     <% } else { %>
         <p class="dots-sub">Conecte sua conta e vincule as páginas ao PostSyncer para publicar.</p>
@@ -30,7 +30,10 @@
         <div class="min-w-0 flex-1">
           <h2 class="text-sm font-semibold text-white">Ayrshare</h2>
           <p class="mt-1 text-xs text-slate-400 leading-relaxed">
-            1) Em
+            <strong class="font-medium text-slate-200">Conta com uma Página só</strong> (só o <em>Primary Profile</em>, como numa conta nova):
+            conecte a Página em Social Accounts na Ayrshare e clique em
+            <strong class="font-medium text-slate-300">Adicionar a página do Primary Profile</strong> abaixo — não existe Profile Key nesse caso.<br />
+            <strong class="font-medium text-slate-200">Várias Páginas:</strong> 1) Em
             <a href="https://app.ayrshare.com" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">app.ayrshare.com</a>
             crie um <strong class="font-medium text-slate-300">User Profile</strong> por Página FB e conecte a Página em Social Accounts.<br />
             2) Clique em <strong class="font-medium text-slate-300">Buscar perfis na Ayrshare</strong> ou adicione diretamente pelo Profile Key abaixo.<br />
@@ -41,7 +44,7 @@
             a publicação em vez de postar na Página errada.
           </p>
           <p class="mt-2 text-sm text-emerald-200/90">
-            <%= ayrshareConfigured ? 'API Key configurada · PUBLISH_PROVIDER=' + provider : 'Configure AYRSHARE_API_KEY no .env' %>
+            <%= ayrshareConfigured ? 'API Key configurada' + (typeof ayrshareKeyFinal !== 'undefined' && ayrshareKeyFinal ? ' (termina em ' + ayrshareKeyFinal + ')' : '') + ' · PUBLISH_PROVIDER=' + provider : 'Configure AYRSHARE_API_KEY no .env' %>
           </p>
         </div>
         <a href="https://app.ayrshare.com" target="_blank" rel="noopener"
@@ -53,14 +56,19 @@
 
     <section class="mt-6 rounded-xl border border-slate-800 bg-slate-900/40 px-5 py-4">
       <h2 class="text-sm font-semibold text-white">Adicionar página da Ayrshare</h2>
-      <p class="mt-2 text-sm text-slate-400">Conectou uma página nova? Adicione aqui sem alterar o projeto. O nome e o destino serão identificados pelo Profile Key.</p>
+      <p class="mt-2 text-sm text-slate-400">Conectou uma página nova? Adicione aqui sem alterar o projeto. O nome e o destino são identificados pela própria Ayrshare.</p>
+      <div class="mt-3 rounded-lg border border-emerald-800/50 bg-emerald-950/20 px-3 py-3">
+        <p class="text-sm text-slate-300">Sua conta Ayrshare só tem o <strong class="text-white">Primary Profile</strong>? Use este botão — não precisa de Profile Key.</p>
+        <button type="button" id="ay-add-primary" class="mt-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-500">Adicionar a página do Primary Profile</button>
+        <p id="ay-primary-status" role="status" class="mt-2 text-sm text-slate-300"></p>
+      </div>
       <% if (typeof user !== 'undefined' && user?.nivel_acesso === 'administrador') { %>
       <button type="button" id="ay-discover" class="mt-3 rounded-lg border border-emerald-700/60 px-3 py-1.5 text-sm text-emerald-200">Buscar perfis na Ayrshare</button>
       <p id="ay-discovery-status" role="status" class="mt-2 text-sm text-slate-400"></p>
       <div id="ay-discovery-results" class="mt-3 space-y-3"></div>
       <% } %>
       <form id="ay-add-page" class="mt-4 space-y-3">
-        <p id="ay-selected-profile" class="text-sm text-emerald-200">Adicionar diretamente pelo Profile Key</p>
+        <p id="ay-selected-profile" class="text-sm text-emerald-200">Adicionar pelo Profile Key de um User Profile</p>
         <label class="block text-sm text-slate-300" for="ay-new-key">Profile Key da nova página</label>
         <input id="ay-new-key" type="password" required maxlength="128" autocomplete="off" placeholder="Cole o Profile Key, não o RefId" class="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200" />
         <button type="submit" class="rounded-lg border border-emerald-700/60 px-3 py-1.5 text-sm text-emerald-200">Adicionar página</button>
@@ -128,9 +136,27 @@
     let profileCursor = null;
     document.getElementById('ay-clear-selection').addEventListener('click', () => {
       selectedRefId = '';
-      document.getElementById('ay-selected-profile').textContent = 'Adicionar diretamente pelo Profile Key';
+      document.getElementById('ay-selected-profile').textContent = 'Adicionar pelo Profile Key de um User Profile';
       document.getElementById('ay-new-key').value = '';
     });
+    async function adicionarPrimary(statusEl, botao) {
+      if (botao) botao.disabled = true;
+      statusEl.textContent = 'Conferindo a conta na Ayrshare…';
+      try {
+        const response = await fetch('/api/facebook/ayrshare/pages', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ primary: true }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Não foi possível adicionar a página');
+        statusEl.textContent = data.page.page_name + ': ' + data.aviso;
+        await loadAyrshare();
+      } catch (err) { statusEl.textContent = err.message; }
+      finally { if (botao) botao.disabled = false; }
+    }
+    document.getElementById('ay-add-primary')?.addEventListener('click', (event) =>
+      adicionarPrimary(document.getElementById('ay-primary-status'), event.currentTarget));
+
     document.getElementById('ay-discover')?.addEventListener('click', async (event) => {
       const btn = event.currentTarget;
       const status = document.getElementById('ay-discovery-status');
@@ -142,6 +168,26 @@
         const response = await fetch('/api/facebook/ayrshare/profiles' + (profileCursor ? '?cursor=' + encodeURIComponent(profileCursor) : ''));
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Falha ao buscar perfis');
+        if (data.primary && !profileCursor) {
+          const row = document.createElement('div');
+          row.className = 'rounded-lg border border-emerald-800/60 px-3 py-2 text-sm text-slate-300';
+          const label = document.createElement('p');
+          label.textContent = 'Primary Profile (conta principal)' + (data.primary.facebook_connected
+            ? ' · Facebook: ' + (data.primary.facebook_page_name || 'conectado')
+            : ' · Conecte o Facebook em Social Accounts');
+          row.append(label);
+          if (data.primary.facebook_connected) {
+            const usar = document.createElement('button');
+            usar.type = 'button';
+            usar.className = 'mt-2 text-emerald-300';
+            usar.textContent = 'Adicionar esta página (sem Profile Key)';
+            const rowStatus = document.createElement('p');
+            rowStatus.className = 'mt-1 text-xs text-slate-400';
+            usar.addEventListener('click', () => adicionarPrimary(rowStatus, usar));
+            row.append(usar, rowStatus);
+          }
+          results.append(row);
+        }
         for (const profile of data.profiles || []) {
           const row = document.createElement('div');
           row.className = 'rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300';
@@ -165,7 +211,10 @@
         }
         profileCursor = data.next_cursor || null;
         btn.textContent = profileCursor ? 'Carregar mais perfis' : 'Atualizar perfis da Ayrshare';
-        status.textContent = results.children.length ? 'Selecione o perfil e cole seu Profile Key abaixo. A Ayrshare não fornece as chaves nesta consulta.' : 'Nenhum User Profile encontrado nesta API Key. Confira a conta principal na Ayrshare. Você também pode adicionar diretamente pelo Profile Key.';
+        const conta = data.api_key_final ? ' API Key do servidor termina em ' + data.api_key_final + '.' : '';
+        status.textContent = (data.profiles || []).length
+          ? 'Selecione o perfil e cole seu Profile Key abaixo (a Ayrshare não fornece as chaves nesta consulta). A página do Primary Profile entra sem chave.' + conta
+          : (data.aviso || 'Nenhum User Profile nesta conta.') + conta;
       } catch (err) { status.textContent = err.message; }
       finally { btn.disabled = false; }
     });

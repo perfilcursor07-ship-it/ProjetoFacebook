@@ -106,6 +106,7 @@ app.get('/paginas', requireAuth, (_req, res) => {
     cache: false,
     publishProvider: env.postpulse.publishProvider || 'auto',
     ayrshareConfigured: Boolean(env.ayrshare?.apiKey),
+    ayrshareKeyFinal: require('./services/ayrshareService').finalDaApiKey(),
   });
 });
 app.get('/dashboard', requireAuth, require('./controllers/dashboardController').show);
