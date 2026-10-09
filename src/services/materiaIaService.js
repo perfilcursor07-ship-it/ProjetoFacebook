@@ -691,6 +691,32 @@ async function publicarMateria(userId, matterId, overrides = {}) {
  * (mesmo link de origem ou título praticamente igual)? Ignora a própria
  * matéria. Assunto parecido não conta.
  */
+/**
+ * Agendar pela tela JÁ é a confirmação do editor.
+ *
+ * A fila recusa publicar matéria com proposta de pré-agenda ainda `pendente`
+ * ("só publica depois de Confirmar") — regra certa para o que a Biblioteca
+ * sugere sozinha. Mas o botão Agendar não mexia nessa linha: uma proposta
+ * antiga esquecida em `pendente` derrubava o agendamento feito à mão, e a
+ * matéria voltava para a lista sem sair.
+ */
+async function confirmarPreAgenda(matterId, quando) {
+  try {
+    if (!(await db.schema.hasTable('biblioteca_agenda'))) return;
+    await db('biblioteca_agenda')
+      .where({ matter_id: matterId })
+      .whereNotIn('status', ['cancelado', 'publicado'])
+      .update({
+        status: 'confirmado',
+        proposed_at: quando,
+        updated_at: db.fn.now(),
+      });
+  } catch (err) {
+    // Não impede o agendamento: no pior caso a guarda da fila ainda avisa.
+    console.warn(`[agendar] confirmar pré-agenda #${matterId}:`, err.message);
+  }
+}
+
 async function mesmaNoticiaJaNaPagina({ userId, pageId, matter, dias = 3 }) {
   if (!pageId) return null;
   const { mesmaNoticiaEstrita } = require('./editorialGuidelinesFb');
@@ -1406,6 +1432,7 @@ async function agendarMateria({ userId, matterId, runAt }) {
   }
   const slotLivre = await proximoHorarioLivreAgendamento({ userId, matterId: matter.id, desiredAt: when });
   await AiMatters.update(matter.id, { status: 'agendado', scheduled_at: slotLivre });
+  await confirmarPreAgenda(matter.id, slotLivre);
 
   let pageName = '';
   try {
@@ -1518,6 +1545,7 @@ async function filaEmLote({ userId, ids, acao, facebookPageId = null, inicio = n
         });
       } else {
         await AiMatters.update(id, { status: 'agendado', scheduled_at: quando });
+        await confirmarPreAgenda(id, quando);
         const pendente = await db('ai_fila_jobs').where({ matter_id: id, status: 'pendente' }).orderBy('id', 'desc').first('id');
         if (pendente) await AiFilaJobs.update(pendente.id, { run_at: quando });
         else {
@@ -1830,8 +1858,10 @@ async function tickFilaJobsAgora() {
       };
     } catch (err) {
       console.warn('[fila] checagem agenda:', err.message);
-      // Em dúvida, não publica matérias com risco de pré-agenda
-      return { ok: false, motivo: `falha ao checar agenda: ${err.message}` };
+      // Em dúvida não publica — mas também não desmarca. Antes um erro
+      // passageiro de banco cancelava o agendamento de vez: a matéria voltava
+      // para a lista e só saía se o editor reagendasse na mão.
+      return { ok: false, adiar: true, motivo: `falha ao checar agenda: ${err.message}` };
     }
   }
 
@@ -1882,6 +1912,11 @@ async function tickFilaJobsAgora() {
           continue;
         }
         const check = await podePublicarAgendada(matter);
+        if (!check.ok && check.adiar) {
+          // Volta para a fila: tenta de novo no próximo tick.
+          await AiFilaJobs.update(job.id, { status: 'pendente', erro: check.motivo });
+          continue;
+        }
         if (!check.ok) {
           await bloquearPreAgendada(matter, check.motivo);
           await AiFilaJobs.update(job.id, { status: 'cancelado', erro: check.motivo });
@@ -1915,7 +1950,8 @@ async function tickFilaJobsAgora() {
     try {
       const check = await podePublicarAgendada(matter);
       if (!check.ok) {
-        await bloquearPreAgendada(matter, check.motivo);
+        // Falha passageira não desmarca: o próximo tick tenta de novo.
+        if (!check.adiar) await bloquearPreAgendada(matter, check.motivo);
         continue;
       }
       await logPublicacao(matter, 'fallback');
