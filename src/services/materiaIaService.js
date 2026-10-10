@@ -786,25 +786,38 @@ async function publicarMateriaIndividualAgora(userId, matterId, overrides = {}) 
   // Clique do editor em "Publicar agora" (manual) NÃO passa por esta trava:
   // ele era barrado aqui e a matéria voltava a rascunho sem ele pedir. O
   // editor já confirmou que quer publicar — a decisão é dele.
+  // Notícia repetida vira AVISO, nunca bloqueio.
+  //
+  // A trava antiga devolvia a matéria para rascunho, limpava o agendamento e
+  // cancelava o job. Na prática derrubava quase tudo: bastava um dos quatro
+  // critérios bater (mesma fonte, título equivalente, fonte_titulo igual ou
+  // os 160 primeiros caracteres iguais) para a matéria cair fora da fila, e o
+  // editor só descobria vendo o status voltar sozinho. O caminho manual já
+  // tinha deixado de barrar pelo mesmo motivo; agora o automático acompanha.
+  //
+  // Para voltar a barrar: PUBLICAR_BLOQUEAR_REPETIDA=true no .env.
+  const BLOQUEAR_REPETIDA = String(process.env.PUBLICAR_BLOQUEAR_REPETIDA || "").toLowerCase() === "true";
   let avisoRepetida = null;
-  if (automatica && page?.id && overrides.manual) {
+  if (automatica && page?.id) {
     const igual = await mesmaNoticiaJaNaPagina({ userId, pageId: page.id, matter }).catch(() => null);
-    if (igual) avisoRepetida = `a página já tinha notícia parecida (matéria #${igual.id})`;
-  } else if (automatica && page?.id) {
-    const igual = await mesmaNoticiaJaNaPagina({ userId, pageId: page.id, matter });
     if (igual) {
-      const motivo = `Não publicada: a página já tem a mesma notícia (matéria #${igual.id}).`;
-      console.warn(`[publicar] BLOQUEADO #${matter.id} — ${motivo}`);
-      await AiMatters.update(matter.id, { status: 'rascunho', scheduled_at: null, error_message: motivo }).catch(() => {});
-      await db('ai_fila_jobs')
-        .where({ matter_id: matter.id })
-        .whereIn('status', ['pendente'])
-        .update({ status: 'cancelado', erro: motivo })
-        .catch(() => {});
-      const err = new Error(motivo);
-      err.status = 409;
-      err.code = 'NOTICIA_REPETIDA';
-      throw err;
+      avisoRepetida = `a página já tinha notícia parecida (matéria #${igual.id})`;
+      console.warn(`[publicar] #${matter.id} parece repetir a #${igual.id} — publicando assim mesmo`);
+
+      if (BLOQUEAR_REPETIDA && !overrides.manual) {
+        const motivo = `Não publicada: a página já tem a mesma notícia (matéria #${igual.id}).`;
+        console.warn(`[publicar] BLOQUEADO #${matter.id} — ${motivo}`);
+        await AiMatters.update(matter.id, { status: 'rascunho', scheduled_at: null, error_message: motivo }).catch(() => {});
+        await db('ai_fila_jobs')
+          .where({ matter_id: matter.id })
+          .whereIn('status', ['pendente'])
+          .update({ status: 'cancelado', erro: motivo })
+          .catch(() => {});
+        const err = new Error(motivo);
+        err.status = 409;
+        err.code = 'NOTICIA_REPETIDA';
+        throw err;
+      }
     }
   }
   if (!page) {
