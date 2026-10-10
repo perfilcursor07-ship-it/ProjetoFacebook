@@ -1132,6 +1132,11 @@ async function desagendar(item, motivo) {
   if (String(matter.status) === 'publicado' || matter.publication_id) return false;
   if (String(matter.status) === 'agendado') {
     await AiMatters.update(item.matter_id, { status: 'rascunho', scheduled_at: null });
+    // Tirar uma matéria do agendado sem deixar rastro torna impossível
+    // descobrir depois por que ela não saiu.
+    console.warn(
+      `[piloto] matéria #${item.matter_id} desagendada — ${corta(motivo, 160) || 'sem motivo'}`
+    );
   }
   await db('ai_fila_jobs')
     .where({ matter_id: item.matter_id, status: 'pendente' })
