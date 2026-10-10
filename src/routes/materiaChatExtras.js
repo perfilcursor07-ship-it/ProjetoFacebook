@@ -399,40 +399,6 @@ async function comPrazo(promessa, ms, fallback) {
   }
 }
 
-/** Rankings configurados em Configurações → Descobrir pautas. */
-router.post('/mais-lidas', async (req, res, next) => {
-  try {
-    const service = require('../services/pautaFontesService');
-    const resultado = await service.descobrirMaisLidas(req.session.userId);
-    return res.json({
-      ok: true,
-      origem: 'mais-lidas',
-      fontes: resultado.fontes,
-      totalEncontrado: resultado.totalEncontrado,
-      totalOcultado: resultado.totalOcultado,
-      erros: resultado.erros,
-      topicos: (resultado.topicos || []).map((item) => ({
-        titulo: limpar(item.titulo, 300),
-        url: String(item.url || '').trim().slice(0, 1000),
-        veiculo: limpar(item.veiculo || item.fonteNome || 'Web', 120),
-        resumo: limpar(item.resumo, 420) || null,
-        imagem: String(item.imagem || '').trim().slice(0, 1000) || null,
-        posicao: Number(item.posicao) || null,
-        fonteId: Number(item.fonteId) || null,
-      })),
-    });
-  } catch (err) {
-    if (err.status) {
-      return res.status(err.status).json({ error: err.message, codigo: err.codigo || null });
-    }
-    return next(err);
-  }
-});
-
-/**
- * Radar de assuntos em alta agora.
- * Sem busca → abre nos temas padrão. Com busca → foca no que o usuário pediu.
- */
 router.post('/em-alta', async (req, res, next) => {
   try {
     const body = req.body || {};

@@ -5,31 +5,35 @@
 @layer components {
   /* —— Menu lateral —— */
   .app-sidebar {
-    background: #101214;
-    border-right: 1px solid rgb(255 255 255 / 0.06);
+    background:
+      linear-gradient(180deg, rgb(148 163 184 / 0.045), transparent 12rem),
+      #0a0f18;
+    border-right: 1px solid rgb(148 163 184 / 0.105);
+    box-shadow: inset -1px 0 0 rgb(255 255 255 / 0.018);
   }
 
   .sidebar-head {
-    @apply flex h-14 shrink-0 items-center justify-between gap-2 px-3;
-    border-bottom: 1px solid rgb(255 255 255 / 0.06);
+    @apply flex h-[3.35rem] shrink-0 items-center justify-between gap-2 px-3;
+    border-bottom: 1px solid rgb(148 163 184 / 0.085);
+    background: rgb(15 23 42 / 0.16);
   }
 
   .sidebar-logo {
-    @apply flex min-w-0 items-center gap-2.5 rounded-lg;
+    @apply flex min-w-0 items-center gap-2 rounded-lg;
   }
 
   .sidebar-logo-mark {
-    @apply grid h-8 w-8 shrink-0 place-items-center rounded-[0.6rem] text-slate-950;
-    background: linear-gradient(135deg, #6ee7b7 0%, #10b981 55%, #0d9488 100%);
-    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.12) inset, 0 6px 18px -6px rgb(16 185 129 / 0.6);
+    @apply grid h-7 w-7 shrink-0 place-items-center rounded-md text-slate-950;
+    background: linear-gradient(135deg, #86efac 0%, #34d399 58%, #14b8a6 100%);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16) inset;
   }
 
   .sidebar-logo-mark svg {
-    @apply h-4 w-4;
+    @apply h-3.5 w-3.5;
   }
 
   .sidebar-brand {
-    @apply truncate text-[15px] font-semibold text-slate-50;
+    @apply truncate text-[13.5px] font-semibold text-slate-50;
     letter-spacing: 0;
   }
 
@@ -38,7 +42,7 @@
   }
 
   .sidebar-icon-btn {
-    @apply h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/5 hover:text-slate-100;
+    @apply h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 transition hover:bg-white/[0.055] hover:text-slate-100;
   }
 
   .sidebar-icon-btn svg {
@@ -46,31 +50,31 @@
   }
 
   .sidebar-nav {
-    @apply flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-3 pt-2;
+    @apply flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-3 pt-2.5;
     overscroll-behavior: contain;
     scrollbar-width: thin;
-    scrollbar-color: rgb(255 255 255 / 0.08) transparent;
+    scrollbar-color: rgb(148 163 184 / 0.16) transparent;
   }
 
   .sidebar-label {
-    @apply mb-0.5 mt-3 flex shrink-0 items-center gap-2 px-3 text-[11px] font-semibold text-slate-400;
+    @apply mb-0.5 mt-3 flex shrink-0 items-center gap-2 px-2.5 text-[9.5px] font-semibold uppercase text-slate-500;
     letter-spacing: 0;
-    line-height: 20px;
+    line-height: 18px;
   }
 
   .sidebar-label::after {
     content: '';
     flex: 1;
     height: 1px;
-    background: rgb(255 255 255 / 0.08);
+    background: linear-gradient(90deg, rgb(148 163 184 / 0.12), transparent);
   }
 
   .sidebar-link {
-    @apply relative flex shrink-0 items-center gap-2.5 rounded-md px-3 text-[13px] font-medium transition-colors duration-150;
-    min-height: 34px;
-    padding-top: 6px;
-    padding-bottom: 6px;
-    color: #b5bac1;
+    @apply relative flex shrink-0 items-center gap-2 rounded-md px-2.5 text-[11.5px] font-medium transition duration-150;
+    min-height: 30px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    color: #98a4b5;
     letter-spacing: 0;
   }
 
@@ -80,21 +84,22 @@
   }
 
   .sidebar-link svg {
-    @apply h-[1.05rem] w-[1.05rem] shrink-0 text-slate-500 transition-colors duration-150;
+    @apply h-[15px] w-[15px] shrink-0 text-slate-500 transition duration-150;
   }
 
   .sidebar-link:hover {
-    @apply bg-white/[0.04] text-slate-100;
+    @apply bg-white/[0.045] text-slate-100;
+    box-shadow: inset 0 0 0 1px rgb(148 163 184 / 0.055);
   }
 
   .sidebar-link:hover svg {
-    @apply text-slate-300;
+    @apply text-emerald-300;
   }
 
   .sidebar-link.is-active {
     @apply text-emerald-50;
-    background: rgb(16 185 129 / 0.12);
-    box-shadow: inset 0 0 0 1px rgb(52 211 153 / 0.16);
+    background: rgb(16 185 129 / 0.105);
+    box-shadow: inset 0 0 0 1px rgb(52 211 153 / 0.18);
   }
 
   .sidebar-link.is-active svg {
@@ -103,7 +108,8 @@
 
   .sidebar-link.is-active::before {
     content: '';
-    @apply absolute -left-2.5 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-emerald-400;
+    @apply absolute -left-2.5 top-1/2 h-3.5 w-[2px] -translate-y-1/2 rounded-r-full bg-emerald-400;
+    box-shadow: 0 0 10px rgb(52 211 153 / 0.45);
   }
 
   .sidebar-link:focus-visible,
@@ -113,17 +119,20 @@
   }
 
   .sidebar-foot {
-    @apply shrink-0 border-t border-white/[0.06] p-3;
+    @apply shrink-0 border-t border-white/[0.07] p-2.5;
+    background: rgb(15 23 42 / 0.12);
   }
 
   .sidebar-account {
-    @apply flex items-center gap-2.5 px-1 py-1;
+    @apply flex items-center gap-2 rounded-md px-1.5 py-1;
+    background: rgb(255 255 255 / 0.025);
+    box-shadow: inset 0 0 0 1px rgb(148 163 184 / 0.055);
   }
 
   .sidebar-avatar {
-    @apply grid h-8 w-8 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-emerald-50;
-    background: linear-gradient(135deg, #047857, #0f766e);
-    box-shadow: 0 0 0 2px #080a0d, 0 0 0 3px rgb(52 211 153 / 0.35);
+    @apply grid h-6 w-6 shrink-0 place-items-center rounded-md text-[9.5px] font-semibold text-emerald-50;
+    background: linear-gradient(135deg, #059669, #0f766e);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
   }
 
   .sidebar-user {
@@ -131,15 +140,15 @@
   }
 
   .sidebar-user strong {
-    @apply block truncate text-[12.5px] font-semibold text-slate-100;
+    @apply block truncate text-[11.5px] font-semibold text-slate-100;
   }
 
   .sidebar-user small {
-    @apply block truncate text-[11px] text-slate-500;
+    @apply block truncate text-[10px] text-slate-500;
   }
 
   .sidebar-logout {
-    @apply grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-500 transition hover:bg-rose-500/10 hover:text-rose-300;
+    @apply grid h-7 w-7 shrink-0 place-items-center rounded-md text-slate-500 transition hover:bg-rose-500/10 hover:text-rose-300;
   }
 
   .sidebar-logout svg {
@@ -147,7 +156,7 @@
   }
 
   .sidebar-credit {
-    @apply mt-2.5 truncate px-1 text-[10px] text-slate-600;
+    @apply mt-2 truncate px-1 text-[9.5px] text-slate-600;
   }
 
   /* —— Desktop: sidebar recolhida —— */
@@ -186,7 +195,7 @@
     }
 
     html.sidebar-collapsed .sidebar-link {
-      @apply mx-auto h-10 w-full max-w-10 justify-center gap-0 p-0;
+      @apply mx-auto h-9 w-full max-w-9 justify-center gap-0 p-0;
     }
 
     html.sidebar-collapsed .sidebar-link.is-active::before {

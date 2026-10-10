@@ -137,20 +137,20 @@ body:has(.mia-manual-claude) #app-content > header { background: rgb(6 9 16 / 92
 .mia-manual-claude .mia-chat-icon-btn:hover { background: rgb(255 255 255 / 5%); color: var(--mia-chat-text); }
 
 .mia-manual-claude .mia-chat-messages {
-  flex: 1 1 auto; overflow-y: auto; gap: 2rem; padding: 1.75rem 1.5rem 2.25rem;
+  flex: 1 1 auto; overflow-y: auto; gap: 1.25rem; padding: 1.1rem 1.5rem 1.5rem;
   scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 10%) transparent;
 }
 
 /* —— Estado vazio —— */
-.mia-manual-claude .mia-chat-empty { min-height: auto; gap: 1.4rem; padding: 1rem 0; }
-.mia-manual-claude .mia-chat-empty-copy { gap: .6rem; align-items: center; }
+.mia-manual-claude .mia-chat-empty { min-height: auto; gap: .9rem; padding: .5rem 0; }
+.mia-manual-claude .mia-chat-empty-copy { gap: .45rem; align-items: center; }
 .mia-manual-claude .mia-chat-empty-mark {
-  display: grid; place-items: center; width: 3rem; height: 3rem; margin-bottom: .35rem;
-  border-radius: .8rem; border: 1px solid rgb(52 211 153 / 28%); color: #042f22;
+  display: grid; place-items: center; width: 2.5rem; height: 2.5rem; margin-bottom: .1rem;
+  border-radius: .7rem; border: 1px solid rgb(52 211 153 / 24%); color: #042f22;
   background: linear-gradient(135deg, #6ee7b7, #10b981 55%, #0d9488);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 30%), 0 14px 36px -18px rgb(16 185 129 / 75%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 25%), 0 8px 22px -15px rgb(16 185 129 / 60%);
 }
-.mia-manual-claude .mia-chat-empty-mark svg { width: 1.45rem; height: 1.45rem; }
+.mia-manual-claude .mia-chat-empty-mark svg { width: 1.25rem; height: 1.25rem; }
 .mia-manual-claude .mia-chat-empty-eyebrow {
   display: inline-flex; align-items: center; gap: .4rem; padding: .22rem .65rem;
   border: 1px solid rgb(52 211 153 / 22%); border-radius: 999px;
@@ -158,7 +158,7 @@ body:has(.mia-manual-claude) #app-content > header { background: rgb(6 9 16 / 92
   font-size: .66rem; font-weight: 700; text-transform: uppercase;
 }
 .mia-manual-claude .mia-chat-empty-title {
-  font-family: inherit; font-size: clamp(1.75rem, 3vw, 2.5rem); line-height: 1.1;
+  font-family: inherit; font-size: 1.9rem; line-height: 1.12;
   font-weight: 800; color: #f4f7fb; text-wrap: balance;
 }
 .mia-manual-claude .mia-chat-empty-title em {
@@ -166,37 +166,41 @@ body:has(.mia-manual-claude) #app-content > header { background: rgb(6 9 16 / 92
   background: linear-gradient(90deg, #6ee7b7, #34d399 45%, #2dd4bf);
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-.mia-manual-claude .mia-chat-empty-sub { color: var(--mia-chat-muted); font-size: .92rem; line-height: 1.6; max-width: 30rem; }
+.mia-manual-claude .mia-chat-empty-sub { color: var(--mia-chat-muted); font-size: .84rem; line-height: 1.5; max-width: 38rem; }
 
 .mia-manual-claude .mia-start-actions {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: .75rem; width: 100%; max-width: 42rem; margin: .4rem auto;
+  gap: .55rem; width: 100%; max-width: 52rem; margin: .15rem auto;
 }
 .mia-manual-claude .mia-start-actions button {
-  position: relative; display: grid; grid-template-columns: 2.5rem 1fr; column-gap: .85rem; align-items: center;
-  padding: 1rem 1.1rem; text-align: left; cursor: pointer;
-  border: 1px solid var(--mia-chat-border); border-radius: .7rem;
-  background: linear-gradient(180deg, rgb(16 24 38 / 96%), rgb(12 18 29 / 96%));
+  position: relative; display: grid; grid-template-columns: 2rem minmax(0, 1fr); column-gap: .65rem; align-items: center;
+  min-height: 4rem; padding: .6rem .7rem; text-align: left; cursor: pointer;
+  border: 1px solid rgb(148 163 184 / 13%); border-radius: .6rem;
+  background: linear-gradient(180deg, rgb(16 24 38 / 82%), rgb(12 18 29 / 82%));
   color: var(--mia-chat-text);
-  transition: border-color .18s, background .18s, transform .18s, box-shadow .18s;
+  transition: border-color .16s, background .16s, transform .16s, box-shadow .16s;
 }
 .mia-manual-claude .mia-start-actions button:hover {
-  transform: translateY(-2px);
-  border-color: rgb(52 211 153 / 35%);
-  background: linear-gradient(180deg, rgb(52 211 153 / 7%), rgb(52 211 153 / 2%));
-  box-shadow: 0 16px 32px -18px rgb(0 0 0 / 80%), 0 0 0 1px rgb(52 211 153 / 8%);
+  transform: translateY(-1px);
+  border-color: rgb(52 211 153 / 32%);
+  background: linear-gradient(180deg, rgb(52 211 153 / 6%), rgb(16 24 38 / 92%));
+  box-shadow: 0 8px 20px -16px rgb(0 0 0 / 75%);
 }
 .mia-manual-claude .mia-start-actions button[aria-expanded="true"] { border-color: rgb(52 211 153 / 45%); background: rgb(52 211 153 / 7%); }
 .mia-manual-claude .mia-start-actions button > span {
-  grid-row: span 2; display: grid; place-items: center; width: 2.5rem; height: 2.5rem;
-  border-radius: .55rem; color: #6ee7b7;
-  background: rgb(52 211 153 / 10%); border: 1px solid rgb(52 211 153 / 18%);
+  grid-row: span 2; display: grid; place-items: center; width: 2rem; height: 2rem;
+  border-radius: .5rem; color: #6ee7b7;
+  background: rgb(52 211 153 / 8%); border: 1px solid rgb(52 211 153 / 14%);
   transition: background .18s, color .18s;
 }
 .mia-manual-claude .mia-start-actions button:hover > span { background: #10b981; color: #042f22; }
-.mia-manual-claude .mia-start-actions svg { width: 1.15rem; height: 1.15rem; }
-.mia-manual-claude .mia-start-actions strong { font-size: .88rem; font-weight: 700; }
-.mia-manual-claude .mia-start-actions small { margin-top: .15rem; color: var(--mia-chat-muted); font-size: .76rem; line-height: 1.45; }
+.mia-manual-claude .mia-start-actions svg { width: 1rem; height: 1rem; }
+.mia-manual-claude .mia-start-actions strong { font-size: .8rem; line-height: 1.3; font-weight: 650; }
+.mia-manual-claude .mia-start-actions small { margin-top: .1rem; color: var(--mia-chat-muted); font-size: .69rem; line-height: 1.35; }
+
+@media (min-width: 1024px) {
+  .mia-manual-claude .mia-start-actions { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 
 /* Radar de pautas */
 .mia-manual-claude .mia-chat-radar-start {
@@ -387,9 +391,12 @@ body:has(.mia-manual-claude) #app-content > header { background: rgb(6 9 16 / 92
   .mia-manual-claude .mia-chat-header { min-height: 3.5rem; padding: .6rem .75rem; }
   .mia-manual-claude .mia-chat-empty-title { font-size: 1.85rem; }
   .mia-manual-claude .mia-chat-empty-sub { font-size: .85rem; max-width: 20rem; }
-  .mia-manual-claude .mia-start-actions { gap: .5rem; }
-  .mia-manual-claude .mia-start-actions button { display: flex; flex-direction: column; align-items: flex-start; padding: .85rem; gap: .35rem; }
-  .mia-manual-claude .mia-start-actions button > span { width: 2.1rem; height: 2.1rem; }
+  .mia-manual-claude .mia-chat-messages { padding: .8rem .75rem 1rem; gap: .85rem; }
+  .mia-manual-claude .mia-start-actions { gap: .45rem; }
+  .mia-manual-claude .mia-start-actions button { grid-template-columns: 1.75rem minmax(0, 1fr); column-gap: .5rem; min-height: 3.6rem; padding: .55rem; }
+  .mia-manual-claude .mia-start-actions button > span { width: 1.75rem; height: 1.75rem; }
+  .mia-manual-claude .mia-start-actions strong { font-size: .74rem; }
+  .mia-manual-claude .mia-start-actions small { font-size: .64rem; }
   .mia-manual-claude .mia-chat-radar-start { width: 100%; padding: .8rem; }
   .mia-manual-claude .mia-chat-radar-start-head { display: block; }
   .mia-manual-claude .mia-chat-radar-start-live { margin-top: .35rem; }
@@ -400,6 +407,9 @@ body:has(.mia-manual-claude) #app-content > header { background: rgb(6 9 16 / 92
   .mia-manual-claude .mia-chat-toolbar { flex-wrap: wrap; }
   .mia-manual-claude .mia-chat-toolbar-main { flex-basis: 100%; }
   .mia-manual-claude .mia-chat-send-row { margin-left: auto; }
+}
+@media (max-width: 360px) {
+  .mia-manual-claude .mia-start-actions { grid-template-columns: 1fr; }
 }
 
 /* —— Furos do dia —— */

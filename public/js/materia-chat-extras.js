@@ -57,14 +57,13 @@
   let carregandoPublico = false;
   let paginaFacebookAtiva = false;
   let carregandoPaginaFacebook = false;
-  let maisLidasAtiva = false;
   let carregandoMaisLidas = false;
 
   /* ------------------------------ estilos ------------------------------ */
 
   const estilos = document.createElement('style');
   estilos.textContent = `
-    .mia-x-anexo-btn, .mia-x-imagem-btn, .mia-x-alta-btn, .mia-x-publico-btn, .mia-x-facebook-btn, .mia-x-mais-lidas-btn { cursor: pointer; }
+    .mia-x-anexo-btn, .mia-x-imagem-btn, .mia-x-alta-btn, .mia-x-publico-btn, .mia-x-facebook-btn { cursor: pointer; }
     .mia-x-chip {
       display: inline-flex; align-items: center; gap: .4rem;
       max-width: 100%; margin: .5rem 0 0; padding: .35rem .5rem .35rem .6rem;
@@ -361,12 +360,6 @@
     return b;
   }
 
-  const btnMaisLidas = criarBotaoDescobrir(
-    'mia-x-mais-lidas-btn',
-    'Mais lidas',
-    'Extrai os rankings dos sites cadastrados nas configurações',
-    ICONE_MAIS_LIDAS
-  );
 
   const btnAlta = criarBotaoDescobrir(
     'mia-x-alta-btn',
@@ -392,7 +385,6 @@
   const atalhosRadar = {
     alta: document.getElementById('chat-radar-alta'),
     publico: document.getElementById('chat-radar-publico'),
-    maisLidas: document.getElementById('chat-radar-mais-lidas'),
   };
 
   function ligarAtalhoRadar(botao, acao) {
@@ -417,14 +409,10 @@
 
   function desativarMaisLidas() {
     maisLidasAtiva = false;
-    btnMaisLidas.setAttribute('aria-pressed', 'false');
-    btnMaisLidas.classList.remove('is-active');
   }
 
   function marcarMaisLidas(ativa) {
     maisLidasAtiva = ativa;
-    btnMaisLidas.setAttribute('aria-pressed', ativa ? 'true' : 'false');
-    btnMaisLidas.classList.toggle('is-active', ativa);
     if (!ativa) return;
     desativarPaginaFacebook();
     altaAtiva = false;
@@ -834,8 +822,7 @@
     tentar.type = 'button';
     tentar.textContent = 'Tentar de novo';
     tentar.addEventListener('click', () => {
-      if (maisLidas) carregarMaisLidas();
-      else if (paraPublico) carregarParaPublico();
+      if (paraPublico) carregarParaPublico();
       else carregarAlta(termo || '');
     });
     acoes.appendChild(tentar);
@@ -912,7 +899,9 @@
     const janela = rotuloJanelaRadar(horas);
     const paraPublico = data.origem === 'viralizadas';
     const paginaFacebook = data.origem === 'pagina-facebook';
-    const maisLidas = data.origem === 'mais-lidas';
+    // "Mais lidas" foi removido; o modo fica desligado para o renderizador
+  // compartilhado seguir servindo Em alta, Para meu público e Página.
+  const maisLidas = false;
     const podeSalvarRascunho =
       paraPublico || paginaFacebook || maisLidas || data.origem === 'em-alta';
     const basesVirais = Array.isArray(data.basesVirais) ? data.basesVirais : [];
@@ -1007,8 +996,7 @@
     recarregar.className = 'mia-chat-ghost-btn';
     recarregar.textContent = 'Atualizar';
     recarregar.addEventListener('click', () => {
-      if (maisLidas) carregarMaisLidas();
-      else if (paginaFacebook) carregarPaginaFacebook(data.paginaUrl);
+      if (paginaFacebook) carregarPaginaFacebook(data.paginaUrl);
       else if (paraPublico) carregarParaPublico();
       else carregarAlta(data.padrao ? '' : temas.join(', '));
     });
@@ -1594,35 +1582,6 @@
     mostrarBloco(wrap);
   }
 
-  async function carregarMaisLidas() {
-    if (carregandoMaisLidas) return;
-    carregandoMaisLidas = true;
-    btnMaisLidas.disabled = true;
-    setStatus('Extraindo as matérias mais lidas dos sites cadastrados...');
-    renderCarregando('', false, false, true);
-
-    try {
-      const data = await apiJson(`${API}/mais-lidas`, {
-        method: 'POST',
-        body: JSON.stringify({}),
-      });
-      renderAlta(data);
-      setStatus(`${(data.topicos || []).length} pauta(s) nova(s) nas listas mais lidas`);
-    } catch (err) {
-      const mensagem = err.message || 'Falha ao extrair as listas mais lidas';
-      setStatus(mensagem);
-      renderErro(mensagem, '', false, true);
-    } finally {
-      carregandoMaisLidas = false;
-      btnMaisLidas.disabled = false;
-    }
-  }
-
-  btnMaisLidas.addEventListener('click', () => {
-    fecharFerramentas();
-    marcarMaisLidas(true);
-    carregarMaisLidas();
-  });
 
   async function carregarAlta(busca = '') {
     if (carregandoAlta) return;
@@ -1669,7 +1628,6 @@
 
   ligarAtalhoRadar(atalhosRadar.alta, () => btnAlta.click());
   ligarAtalhoRadar(atalhosRadar.publico, () => btnPublico.click());
-  ligarAtalhoRadar(atalhosRadar.maisLidas, () => btnMaisLidas.click());
 
   async function carregarParaPublico() {
     if (carregandoPublico) return;

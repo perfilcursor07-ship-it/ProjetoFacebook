@@ -669,7 +669,9 @@ async function listarPostsPerfil(pageUrl, limite = 20) {
   }
 
   if (!urls.length) {
-    console.log(`[fb-page] ${pageUrl}: nenhum permalink — variantes=${JSON.stringify(porVariante)}`);
+    // htmlTotal separa muro de login (poucos KB) de HTML inteiro sem casar
+    // o padrão (vários MB) — sem ele não dá para saber qual dos dois é.
+    console.log(`[fb-page] ${pageUrl}: nenhum permalink — variantes=${JSON.stringify(porVariante)} htmlLen=${htmlTotal}`);
     return [];
   }
 

@@ -658,47 +658,6 @@ async function rastrearFonteSalva(userId, id) {
   }
 }
 
-async function descobrirMaisLidas(userId) {
-  const fontes = await PautaFontes.findByUser(userId, { somenteAtivas: true });
-  if (!fontes.length) {
-    const err = new Error('Cadastre ao menos um site em Configurações → Descobrir pautas.');
-    err.status = 400;
-    err.codigo = 'SEM_FONTES';
-    throw err;
-  }
-
-  const resultados = [];
-  for (let inicio = 0; inicio < fontes.length; inicio += 3) {
-    const lote = fontes.slice(inicio, inicio + 3);
-    const parte = await Promise.allSettled(lote.map((fonte) => rastrearFonteSalva(userId, fonte.id)));
-    resultados.push(...parte.map((result, i) => ({ result, fonte: lote[i] })));
-  }
-
-  const erros = resultados
-    .filter(({ result }) => result.status === 'rejected')
-    .map(({ result, fonte }) => ({ fonte: fonte.nome, error: limparTexto(result.reason?.message, 300) }));
-  const brutos = resultados
-    .filter(({ result }) => result.status === 'fulfilled')
-    .flatMap(({ result }) => result.value.itens || []);
-  const unicos = deduplicar(brutos, 80);
-
-  const { marcarJaPublicados } = require('./materiaIaService');
-  const marcados = await marcarJaPublicados(userId, null, unicos, {
-    todasPaginas: true,
-    limiteHistorico: 5000,
-  });
-  const topicos = marcados.filter((item) => !item.jaPublicado).map(({ jaPublicado, ...item }) => item);
-
-  return {
-    origem: 'mais-lidas',
-    fontes: fontes.map((fonte) => ({ id: fonte.id, nome: fonte.nome, url: fonte.url })),
-    topicos,
-    totalEncontrado: unicos.length,
-    totalOcultado: marcados.length - topicos.length,
-    erros,
-  };
-}
-
 module.exports = {
   MARCADORES_PADRAO,
   normalizarEntrada,
@@ -706,7 +665,6 @@ module.exports = {
   extrairMaisLidasDoMarkdown,
   rastrearFonte,
   rastrearFonteSalva,
-  descobrirMaisLidas,
   criarFonte,
   atualizarFonte,
 };
