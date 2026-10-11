@@ -65,7 +65,9 @@ test('o estilo pedido chega a quem escreve', () => {
 
 test('o pedido salvo pode ser editado sem recriar o dot', () => {
   const dots = fs.readFileSync('src/services/dotsService.js', 'utf8');
-  assert.match(dots, /async function atualizar\(userId, dotId, \{ nome, provedor, objetivo \}\)/);
+  // A assinatura ganhou página e jornada depois; o que importa é que o
+  // objetivo entra por aqui, sem recriar o dot.
+  assert.match(dots, /async function atualizar\(userId, dotId, \{ nome, provedor, objetivo[,)]/);
   // Reinterpreta e recadastra as páginas, sem perder ritmo nem histórico.
   assert.match(dots, /dados\.plano = JSON\.stringify\(\{ \.\.\.anterior, \.\.\.plano \}\)/);
   // Fonte já achada pelo nome não é procurada de novo; o que o editor mexeu
@@ -73,8 +75,10 @@ test('o pedido salvo pode ser editado sem recriar o dot', () => {
   assert.match(dots, /montarPlano\(texto, \{ anterior \}\)/);
   assert.match(dots, /cadastrarFontes\(dot, plano\)/);
 
+  // A rota de edição só repassa o objetivo quando ele vem no corpo: campo
+  // ausente não pode apagar o pedido que já estava salvo.
   const rota = fs.readFileSync('src/routes/dots.js', 'utf8');
-  assert.match(rota, /objetivo: req\.body\.objetivo/);
+  assert.match(rota, /body\.objetivo !== undefined \? \{ objetivo: body\.objetivo \} : \{\}/);
 });
 
 test('o cadastro de páginas é um só, usado na criação e na edição', () => {

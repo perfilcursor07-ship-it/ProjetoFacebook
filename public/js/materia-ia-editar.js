@@ -340,6 +340,11 @@
   let cropInteraction = null;
   let cropBox = { left: 0.05, top: 0.05, width: 0.9, height: 0.9 };
   let cropSourceUrl = '';
+  // `sourceUrl` no POST do recorte significa "use ESTA imagem nova, gerada
+  // agora", e a rota só aceita arquivo gerado para esta matéria. Mandar a foto
+  // de origem normal (quase sempre uma URL remota) voltava HTTP 400 e o
+  // recorte não salvava nada. Só a imagem vinda da IA vai no corpo.
+  let cropSourceGerada = false;
   let bodyOverflowBeforeCrop = '';
   // Gerador escolhido em /claude (ChatGPT, Grok ou Google Gemini).
   let geradorImagemNome = 'ChatGPT';
@@ -429,12 +434,17 @@
 
   function openCropModal() {
     const sourceUrl = String(cfg.imagemFonteUrl || '').trim();
-    if (!sourceUrl || !cropModal || !cropImage) {
-      setStatus('A foto original não está disponível para recortar.', true);
+    if (!cropModal || !cropImage) {
+      setStatus('A janela de recorte não está disponível nesta página.', true);
       return;
     }
     cropBox = { left: 0.05, top: 0.05, width: 0.9, height: 0.9 };
     cropSourceUrl = sourceUrl;
+    cropSourceGerada = false;
+    // Sem foto de origem a janela ainda abre: é aqui que mora o painel de
+    // gerar imagem com IA. Antes a falta da foto fechava a porta das duas
+    // coisas, e a matéria ficava sem jeito de ganhar capa.
+    mostrarPalcoDeRecorte(Boolean(sourceUrl));
     carregarGeradorImagem();
     if (chatgptImagePrompt && !chatgptImagePrompt.value.trim()) {
       chatgptImagePrompt.value = [
@@ -448,6 +458,13 @@
     bodyOverflowBeforeCrop = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     cropModal.classList.remove('hidden');
+    if (!sourceUrl) {
+      setChatgptStatus(
+        'Esta matéria não tem foto de origem. Gere uma imagem aqui (a ilustração simbólica não precisa de foto) e ela entra como capa.',
+        'info'
+      );
+      return;
+    }
     cropImage.onload = () => requestAnimationFrame(updateCropSelection);
     cropImage.onerror = () => setStatus('Não foi possível abrir a foto original para recorte.', true);
     cropImage.src = sourceUrl.startsWith('/media/')
@@ -456,10 +473,24 @@
     requestAnimationFrame(updateCropSelection);
   }
 
+  /** Esconde o palco (foto + alças + sliders) quando não há foto para recortar. */
+  function mostrarPalcoDeRecorte(temFoto) {
+    for (const id of ['matter-crop-palco', 'matter-crop-controls', 'matter-crop-help']) {
+      document.getElementById(id)?.classList.toggle('hidden', !temFoto);
+    }
+    if (cropSave) {
+      cropSave.disabled = !temFoto;
+      cropSave.title = temFoto ? '' : 'Gere uma imagem primeiro — ela já entra como capa';
+    }
+  }
+
   function showChatgptImage(data, recovered = false) {
     cropSourceUrl = String(data?.imagemFonteUrl || '').trim();
     if (!cropSourceUrl) throw new Error(`O ${geradorImagemNome} respondeu sem uma imagem utilizável.`);
     cropBox = { left: 0, top: 0, width: 1, height: 1 };
+    cropSourceGerada = true;
+    // A matéria podia estar sem foto: agora tem, então o palco volta.
+    mostrarPalcoDeRecorte(true);
     cropImage.onload = () => requestAnimationFrame(updateCropSelection);
     cropImage.src = cropSourceUrl + '?chatgpt=' + Date.now();
     if (chatgptImageStatus) {
@@ -773,7 +804,7 @@
           width: geometry.width / geometry.imageWidth,
           height: geometry.height / geometry.imageHeight,
           titulo: tituloEl?.value || '',
-          sourceUrl: cropSourceUrl || null,
+          sourceUrl: cropSourceGerada ? cropSourceUrl : null,
         }),
       });
       const data = await res.json().catch(() => ({}));

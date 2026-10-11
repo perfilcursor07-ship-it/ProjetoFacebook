@@ -1966,6 +1966,10 @@
     // matéria. Antes de salvar o recorte fica pendente e é aplicado assim que
     // o rascunho existir; depois de salvo, recorta direto a foto do rascunho.
     let recortePendente = null;
+    // Foto que o rascunho JÁ tem. Trocar a capa depois de salvar não mandava
+    // nada ao servidor: o rascunho ficava com a foto antiga e era ela que
+    // aparecia ao abrir "Editar no rascunho", publicar ou agendar.
+    let capaNoRascunho = null;
     const capa = document.createElement('div');
     capa.className = 'mia-pub-previa';
     const moldura = document.createElement('div');
@@ -2143,6 +2147,27 @@
       capaAviso.textContent = 'Arte atualizada com o recorte ✓';
     }
 
+    /**
+     * Garante que a foto escolhida na tela é a foto do rascunho.
+     * Sem isso, publicar/agendar saía com a capa antiga.
+     */
+    async function garantirCapaNoRascunho(id) {
+      const escolhida = imagem.value.trim();
+      if (!escolhida || escolhida === capaNoRascunho) return;
+      capaAviso.textContent = 'Aplicando a foto escolhida no rascunho…';
+      const data = await api(`/api/materias-ia/matters/${id}/aplicar-imagem-url`, {
+        method: 'POST',
+        body: JSON.stringify({
+          imageUrl: escolhida,
+          titulo: mensagem.titulo || '',
+          creditoFixo: credito.value.trim() || undefined,
+        }),
+      });
+      capaNoRascunho = escolhida;
+      mostrarArte(data.imagemUrl);
+      capaAviso.textContent = 'Foto escolhida aplicada no rascunho ✓';
+    }
+
     async function aplicarRecorteNoRascunho(id, area, sourceUrl = null) {
       capaAviso.textContent = 'Recortando a foto e refazendo a arte…';
       const data = await api(`/api/materias-ia/matters/${id}/arte/recortar`, {
@@ -2166,6 +2191,9 @@
         let url = '';
         let fonteDoRascunho = '';
         if (mensagem.matterId) {
+          // Foto trocada e ainda não aplicada: entra antes, para o recorte
+          // trabalhar sobre a foto que o editor está vendo.
+          await garantirCapaNoRascunho(mensagem.matterId);
           const { matter } = await api(`/api/materias-ia/matters/${mensagem.matterId}`);
           const fonte = String(matter?.imagem_fonte_url || '').trim();
           url = fonte && !/\/media\/artes\//i.test(fonte) ? fonte : '';
@@ -2414,7 +2442,11 @@
       salvar.classList.add('is-feito');
     }
     async function garantirRascunho() {
-      if (mensagem.matterId) return mensagem.matterId;
+      if (mensagem.matterId) {
+        // Rascunho já existe: a foto escolhida agora ainda precisa entrar nele.
+        await garantirCapaNoRascunho(mensagem.matterId);
+        return mensagem.matterId;
+      }
       // Texto em edição entra no rascunho: grava a edição antes de salvar.
       if (edicaoAberta) await edicaoAberta.salvar();
       if (!salvando) {
@@ -2428,6 +2460,7 @@
           }),
         }).then(async (data) => {
           mensagem.matterId = data.matterId;
+          capaNoRascunho = imagem.value.trim() || null;
           marcarSalvo();
           bloquearEdicao();
           // Recorte feito antes de salvar: aplica na foto que foi para o rascunho.

@@ -1502,8 +1502,15 @@ function fotoParaChecar(matter, post) {
  */
 async function resolverCapa(dot, post, matterId) {
   const modo = dot.modo_imagem || 'original';
-  // Escolha explícita de não ter arte: respeita e sai.
-  if (modo === 'sem_imagem') return modo;
+  // Escolha explícita de não ter arte: respeita e sai. A matéria nasce como
+  // 'foto' no chat, e publicar foto sem imagem é recusado lá na frente — então
+  // o tipo passa a ser texto, que é o que o editor pediu.
+  if (modo === 'sem_imagem') {
+    await require('../models/AiMatters')
+      .update(matterId, { tipo_publicacao: 'texto' })
+      .catch((err) => console.warn(`[dots #${dot.id}] marcar sem imagem #${matterId}: ${err.message}`));
+    return modo;
+  }
 
   if (modo === 'original') {
     const matter = await require('../models/AiMatters').findById(matterId).catch(() => null);

@@ -110,35 +110,32 @@ app.listen(env.port, async () => {
   try {
     const materiaIaService = require('./services/materiaIaService');
     const bibliotecaService = require('./services/bibliotecaService');
+    // Cada etapa isolada e com nome. Antes `tickMonitores` e `tickFilaJobs`
+    // dividiam o mesmo try e a mesma espera: monitor lento (varredura, IA) ou
+    // que estourasse levava embora a publicação das agendadas do minuto — era
+    // o agendamento "que não funciona" sem erro nenhum na matéria.
+    //
+    // A fila vem primeiro justamente por isso: publicar na hora marcada não
+    // pode ficar atrás de varredura que leva minutos.
+    const etapas = [
+      ['fila-agendadas', () => materiaIaService.tickFilaJobs()],
+      [
+        'biblioteca-manual',
+        () => require('./services/bibliotecaReelAutopilotService').publicarPendentesManuais(3),
+      ],
+      ['monitores', () => materiaIaService.tickMonitores()],
+      ['biblioteca-fontes', () => bibliotecaService.tickFontes()],
+      ['biblioteca-autopilot', () => bibliotecaService.tickAutopilot()],
+      ['dots', () => require('./services/dotsService').tick()],
+      ['agenda-auto', () => require('./services/bibliotecaAgendaService').tickAgendaPre()],
+    ];
     const tick = async () => {
-      try {
-        const reelPublisher = require('./services/bibliotecaReelAutopilotService');
-        await reelPublisher.publicarPendentesManuais(3);
-      } catch (err) {
-        console.error('[biblioteca manual tick]', err.message);
-      }
-      try {
-        await materiaIaService.tickMonitores();
-        await materiaIaService.tickFilaJobs();
-      } catch (err) {
-        console.error('[materias-ia tick]', err.message);
-      }
-      try {
-        await bibliotecaService.tickFontes();
-        await bibliotecaService.tickAutopilot();
-      } catch (err) {
-        console.error('[biblioteca tick]', err.message);
-      }
-      try {
-        await require('./services/dotsService').tick();
-      } catch (err) {
-        console.error('[dots tick]', err.message);
-      }
-      try {
-        const agendaService = require('./services/bibliotecaAgendaService');
-        await agendaService.tickAgendaPre();
-      } catch (err) {
-        console.error('[agenda-auto tick]', err.message);
+      for (const [nome, executar] of etapas) {
+        try {
+          await executar();
+        } catch (err) {
+          console.error(`[tick ${nome}]`, err.message);
+        }
       }
     };
     setInterval(tick, 60_000);

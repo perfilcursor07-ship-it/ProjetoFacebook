@@ -20,6 +20,19 @@
   const isReel = matter.tipo_publicacao === 'reel';
   const imageUrl = matter.imagem_url || '';
   const imagemFonteUrl = String(matter.imagem_fonte_url || '').trim();
+  // Foto que o recorte do servidor aceita (POST /matters/:id/arte/recortar):
+  // a foto de origem e, quando ela não existe, a própria imagem_url enquanto
+  // ainda for uma foto (não a arte montada). Sem esse segundo caminho o botão
+  // ficava escondido em matéria sem imagem_fonte_url — e com ele sumia também
+  // o painel de gerar imagem com IA, que vive dentro do recorte.
+  const fotoParaRecorte = (() => {
+    const ehArte = (v) => /\/media\/artes\//i.test(String(v || ''));
+    if (imagemFonteUrl && !ehArte(imagemFonteUrl)) return imagemFonteUrl;
+    const u = String(imageUrl || '');
+    const ehFotoLocal = u.startsWith('/media/fontes/');
+    if (!matter.imagem_path && !ehArte(u) && (/^https?:\/\//i.test(u) || ehFotoLocal)) return u;
+    return '';
+  })();
   const videoUrl = matter.video_path ? '/media/' + String(matter.video_path).replace(/^\/+/, '') : '';
   const reelProcessing = isReel && (!videoUrl || String(matter.materia || '').startsWith('⏳'));
   const canReloadBrand =
@@ -623,8 +636,8 @@
               <div class="flex items-center gap-2">
                 <% if (canEdit) { %>
                   <button type="button" id="btn-abrir-recorte"
-                    class="<%= imagemFonteUrl ? '' : 'hidden' %> rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-200 hover:bg-amber-500/20">
-                    Recortar foto
+                    class="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-200 hover:bg-amber-500/20">
+                    <%= fotoParaRecorte ? 'Recortar foto' : 'Recortar / gerar com IA' %>
                   </button>
                 <% } %>
                 <a id="btn-baixar-arte" href="<%= imageUrl || '#' %>" download="arte-materia-<%= matter.id %>.jpg"
@@ -888,7 +901,7 @@
           <p class="mt-1 text-[10px] text-slate-500">A ilustração simbólica não usa a foto nem representa o acontecimento. Ao publicar, identifique-a como imagem gerada por IA.</p>
           <div id="matter-chatgpt-image-jobs" class="mt-2 grid gap-1.5"></div>
         </div>
-        <div class="flex min-h-[240px] items-center justify-center overflow-hidden rounded-lg border border-slate-700 bg-black/60 p-2">
+        <div id="matter-crop-palco" class="flex min-h-[240px] items-center justify-center overflow-hidden rounded-lg border border-slate-700 bg-black/60 p-2">
           <div id="matter-crop-stage" class="relative inline-block max-w-full overflow-hidden" style="touch-action:none; user-select:none; cursor:move;">
             <img id="matter-crop-image" src="" alt="Foto original para recorte" class="block max-w-full object-contain" style="max-height:62vh;" draggable="false" />
             <div id="matter-crop-selection" class="absolute border-2 border-amber-300" style="box-shadow:0 0 0 9999px rgba(2,6,23,.72); cursor:move; touch-action:none;">
@@ -905,7 +918,7 @@
           </div>
         </div>
 
-        <div class="mt-3 grid gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+        <div id="matter-crop-controls" class="mt-3 grid gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
           <label class="block">
             <span class="flex items-center justify-between text-[10px] text-slate-400">
               Largura <span id="matter-crop-width-value" class="tabular-nums text-slate-500">90%</span>
@@ -1007,7 +1020,7 @@
       isReel: <%= isReel ? 'true' : 'false' %>,
       reelProcessing: <%= reelProcessing ? 'true' : 'false' %>,
       videoUrl: <%- JSON.stringify(videoUrl || null) %>,
-      imagemFonteUrl: <%- JSON.stringify(imagemFonteUrl || null) %>,
+      imagemFonteUrl: <%- JSON.stringify(fotoParaRecorte || null) %>,
       arteModelo: <%- JSON.stringify(typeof arteModeloAtivo !== 'undefined' ? arteModeloAtivo : null) %>,
       artModelChoices: <%- JSON.stringify(typeof artModelChoices !== 'undefined' ? artModelChoices : []) %>,
       instagramAtivo: <%= (typeof instagramPagina !== 'undefined' && instagramPagina && instagramPagina.ativo) ? 'true' : 'false' %>,

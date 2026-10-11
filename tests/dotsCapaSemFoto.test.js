@@ -22,12 +22,20 @@ require.cache[caminhoDb] = { id: caminhoDb, filename: caminhoDb, loaded: true, e
 
 /** Matéria devolvida pelo modelo; o teste troca entre os casos. */
 let materiaAtual = null;
+/** Alterações gravadas na matéria (ex.: virar 'texto' no modo sem imagem). */
+let atualizacoes = [];
 const caminhoMatters = require.resolve('../src/models/AiMatters');
 require.cache[caminhoMatters] = {
   id: caminhoMatters,
   filename: caminhoMatters,
   loaded: true,
-  exports: { findById: async () => materiaAtual },
+  exports: {
+    findById: async () => materiaAtual,
+    update: async (id, dados) => {
+      atualizacoes.push({ id, dados });
+      return 1;
+    },
+  },
 };
 
 /** Registra se a geração de imagem foi chamada e com quais opções. */
@@ -86,11 +94,15 @@ test('modo original COM foto não gasta geração à toa', async () => {
 
 test('"sem imagem" continua sendo respeitado', async () => {
   geracoes = [];
+  atualizacoes = [];
   materiaAtual = { id: 9, imagem_fonte_url: null };
 
   const capa = await resolverCapa({ ...DOT, modo_imagem: 'sem_imagem' }, POST, 9);
   assert.equal(capa, 'sem_imagem');
   assert.equal(geracoes.length, 0, 'escolha explícita do editor, não se contraria');
+  // A matéria nasce 'foto' no chat, e publicar foto sem imagem é recusado lá
+  // na frente — a agendada do dot caía em rascunho na hora de sair.
+  assert.deepEqual(atualizacoes, [{ id: 9, dados: { tipo_publicacao: 'texto' } }]);
 });
 
 test('a capa de artigo tenta o Chrome quando o acesso direto é bloqueado', () => {

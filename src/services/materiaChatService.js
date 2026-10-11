@@ -30,6 +30,31 @@ const JANELAS_DE_RESGATE = Object.freeze({
  * em vídeo de julgamento, votação ou leitura de decisão, o resultado vem no
  * final, e o modelo respondia que "a fonte não traz a conclusão".
  */
+/**
+ * A capa que o editor escolheu no chat pode ser usada?
+ *
+ * Vale URL remota (foto sugerida, link colado) ou arquivo direto na pasta do
+ * próprio editor: foto gerada pela IA no chat (`chat_*`), recorte (`materia_*`),
+ * upload ou item do banco de imagens.
+ *
+ * A lista antiga só aceitava `chat_*.jpg` e descartava o resto **em silêncio**:
+ * a foto escolhida na tela sumia e o rascunho nascia com a foto da fonte.
+ */
+function capaEscolhidaValida(valor, userId) {
+  const v = String(valor || '').trim();
+  if (!v) return false;
+  if (/^https?:\/\//i.test(v)) return true;
+  if (v.includes('..') || v.includes('\\')) return false;
+  const pastas = [
+    `/media/fontes/user_${Number(userId)}/`,
+    `/media/banco-imagens/user_${Number(userId)}/`,
+  ];
+  const pasta = pastas.find((p) => v.toLowerCase().startsWith(p));
+  if (!pasta) return false;
+  // Arquivo direto na pasta do editor: nome simples, sem subpasta.
+  return /^[a-z0-9_-]+\.(?:jpe?g|png|webp)$/i.test(v.slice(pasta.length));
+}
+
 function recortarTranscricao(texto, limite = 16000) {
   const t = String(texto || '');
   if (t.length <= limite) return t;
@@ -4846,16 +4871,17 @@ async function salvarMateriaDoChat({
       : tituloDaEscolha && alternativas.includes(tituloDaEscolha)
       ? tituloDaEscolha
       : tituloOriginal;
-  let imagemFonte =
-    imagemUrl && (
-      /^https?:\/\//i.test(imagemUrl) ||
-      // Imagem gerada com ChatGPT no próprio chat, guardada no storage do usuário.
-      new RegExp(`^/media/fontes/user_${Number(userId)}/chat_[0-9]+_[0-9]+_[a-f0-9]+\\.jpg$`, 'i').test(imagemUrl) ||
-      // Imagem escolhida no banco de imagens do editor.
-      require('./bancoImagensService').ehUrlDoBanco(imagemUrl, userId)
-    )
-      ? imagemUrl
-      : null;
+  // Arquivo dentro da pasta do próprio editor: foto gerada pela IA no chat
+  // (chat_*), recorte (materia_*), upload ou item do banco de imagens. A lista
+  // antiga só aceitava `chat_*.jpg` e descartava as outras **em silêncio** —
+  // a foto escolhida na tela sumia e o rascunho nascia com a foto da fonte.
+  const escolhaValida = capaEscolhidaValida(imagemUrl, userId);
+  let imagemFonte = escolhaValida ? imagemUrl : null;
+  if (imagemUrl && !escolhaValida) {
+    console.warn(
+      `[materia-chat] capa escolhida recusada (mensagem #${messageId}): "${String(imagemUrl).slice(0, 120)}" — vai a foto da fonte`
+    );
+  }
   if (!imagemFonte) {
     // Mesma escolha que o chat mostra como capa antes de salvar.
     imagemFonte = (await imagemDaFonte({ fontesDaMateria, fonteSocialComImagem, fontePrincipal })).url;
@@ -5301,6 +5327,7 @@ async function editarConteudoDaMensagem({ userId, messageId, conteudo } = {}) {
 
 module.exports = {
   limparCorpoDoRascunho,
+  capaEscolhidaValida,
   respostaAdmitePeriodoNaoAtendido,
   listarConversas,
   criarConversa,

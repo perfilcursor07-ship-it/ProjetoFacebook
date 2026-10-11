@@ -296,13 +296,22 @@ router.post('/matters/:id/arte/recortar', async (req, res, next) => {
       return res.status(400).json({ error: 'A imagem de uma matéria publicada não pode ser alterada' });
     }
 
-    const generatedSource = String(req.body?.sourceUrl || '').trim();
+    let generatedSource = String(req.body?.sourceUrl || '').trim();
     // Versões geradas para esta matéria, ou no chat do /materia-manual antes de
     // o rascunho existir (chat_ID_*), sempre dentro da pasta do próprio usuário.
     const generatedPattern = new RegExp(
       `^/media/fontes/user_${Number(req.session.userId)}/(?:materia_${matterId}|chat_[0-9]+)_[0-9]+_[a-f0-9]+\\.jpg$`,
       'i'
     );
+    // A foto que a matéria JÁ usa não é "imagem temporária": é o padrão. O
+    // editor mandava ela aqui (quase sempre uma URL remota) e levava 400 —
+    // o recorte não salvava nada. Vindo ela, basta ignorar o campo.
+    const jaEhDaMateria =
+      generatedSource &&
+      [matter.imagem_fonte_url, matter.imagem_url]
+        .map((v) => String(v || '').trim())
+        .includes(generatedSource);
+    if (jaEhDaMateria) generatedSource = '';
     if (generatedSource && !generatedPattern.test(generatedSource)) {
       return res.status(400).json({ error: 'A imagem temporária informada não pertence a esta matéria' });
     }

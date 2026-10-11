@@ -400,6 +400,11 @@ async function sincronizarComMaterias(userId, itens) {
   const lista = Array.isArray(itens) ? itens : [];
   for (const row of lista) {
     const agendaSt = String(row.status || '');
+    // Proposta que acabou de adotar a matéria nesta passada: ela nunca viu
+    // essa matéria antes, então não é ela quem agendou. Marcar isso evita
+    // desmarcar logo abaixo um agendamento feito à mão, pelo Dots ou pelo
+    // Piloto — era assim que a agendada sumia sozinha.
+    let adotouAgora = false;
     if (!row.matter_id) {
       // Post já tem matéria gerada de novo → religa o horário da agenda
       if (row.post_id) {
@@ -413,6 +418,7 @@ async function sincronizarComMaterias(userId, itens) {
               row.matter_status = matter.status;
               row.matter_scheduled_at = matter.scheduled_at;
               row.matter_titulo = matter.titulo;
+              adotouAgora = true;
             }
           }
         } catch {
@@ -435,7 +441,18 @@ async function sincronizarComMaterias(userId, itens) {
       }
       // Pré-agendado NÃO pode aparecer como agendado em /minhas-materias.
       // Só confirmar agenda (ou Agendar no editor) cria scheduled_at/job.
-      if (matterSt === 'agendado' && agendaSt === 'pendente') {
+      if (matterSt === 'agendado' && agendaSt === 'pendente' && adotouAgora) {
+        // A matéria já estava agendada antes de esta proposta conhecê-la:
+        // quem manda é o agendamento, e a proposta passa a confirmada.
+        await BibliotecaAgenda.update(row.id, {
+          status: 'confirmado',
+          proposed_at: row.matter_scheduled_at || row.proposed_at,
+        });
+        row.status = 'confirmado';
+        console.log(
+          `[agenda] proposta #${row.id} adotou a matéria #${row.matter_id} já agendada — confirmada em vez de desmarcar`
+        );
+      } else if (matterSt === 'agendado' && agendaSt === 'pendente') {
         try {
           await db('ai_matters').where({ id: row.matter_id }).update({
             status: 'pronto',
@@ -450,6 +467,9 @@ async function sincronizarComMaterias(userId, itens) {
             });
           row.matter_status = 'pronto';
           row.matter_scheduled_at = null;
+          console.warn(
+            `[agenda] matéria #${row.matter_id} DESMARCADA — proposta #${row.id} da Biblioteca está pendente (confirme na Agenda para ela publicar)`
+          );
         } catch (err) {
           console.warn(`[agenda] cancelar pré-agendada #${row.matter_id}:`, err.message);
         }

@@ -703,10 +703,21 @@ async function publicarMateria(userId, matterId, overrides = {}) {
 async function confirmarPreAgenda(matterId, quando) {
   try {
     if (!(await db.schema.hasTable('biblioteca_agenda'))) return;
+    // Há proposta ligada à matéria por `matter_id` e proposta ligada só pelo
+    // post da Biblioteca (`post_id`, com matter_id ainda nulo). A segunda
+    // passava batida aqui: ao sincronizar a agenda ela recebia o matter_id
+    // ainda em 'pendente' e derrubava a matéria agendada para 'pronto'.
+    const temPosts = await db.schema.hasTable('biblioteca_posts');
     await db('biblioteca_agenda')
-      .where({ matter_id: matterId })
+      .where(function daMateria() {
+        this.where({ matter_id: matterId });
+        if (temPosts) {
+          this.orWhereIn('post_id', db('biblioteca_posts').where({ matter_id: matterId }).select('id'));
+        }
+      })
       .whereNotIn('status', ['cancelado', 'publicado'])
       .update({
+        matter_id: matterId,
         status: 'confirmado',
         proposed_at: quando,
         updated_at: db.fn.now(),
@@ -738,6 +749,59 @@ async function mesmaNoticiaJaNaPagina({ userId, pageId, matter, dias = 3 }) {
     (matter.fonte_titulo && o.fonte_titulo && mesmaNoticiaEstrita(matter.fonte_titulo, o.fonte_titulo)) ||
     (corpo.length >= 120 && corpo === inicioCorpo(o.materia))
   ) || null;
+}
+
+/**
+ * Matéria tipo "foto" chegou na hora de publicar sem capa: tenta remontar.
+ *
+ * Primeiro a arte a partir da foto de origem que a matéria já tem (o caso mais
+ * comum: a arte falhou uma vez quando o rascunho nasceu). Depois, a foto do
+ * próprio link da notícia. Devolve null quando não há foto em lugar nenhum.
+ *
+ * Nunca lança: quem chama decide o que fazer sem a capa.
+ */
+async function recuperarCapaParaPublicar(userId, matter) {
+  const { composeMatterArtwork } = require('./matterArtworkService');
+  const ehArte = (v) => /\/media\/artes\//i.test(String(v || ''));
+  const titulo = String(matter.titulo || '').trim();
+
+  const montar = async (sourceUrl, de) => {
+    try {
+      const arte = await composeMatterArtwork({
+        userId,
+        matterId: matter.id,
+        sourceUrl,
+        title: titulo,
+        force: true,
+      });
+      if (arte?.publicUrl) return { imagemUrl: arte.publicUrl, de };
+    } catch (err) {
+      console.warn(`[publicar] capa pela ${de} #${matter.id}: ${err.message}`);
+    }
+    return null;
+  };
+
+  const fonte = String(matter.imagem_fonte_url || '').trim();
+  if (fonte && !ehArte(fonte)) {
+    const pela = await montar(fonte, 'foto de origem');
+    if (pela) return pela;
+  }
+
+  const link = String(matter.fonte_url || '').trim();
+  if (/^https?:\/\//i.test(link)) {
+    try {
+      const meta = await require('./articleSource').extrairMetadadosImagemArtigo(link);
+      const foto = String(meta?.imagem || '').trim();
+      if (/^https?:\/\//i.test(foto)) {
+        const pela = await montar(foto, 'foto do link da notícia');
+        if (pela) return pela;
+      }
+    } catch (err) {
+      console.warn(`[publicar] capa pelo link #${matter.id}: ${err.message}`);
+    }
+  }
+
+  return null;
 }
 
 // Matérias sendo publicadas agora neste processo: a mesma não sai duas vezes
@@ -827,12 +891,37 @@ async function publicarMateriaIndividualAgora(userId, matterId, overrides = {}) 
   }
 
   // Reel nunca pode “cair” para texto por override do body (pickTipo default = texto)
-  const tipo =
+  let tipo =
     matter.tipo_publicacao === 'reel'
       ? 'reel'
       : overrides.tipo_publicacao && overrides.tipo_publicacao !== 'auto'
         ? overrides.tipo_publicacao
         : matter.tipo_publicacao || 'texto';
+
+  // Capa antes da mensagem: virar texto depois de montá-la deixaria o post
+  // sem o título (em foto o título vai na arte, não na legenda).
+  //
+  // Esta era a queda silenciosa da agendada: a hora chegava, a matéria não
+  // tinha capa, o status virava 'rascunho' e o editor só via o agendamento
+  // desaparecer. Agora a capa é remontada; sem conseguir, a matéria SAI como
+  // texto em vez de ficar presa para sempre.
+  let imagemUrl = overrides.imagem_url || matter.imagem_url;
+  if (tipo === 'foto' && !imagemUrl && !matter.imagem_path) {
+    const recuperada = await recuperarCapaParaPublicar(userId, matter);
+    if (recuperada) {
+      imagemUrl = recuperada.imagemUrl;
+      matter = (await AiMatters.findById(matter.id)) || matter;
+      console.log(`[publicar] #${matter.id} capa recuperada pela ${recuperada.de}`);
+    } else {
+      tipo = 'texto';
+      console.warn(`[publicar] #${matter.id} sem capa e sem foto para recuperar — publicando como texto`);
+      await AiMatters.update(matter.id, {
+        tipo_publicacao: 'texto',
+        error_message: 'Sem foto disponível: publicada como texto.',
+      }).catch(() => {});
+    }
+  }
+
   const mensagem = montarMensagem({
     titulo: overrides.titulo || matter.titulo,
     materia: (() => {
@@ -862,17 +951,6 @@ async function publicarMateriaIndividualAgora(userId, matterId, overrides = {}) 
 
   if (tipo === 'reel' && !matter.video_path && !matter.video_clip_id) {
     const err = new Error('Vídeo do Reel ainda não está pronto. Aguarde o processamento.');
-    err.status = 422;
-    throw err;
-  }
-
-  const imagemUrl = overrides.imagem_url || matter.imagem_url;
-  if (tipo === 'foto' && !imagemUrl && !matter.imagem_path) {
-    await AiMatters.update(matter.id, {
-      status: 'rascunho',
-      error_message: 'Foto sem imagem — salva como rascunho',
-    });
-    const err = new Error('Tipo foto exige imagem de capa. Matéria mantida como rascunho.');
     err.status = 422;
     throw err;
   }
