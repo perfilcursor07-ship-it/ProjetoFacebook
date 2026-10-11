@@ -113,10 +113,35 @@ function normalizarProvedor(valor) {
   const id = String(valor || '').trim().toLowerCase();
   return provedores().some((p) => p.id === id) ? id : 'auto';
 }
-/** Links soltos no texto do objetivo. É o que vira fonte monitorada. */
+/**
+ * Tira do fim do link o que é da frase, não da URL.
+ *
+ * ')' só sobra quando não há '(' que o abra dentro da própria URL — aí ele
+ * fecha a frase ("(veja https://site.com/x)"), não o endereço.
+ */
+function limparFimDaUrl(bruto) {
+  let u = String(bruto || '').trim();
+  const contar = (s, ch) => s.split(ch).length - 1;
+  for (;;) {
+    const antes = u;
+    u = u.replace(/[.,;:!?]+$/, '');
+    while (u.endsWith(')') && contar(u, ')') > contar(u, '(')) u = u.slice(0, -1);
+    if (u === antes) break;
+  }
+  return u;
+}
+
+/**
+ * Links soltos no texto do objetivo. É o que vira fonte monitorada.
+ *
+ * ')' NÃO pode ficar fora da varredura: a busca do Google Notícias usa
+ * parênteses no próprio endereço (`q=(profecia OR profeta)+when:3d`). O link
+ * era cortado no primeiro ')' e o dot nascia monitorando uma URL quebrada —
+ * sem item nenhum para ler, sem matéria e sem nada agendado.
+ */
 function extrairUrls(texto) {
-  const achados = String(texto || '').match(/https?:\/\/[^\s<>"')]+/gi) || [];
-  const limpos = achados.map((u) => u.replace(/[.,;:]+$/, '').trim());
+  const achados = String(texto || '').match(/https?:\/\/[^\s<>"']+/gi) || [];
+  const limpos = achados.map(limparFimDaUrl).filter((u) => u.length > 'https://'.length);
   return [...new Set(limpos)];
 }
 
@@ -2498,6 +2523,40 @@ async function atualizar(userId, dotId, { nome, provedor, objetivo, facebookPage
       const { fonteIds, problemas } = await cadastrarFontes(dot, plano);
       if (fonteIds.length) dados.fonte_ids = JSON.stringify(fonteIds);
       resumoFontes = { fontes: fonteIds.length, problemas, plano };
+    } else {
+      // Mesmo pedido, mas os links guardados podem estar errados: uma versão
+      // anterior cortava o endereço no primeiro ')' e a busca do Google
+      // Notícias virava um endereço quebrado, sem item nenhum para ler. Sem
+      // isto, salvar de novo não arrumava nada e só mudar o texto resolvia.
+      // Reconfere pelos links do texto, sem gastar a IA.
+      const anterior = dados.plano ? JSON.parse(dados.plano) : parseJson(dot.plano, {});
+      const removidas = new Set(Array.isArray(anterior.removidas) ? anterior.removidas : []);
+      const doTexto = extrairUrls(texto).filter((u) => !removidas.has(`url|${chaveUrl(u)}`));
+      const guardados = (anterior.fontes || [])
+        .filter((f) => f && f.via === 'link' && f.url)
+        .map((f) => chaveUrl(f.url));
+      const iguais =
+        doTexto.length === guardados.length &&
+        doTexto.every((u) => guardados.includes(chaveUrl(u)));
+
+      if (!iguais) {
+        const vistas = new Set();
+        const fontes = [
+          ...fontesDosLinks(doTexto),
+          ...(anterior.fontes || []).filter((f) => f && f.via !== 'link'),
+          ...(anterior.manuais?.fontes || []),
+        ].filter((f) => {
+          const chave = f.url ? `url|${chaveUrl(f.url)}` : chaveFonte(f);
+          if (vistas.has(chave) || (f.url && removidas.has(`url|${chaveUrl(f.url)}`))) return false;
+          vistas.add(chave);
+          return true;
+        });
+        const plano = { ...anterior, fontes };
+        dados.plano = JSON.stringify(plano);
+        const { fonteIds, problemas } = await cadastrarFontes(dot, plano);
+        if (fonteIds.length) dados.fonte_ids = JSON.stringify(fonteIds);
+        resumoFontes = { fontes: fonteIds.length, problemas, plano };
+      }
     }
   }
 

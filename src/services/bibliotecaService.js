@@ -1124,6 +1124,22 @@ async function coletarViaSite(fonte) {
     erros.push(`rss: ${err.message}`);
   }
 
+  // Fonte que é o próprio feed: ele é a lista, e ponto. Os resgates abaixo
+  // procuram notícias DO SITE da URL — num endereço do Google Notícias isso
+  // viraria "site:news.google.com", que não devolve a busca pedida e enche a
+  // fonte de resultado alheio.
+  if (pareceFeed(fonte.url)) {
+    const itens = dedupeItens(collected, limite);
+    if (!itens.length) {
+      const err = new Error(
+        `O feed não devolveu notícias. ${erros[0] || 'Confira o endereço do feed.'}`
+      );
+      err.status = 422;
+      throw err;
+    }
+    return itens;
+  }
+
   if (collected.length < limite) {
     try {
       collected.push(...(await coletarSiteGoogleNews(fonte.url, '7d')));
@@ -1159,16 +1175,48 @@ async function coletarViaSite(fonte) {
   return itens;
 }
 
+/**
+ * Baixa um feed. Feed do Google passa pelo limitador: fora dele, cada fonte
+ * do dot batia direto no Google e trazia de volta o HTTP 503 em rajada.
+ */
+async function baixarFeed(feed) {
+  const pedir = () =>
+    axios.get(feed, {
+      timeout: 15000,
+      headers: { Accept: 'application/rss+xml, application/xml, text/xml, */*' },
+      validateStatus: (s) => s >= 200 && s < 400,
+    });
+
+  if (!/(?:^|\.)news\.google\.com$/i.test(hostDeUrl(feed))) return pedir();
+
+  const googleNews = require('./googleNewsLimiter');
+  if (googleNews.emPausa?.()) throw googleNews.erroDePausa();
+  return googleNews.executar(async () => {
+    const resposta = await pedir();
+    // O limitador só reconhece bloqueio (429/503) quando a tarefa falha.
+    if (resposta.status >= 400) {
+      throw Object.assign(new Error(`Google Notícias respondeu ${resposta.status}`), {
+        response: { status: resposta.status },
+      });
+    }
+    return resposta;
+  });
+}
+
+function hostDeUrl(url) {
+  try {
+    return new URL(String(url || '')).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
 async function coletarViaRss(pageUrl) {
   const feeds = await descobrirFeedsRss(pageUrl);
   const itens = [];
   for (const feed of feeds.slice(0, 3)) {
     try {
-      const { data } = await axios.get(feed, {
-        timeout: 15000,
-        headers: { Accept: 'application/rss+xml, application/xml, text/xml, */*' },
-        validateStatus: (s) => s >= 200 && s < 400,
-      });
+      const { data } = await baixarFeed(feed);
       const xml = String(data || '');
       const blocks = xml.match(/<item[\s\S]*?<\/item>/gi) || xml.match(/<entry[\s\S]*?<\/entry>/gi) || [];
       for (const block of blocks.slice(0, SCAN_LIMIT)) {
@@ -1210,7 +1258,30 @@ async function coletarViaRss(pageUrl) {
   return itens;
 }
 
+/**
+ * O endereço JÁ é um feed?
+ *
+ * Buscas do Google Notícias (`news.google.com/rss/search?q=…`) e feeds de
+ * portal entram como fonte assim, prontos. `descobrirFeedsRss` tratava tudo
+ * como home e só adivinhava `/feed`, `/rss`…: o próprio endereço nunca era
+ * lido, a fonte não devolvia item nenhum e o dot não tinha o que escrever —
+ * nem, portanto, o que agendar.
+ */
+function pareceFeed(url) {
+  try {
+    const u = new URL(String(url || ''));
+    const alvo = `${u.pathname}${u.search}`.toLowerCase();
+    return /(?:^|[/.?=&])(?:rss|atom|feed)(?:[/.?=&]|$)|\.xml(?:$|[?&])/.test(alvo);
+  } catch {
+    return false;
+  }
+}
+
 async function descobrirFeedsRss(pageUrl) {
+  // Feed na mão: ler ele mesmo. Baixar o XML como HTML para procurar
+  // <link rel=alternate> não acharia nada.
+  if (pareceFeed(pageUrl)) return [String(pageUrl)];
+
   const feeds = new Set();
   try {
     const base = new URL(pageUrl);
@@ -3130,6 +3201,8 @@ async function tickAutopilot() {
 
 module.exports = {
   detectarPlataforma,
+  pareceFeed,
+  descobrirFeedsRss,
   criarFonte,
   criarFonteBusca,
   urlDaBusca,
