@@ -9,28 +9,21 @@ const DOTS = fs.readFileSync('src/services/dotsService.js', 'utf8');
 
 // ── A fila não pode ficar atrás da varredura ────────────────────────────────
 
-test('cada etapa do tick tem o seu próprio try, e a fila vem primeiro', () => {
+test('a fila das agendadas não divide a espera com os monitores', () => {
   // tickMonitores e tickFilaJobs dividiam o mesmo try e a mesma espera:
   // monitor lento (varredura + IA) ou que estourasse levava embora a
   // publicação das agendadas daquele minuto, sem erro algum na matéria.
-  assert.match(SERVER, /const etapas = \[/);
-  const etapas = SERVER.slice(SERVER.indexOf('const etapas = ['), SERVER.indexOf('const tick = async'));
-  const nomes = [...etapas.matchAll(/\['([a-z-]+)',/g)].map((m) => m[1]);
-  assert.equal(nomes[0], 'fila-agendadas', 'publicar na hora marcada vem antes de tudo');
-  assert.ok(nomes.includes('monitores'));
-  assert.ok(nomes.includes('dots'));
-  assert.ok(nomes.indexOf('monitores') > nomes.indexOf('fila-agendadas'));
-
-  assert.match(
-    SERVER,
-    /for \(const \[nome, executar\] of etapas\) \{\s*\n\s*try \{\s*\n\s*await executar\(\);\s*\n\s*\} catch \(err\) \{/,
-    'uma etapa que falha não pode derrubar as seguintes'
-  );
+  //
+  // O resto desta separação (trava de reentrada, rápidas × lentas) está em
+  // tests/tickNaoEmpilha.test.js.
   assert.doesNotMatch(
     SERVER,
     /await materiaIaService\.tickMonitores\(\);\s*\n\s*await materiaIaService\.tickFilaJobs\(\);/,
     'as duas no mesmo try era o problema'
   );
+  const rapidas = SERVER.slice(SERVER.indexOf('const rapidas = ['), SERVER.indexOf('const lentas = ['));
+  assert.ok(rapidas.includes("'fila-agendadas'"), 'publicar na hora marcada é etapa rápida');
+  assert.ok(!rapidas.includes("'monitores'"), 'monitor não pode atrasar a fila');
 });
 
 // ── Foto sem imagem não derruba mais a agendada ─────────────────────────────

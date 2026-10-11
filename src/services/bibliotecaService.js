@@ -2603,6 +2603,23 @@ async function tickFontes() {
   const due = await BibliotecaFontes.findDue();
   const userIds = new Set();
   for (const fonte of due) {
+    // Reserva a fonte ANTES de ler: empurra `proxima_execucao` num UPDATE
+    // condicional, então quem não afetar linha desiste.
+    //
+    // Sem isto, varredura que passa de um minuto era varrida de novo pelo tick
+    // seguinte: `findDue()` devolvia a mesma fonte, porque o horário só era
+    // gravado no fim. Com página do Facebook levando ~7s e 11 MB de HTML cada,
+    // os ticks se empilhavam, a mesma página era raspada várias vezes por
+    // minuto e o resto da fila (Dots, agendadas) ficava sem vez.
+    const reservada = await db('biblioteca_fontes')
+      .where({ id: fonte.id })
+      .andWhere((qb) => {
+        qb.whereNull('proxima_execucao').orWhere('proxima_execucao', '<=', db.fn.now());
+      })
+      .update({ proxima_execucao: nextRun(fonte.intervalo_minutos) })
+      .catch(() => 0);
+    if (!reservada) continue;
+
     if (fonte.user_id) userIds.add(Number(fonte.user_id));
     try {
       await escanearFonte(fonte, { silentFirst: true });

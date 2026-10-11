@@ -110,33 +110,58 @@ app.listen(env.port, async () => {
   try {
     const materiaIaService = require('./services/materiaIaService');
     const bibliotecaService = require('./services/bibliotecaService');
-    // Cada etapa isolada e com nome. Antes `tickMonitores` e `tickFilaJobs`
-    // dividiam o mesmo try e a mesma espera: monitor lento (varredura, IA) ou
-    // que estourasse levava embora a publicação das agendadas do minuto — era
-    // o agendamento "que não funciona" sem erro nenhum na matéria.
+    // Cada etapa isolada, com nome e com trava de reentrada.
     //
-    // A fila vem primeiro justamente por isso: publicar na hora marcada não
-    // pode ficar atrás de varredura que leva minutos.
-    const etapas = [
+    // Antes tudo dividia o mesmo try e a mesma espera. Duas consequências:
+    //
+    // 1) Etapa que estourasse levava embora as seguintes — monitor com erro
+    //    cancelava a publicação das agendadas daquele minuto, sem deixar
+    //    rastro na matéria. Era o agendamento "que não funciona".
+    // 2) A varredura das fontes passa de 8 min quando as sessões do Facebook
+    //    e do Instagram caem (cada página: ~7s e 11 MB de HTML, todas
+    //    falhando). O tick de 60s começava outro por cima, e a fila do Dots
+    //    e das agendadas quase nunca chegava a rodar.
+    //
+    // Agora: publicar e escrever (rápido) andam em paralelo com varrer
+    // (lento), e etapa que ainda está rodando não é começada de novo.
+    const rodando = new Set();
+    const correr = async (nome, executar) => {
+      if (rodando.has(nome)) {
+        console.warn(`[tick ${nome}] ainda rodando desde o tick anterior — pulei esta volta`);
+        return;
+      }
+      rodando.add(nome);
+      try {
+        await executar();
+      } catch (err) {
+        console.error(`[tick ${nome}]`, err.message);
+      } finally {
+        rodando.delete(nome);
+      }
+    };
+
+    // Sai na hora marcada: nada aqui pode esperar por varredura.
+    const rapidas = [
       ['fila-agendadas', () => materiaIaService.tickFilaJobs()],
+      ['dots', () => require('./services/dotsService').tick()],
+      ['agenda-auto', () => require('./services/bibliotecaAgendaService').tickAgendaPre()],
       [
         'biblioteca-manual',
         () => require('./services/bibliotecaReelAutopilotService').publicarPendentesManuais(3),
       ],
+    ];
+    // Vai no ritmo que der: rede, scraping e IA.
+    const lentas = [
       ['monitores', () => materiaIaService.tickMonitores()],
       ['biblioteca-fontes', () => bibliotecaService.tickFontes()],
       ['biblioteca-autopilot', () => bibliotecaService.tickAutopilot()],
-      ['dots', () => require('./services/dotsService').tick()],
-      ['agenda-auto', () => require('./services/bibliotecaAgendaService').tickAgendaPre()],
     ];
-    const tick = async () => {
-      for (const [nome, executar] of etapas) {
-        try {
-          await executar();
-        } catch (err) {
-          console.error(`[tick ${nome}]`, err.message);
-        }
-      }
+    const emSequencia = async (etapas) => {
+      for (const [nome, executar] of etapas) await correr(nome, executar);
+    };
+    const tick = () => {
+      void emSequencia(rapidas);
+      void emSequencia(lentas);
     };
     setInterval(tick, 60_000);
     setTimeout(tick, 15_000);
