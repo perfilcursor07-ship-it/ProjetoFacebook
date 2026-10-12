@@ -1,11 +1,23 @@
 const db = require('../config/db');
 
-/** VARCHAR(300) em ai_matters.titulo — corta antes do MySQL estourar. */
+/**
+ * VARCHAR(300) em ai_matters.titulo — corta antes do MySQL estourar.
+ *
+ * Também tira a marcação de bloco do Claude web, que já saiu publicada colada
+ * no título ("<WritingBlock id="63928" variant="document">Pastor itinerante
+ * é preso…"). A limpeza certa é na resposta da IA, em chatgptMarkup; aqui é a
+ * última trava, para nenhum caminho de escrita furar.
+ */
+function limparTitulo(valor) {
+  const { removerBlocosDoClaude } = require('../services/chatgptMarkup');
+  return removerBlocosDoClaude(String(valor)).replace(/\s+/g, ' ').trim().slice(0, 300);
+}
+
 function prepare(data) {
   if (!data || typeof data !== 'object') return data;
   const out = { ...data };
-  if (out.titulo != null) out.titulo = String(out.titulo).replace(/\s+/g, ' ').trim().slice(0, 300);
-  if (out.titulo_ia != null) out.titulo_ia = String(out.titulo_ia).replace(/\s+/g, ' ').trim().slice(0, 300);
+  if (out.titulo != null) out.titulo = limparTitulo(out.titulo);
+  if (out.titulo_ia != null) out.titulo_ia = limparTitulo(out.titulo_ia);
   if (out.fonte_titulo != null) {
     out.fonte_titulo = String(out.fonte_titulo).replace(/\s+/g, ' ').trim().slice(0, 500);
   }
