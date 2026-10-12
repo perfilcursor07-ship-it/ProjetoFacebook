@@ -672,6 +672,9 @@
     falhou: { icone: '⚠️', texto: 'A IA falhou', classe: 'd-sit--erro', pode: true },
     materia: { icone: '✅', texto: 'Virou matéria', classe: 'd-sit--ok', pode: false },
     fora_do_assunto: { icone: '🚫', texto: 'Fora do assunto', classe: 'd-sit--fora', pode: false },
+    // Notícia fora da janela de frescor. "pode: true" porque o editor ainda
+    // manda escrever na mão se quiser — o que o dot não faz é pegar sozinho.
+    velho: { icone: '🗓️', texto: 'Notícia antiga', classe: 'd-sit--fora', pode: true },
     pouco_texto: { icone: '✂️', texto: 'Sem texto suficiente', classe: 'd-sit--fora', pode: false },
     descartado: { icone: '—', texto: 'Descartado', classe: 'd-sit--fora', pode: false },
     escrevendo: { icone: '✍️', texto: 'Escrevendo agora…', classe: 'd-sit--fila', pode: false },
@@ -681,6 +684,7 @@
     { id: 'assunto', texto: 'Do assunto', ok: (p) => p.situacao !== 'fora_do_assunto' },
     { id: 'materia', texto: 'Viraram matéria', ok: (p) => p.situacao === 'materia' },
     { id: 'fora', texto: 'Fora do assunto', ok: (p) => p.situacao === 'fora_do_assunto' },
+    { id: 'velho', texto: 'Antigas', ok: (p) => p.situacao === 'velho' },
   ];
   const PROXIMAS = ['proximo', 'repetido', 'falhou'];
 
@@ -751,9 +755,16 @@
       ${r?.agendadas || r?.problemas_24h ? `<p class="d-funil-extra">${r.agendadas ? `📅 ${r.agendadas} agendada(s)` : ''}${r.agendadas && r.problemas_24h ? ' · ' : ''}${r.problemas_24h ? `<span class="d-txt-erro">⚠️ ${r.problemas_24h} problema(s) nas últimas 24 h</span>` : ''}</p>` : ''}`;
   }
 
+  /** Janela de frescor do servidor (horas). Atualizada ao carregar o painel. */
+  let janelaFrescor = 48;
+
   function linhaPost(p) {
     const sit = SITUACAO_POST[p.situacao] || SITUACAO_POST.descartado;
-    const detalheSit = p.situacao === 'falhou' && p.volta_em ? `${sit.texto} · tenta de novo às ${horaCurta(p.volta_em)}` : sit.texto;
+    const detalheSit = p.situacao === 'falhou' && p.volta_em
+      ? `${sit.texto} · tenta de novo às ${horaCurta(p.volta_em)}`
+      : p.situacao === 'velho'
+        ? `${sit.texto} · mais de ${janelaFrescor}h, o dot não pega sozinho`
+        : sit.texto;
     const abrir = p.matter_id ? `/materias-ia/${p.matter_id}` : p.url;
     const acao = p.matter_id
       ? `<a class="d-btn d-btn--neutro" href="/materias-ia/${p.matter_id}" target="_blank" rel="noopener">Ver matéria</a>`
@@ -1220,6 +1231,7 @@
     try {
       const dados = await api(`/api/dots/${dotId}`);
       logs.set(String(dotId), dados.execucoes || []);
+      if (Number(dados?.horas_frescas) > 0) janelaFrescor = Number(dados.horas_frescas);
       detalhes.set(String(dotId), { ...dados, em: Date.now() });
     } catch {
       logs.set(String(dotId), logs.get(String(dotId)) || []);

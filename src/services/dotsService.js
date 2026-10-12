@@ -44,6 +44,45 @@ const TRAVA_CICLO_MS = 30 * 60 * 1000;
 const DIAS_HISTORICO_REPETIDO = Math.max(1, Number(process.env.DOTS_DIAS_REPETIDO) || 7);
 const LIMITE_ESCRITA_MS = 15 * 60 * 1000;
 
+/**
+ * Idade máxima da notícia que o dot aceita escrever.
+ *
+ * As buscas do Google Notícias trazem até `when:7d`, e a ordenação por
+ * `viral_score` punha a notícia de 6 dias na frente da de hoje: o dot ficava
+ * escrevendo matéria velha. Jornal não republica a semana passada.
+ *
+ * Vale pela data de publicação; sem ela, pela data em que o post foi lido —
+ * fonte que não informa data (muita página de rede social) não some da fila,
+ * só vale pelas 48h desde a leitura.
+ *
+ * Ajustável no .env: DOTS_HORAS_FRESCAS.
+ */
+const HORAS_FRESCAS = Math.min(720, Math.max(1, Number(process.env.DOTS_HORAS_FRESCAS) || 48));
+
+/** Limite de "notícia recente" agora. */
+function limiteDeFrescor(agora = Date.now()) {
+  return new Date(agora - HORAS_FRESCAS * 3_600_000);
+}
+
+/** Data que vale para a idade do post: a de publicação e, sem ela, a da leitura. */
+function dataDoPost(post) {
+  const bruta = post?.publicado_em || post?.created_at || null;
+  const t = bruta ? new Date(bruta).getTime() : NaN;
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * O post é recente o bastante para virar matéria?
+ *
+ * Post sem data nenhuma passa: não há como afirmar que é velho, e barrá-lo
+ * esvaziaria a fila de fontes que não informam data.
+ */
+function postEhRecente(post, agora = Date.now()) {
+  const t = dataDoPost(post);
+  if (t === null) return true;
+  return t >= agora - HORAS_FRESCAS * 3_600_000;
+}
+
 let rodando = false;
 
 function corta(texto, max) {
@@ -959,9 +998,13 @@ async function candidatosDoDot(dot) {
     .whereIn('p.fonte_id', fonteIds)
     .whereNull('p.matter_id')
     .whereIn('p.status', ['novo', 'visto'])
+    // Notícia velha não entra nem na lista de candidatos. Antes a ordenação
+    // por viral_score punha a de 6 dias na frente da de hoje.
+    .whereRaw('COALESCE(p.publicado_em, p.created_at) >= ?', [limiteDeFrescor()])
     .modify((q) => {
       if (falharam.length) q.whereNotIn('p.url', falharam);
     })
+    // Dentro da janela, o critério de "melhor post" continua o mesmo.
     .orderByRaw('COALESCE(p.viral_score, 0) DESC, COALESCE(p.publicado_em, p.created_at) DESC')
     .limit(CANDIDATOS_POR_CICLO)
     .select(
@@ -984,6 +1027,26 @@ async function candidatosDoDot(dot) {
   const uteis = linhas
     .filter((l) => /^https?:\/\//i.test(String(l.url || '')))
     .filter(postTemMaterial);
+
+  // Fila cheia e nada para escrever: quase sempre é a janela de frescor. Sem
+  // este aviso o editor via "26 posts esperando" e nenhuma matéria saindo.
+  if (!uteis.length) {
+    const [{ total = 0 } = {}] = await db('biblioteca_posts')
+      .where('user_id', dot.user_id)
+      .whereIn('fonte_id', fonteIds)
+      .whereNull('matter_id')
+      .whereIn('status', ['novo', 'visto'])
+      .whereRaw('COALESCE(publicado_em, created_at) < ?', [limiteDeFrescor()])
+      .count({ total: '*' })
+      .catch(() => [{ total: 0 }]);
+    if (Number(total) > 0) {
+      await registrarLog(dot, 'ignorou', {
+        detalhe:
+          `${total} post(s) na fila têm mais de ${HORAS_FRESCAS}h — notícia velha não vira matéria. ` +
+          'Espere a próxima varredura trazer notícia nova.',
+      });
+    }
+  }
 
   // O editor pode pedir um recorte ("só o que falar de Flávio Bolsonaro").
   // Vale para as PÁGINAS acompanhadas: notícia de pesquisa já é do assunto
@@ -2354,7 +2417,10 @@ async function detalhe(userId, dotId) {
   }
   const elegiveis = postsLidos.filter((p) =>
     !p.matter_id && ['novo', 'visto'].includes(p.status) &&
-    !foraDasPalavras(p) && !foraDoTema(p) && postTemMaterial(p) && !falhouEm.has(p.url)
+    !foraDasPalavras(p) && !foraDoTema(p) && postTemMaterial(p) && !falhouEm.has(p.url) &&
+    // Mesma janela da volta: o painel prometia "sai na próxima volta" para
+    // notícia de 6 dias que o ciclo nunca ia escrever.
+    postEhRecente(p)
   );
   let novosIds = new Set(elegiveis.map((p) => p.id));
   try {
@@ -2372,6 +2438,7 @@ async function detalhe(userId, dotId) {
     let voltaEm = null;
     if (p.matter_id) situacao = 'materia';
     else if (foraDasPalavras(p) || foraDoTema(p)) situacao = 'fora_do_assunto';
+    else if (!postEhRecente(p)) situacao = 'velho';
     else if (!postTemMaterial(p)) situacao = 'pouco_texto';
     else if (!['novo', 'visto'].includes(p.status)) situacao = p.status === 'gerado_texto' ? 'escrevendo' : 'descartado';
     else if (falhouEm.has(p.url)) {
@@ -2406,12 +2473,15 @@ async function detalhe(userId, dotId) {
     agendadas: contar((m) => m.status === 'agendado'),
     publicadas: contar((m) => m.status === 'publicado'),
     rascunhos: contar((m) => !['agendado', 'publicado'].includes(m.status)),
+    velhos: posts.filter((p) => p.situacao === 'velho').length,
     problemas_24h: execucoes.filter((e) => e.acao === 'erro' && new Date(e.created_at).getTime() >= desde24h).length,
   };
 
   return {
     ...(await listar(userId)).find((d) => d.id === Number(dotId)),
     resumo,
+    // A tela mostra a janela de frescor no rótulo, em vez de fixar "48h".
+    horas_frescas: HORAS_FRESCAS,
     fontes_lista: fontes,
     // Citadas pelo nome e não achadas: a tela pede o link.
     fontes_nao_achadas: (Array.isArray(plano.fontes) ? plano.fontes : [])
@@ -2829,6 +2899,9 @@ module.exports = {
   filtrarJaPublicados,
   filtrarPorPalavras,
   DIAS_HISTORICO_REPETIDO,
+  HORAS_FRESCAS,
+  postEhRecente,
+  limiteDeFrescor,
   reservarCiclo,
   dentroDaJanela,
   normalizarJornada,
