@@ -8,6 +8,8 @@ const GERADORES = Object.freeze({
   chatgpt: 'ChatGPT',
   grok: 'Grok',
   gemini: 'Google Gemini',
+  // API do Hugging Face (sem navegador). Precisa de HF_TOKEN no .env.
+  qwen: 'Qwen-Image 2.1 Viggle Turbo (Hugging Face)',
 });
 const PADRAO = 'chatgpt';
 
@@ -26,6 +28,10 @@ function servico(id) {
   if (id === 'chatgpt') {
     const chatgpt = require('./chatgptImageService');
     return { gerar: (args) => chatgpt.gerarImagem(args), recuperar: (args) => chatgpt.recuperarImagem(args) };
+  }
+  if (id === 'qwen') {
+    const qwen = require('./qwenImageService');
+    return { gerar: (args) => qwen.gerarImagem(args), recuperar: (args) => qwen.recuperarImagem(args) };
   }
   const web = require('./imagemWebService');
   return { gerar: (args) => web.gerarImagem(id, args), recuperar: (args) => web.recuperarImagem(id, args) };
