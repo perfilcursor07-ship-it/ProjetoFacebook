@@ -52,8 +52,13 @@ test('o resumo mostra o recorte e o estilo pedidos', () => {
 
 test('o estilo pedido chega a quem escreve', () => {
   // Antes ficava guardado no plano e nunca influenciava a escrita.
+  // O estilo sai do plano em `instrucaoDeEscrita`, que junta o pedido do
+  // editor com a receita do que bomba (quando o dot pede). O pedido vem
+  // primeiro: é explícito, enquanto a receita é inferida.
   const dots = fs.readFileSync('src/services/dotsService.js', 'utf8');
-  assert.match(dots, /instrucaoEditorial: parseJson\(dot\.plano, \{\}\)\.estilo/);
+  assert.match(dots, /const doEditor = String\(parseJson\(dot\.plano, \{\}\)\.estilo \|\| ''\)\.trim\(\);/);
+  assert.match(dots, /const instrucaoEditorial = await instrucaoDeEscrita\(dot\);/);
+  assert.match(dots, /^\s+instrucaoEditorial,$/m);
 
   const porChat = fs.readFileSync('src/services/materiaPorChat.js', 'utf8');
   assert.match(porChat, /instrucaoEditorial = null/, 'precisa aceitar');

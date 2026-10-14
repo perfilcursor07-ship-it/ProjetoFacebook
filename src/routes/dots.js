@@ -21,6 +21,7 @@ function configuracaoDoCorpo(body = {}) {
     limite_dia: body.limite_dia,
     modo_imagem: body.modo_imagem,
     gerar_imagem_com_texto: body.gerar_imagem_com_texto === true,
+    usar_estilo_viral: body.usar_estilo_viral === true,
   };
 }
 
@@ -61,7 +62,13 @@ router.patch('/:id', (req, res, next) => {
   const body = req.body || {};
   // Só repassa o que veio: campo ausente fica como está no dot.
   const jornada = Object.fromEntries(
-    Object.entries(configuracaoDoCorpo(body)).filter(([campo, valor]) => campo !== 'gerar_imagem_com_texto' && valor !== undefined)
+    Object.entries(configuracaoDoCorpo(body)).filter(([campo, valor]) => {
+      if (campo === 'gerar_imagem_com_texto') return false;
+      // Caixa booleana: só vale se veio no corpo. Comparar com true
+      // transformaria ausência em "desmarcado" e apagaria a escolha.
+      if (campo === 'usar_estilo_viral') return body.usar_estilo_viral !== undefined;
+      return valor !== undefined;
+    })
   );
   responder(res, next, dotsService.atualizar(req.session.userId, Number(req.params.id), {
     ...(body.nome !== undefined ? { nome: body.nome } : {}),
@@ -71,6 +78,14 @@ router.patch('/:id', (req, res, next) => {
     ...jornada,
   }));
 });
+
+/** A receita do que bomba nesta página, para a tela mostrar. */
+router.get('/:id/estilo-viral', (req, res, next) =>
+  responder(res, next, dotsService.estiloViralDoDot(req.session.userId, Number(req.params.id))));
+
+/** Refaz a receita agora (o editor acabou de publicar algo que bombou). */
+router.post('/:id/estilo-viral/refazer', (req, res, next) =>
+  responder(res, next, dotsService.refazerEstiloViral(req.session.userId, Number(req.params.id))));
 
 router.get('/:id', (req, res, next) =>
   responder(res, next, dotsService.detalhe(req.session.userId, Number(req.params.id))));

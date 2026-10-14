@@ -49,6 +49,8 @@
     saidaRotulo: $('dot-saida-rotulo'),
     limite: $('dot-limite'),
     imagemAjuda: $('dot-imagem-ajuda'),
+    estiloViral: $('dot-estilo-viral'),
+    estiloViralReceita: $('dot-estilo-viral-receita'),
   };
   if (!el.shell || !el.lista) return;
 
@@ -203,6 +205,7 @@
       saida_minutos: Number(el.saidaMin.value) || 15,
       limite_dia: Number(el.limite.value) || 20,
       modo_imagem: imagemEscolhida(),
+      usar_estilo_viral: Boolean(el.estiloViral?.checked),
     };
   }
 
@@ -1594,6 +1597,59 @@
     if (radio) radio.checked = true;
   }
 
+  /**
+   * Mostra a receita aprendida do desempenho: as regras e em cima de quantas
+   * matérias elas foram tiradas. Receita que o editor não pode conferir é
+   * palpite com cara de ciência — por isso a amostra aparece.
+   */
+  async function mostrarReceitaViral(dotId) {
+    const caixa = el.estiloViralReceita;
+    if (!caixa || !dotId) return;
+    caixa.hidden = false;
+    caixa.textContent = 'Carregando o que já foi aprendido…';
+    try {
+      const r = await api(`/api/dots/${dotId}/estilo-viral`);
+      caixa.replaceChildren();
+      if (!r.temPagina) {
+        caixa.textContent = 'Escolha a página em “Publicar em” para eu poder olhar o desempenho dela.';
+        return;
+      }
+      if (!r.regras?.length) {
+        caixa.textContent = r.ultimoErro
+          || `Ainda não há receita. Preciso de ${r.minimoMaterias} matérias com engajamento nos últimos ${r.diasAnalisados} dias.`;
+        return;
+      }
+      const lista = document.createElement('ul');
+      lista.className = 'dv-receita';
+      for (const regra of r.regras) {
+        const li = document.createElement('li');
+        li.textContent = regra;
+        lista.appendChild(li);
+      }
+      const rodape = document.createElement('p');
+      rodape.className = 'dv-receita-base';
+      rodape.textContent = `Tirado de ${r.totalMaterias} matéria(s) que mais engajaram`
+        + (r.mediaScore ? ` (média ${r.mediaScore} pts)` : '') + '.';
+      const refazer = document.createElement('button');
+      refazer.type = 'button';
+      refazer.className = 'd-btn d-btn--neutro';
+      refazer.textContent = 'Refazer agora';
+      refazer.addEventListener('click', async () => {
+        refazer.disabled = true;
+        refazer.textContent = 'Analisando…';
+        try {
+          await api(`/api/dots/${dotId}/estilo-viral/refazer`, { method: 'POST' });
+          await mostrarReceitaViral(dotId);
+        } catch (err) {
+          caixa.textContent = err.message;
+        }
+      });
+      caixa.append(lista, rodape, refazer);
+    } catch (err) {
+      caixa.textContent = err.message;
+    }
+  }
+
   /** Põe o valor no select; se a opção não existir (valor antigo), cria. */
   function escolherNoSelect(select, valor, texto) {
     if (!select) return;
@@ -1607,6 +1663,8 @@
     modal.pedido.value = dot.objetivo || '';
     marcarRadio('dot-destino', dot.destino || 'rascunho');
     marcarRadio('dot-imagem', dot.modo_imagem || 'original');
+    if (el.estiloViral) el.estiloViral.checked = Boolean(dot.usar_estilo_viral);
+    mostrarReceitaViral(dot.id);
     escolherNoSelect(el.saidaQtd, dot.saida_quantidade || 1);
     escolherNoSelect(el.saidaMin, dot.saida_minutos || 15, `${dot.saida_minutos} min`);
     escolherNoSelect(el.pagina, dot.facebook_page_id || '', dot.pagina || `Página ${dot.facebook_page_id}`);
@@ -1631,6 +1689,8 @@
     modal.pedido.value = '';
     marcarRadio('dot-destino', 'rascunho');
     marcarRadio('dot-imagem', 'original');
+    if (el.estiloViral) el.estiloViral.checked = false;
+    if (el.estiloViralReceita) el.estiloViralReceita.hidden = true;
     el.saidaQtd.value = '1';
     el.saidaMin.value = '15';
     for (const b of el.dias.querySelectorAll('.d-dia')) {

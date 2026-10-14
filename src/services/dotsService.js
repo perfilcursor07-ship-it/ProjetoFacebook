@@ -100,8 +100,22 @@ function parseJson(raw, padrao) {
   }
 }
 
+/**
+ * Dia de hoje no fuso do editor (AAAA-MM-DD).
+ *
+ * Com `toISOString()` o dia virava à meia-noite UTC, ou seja, às 21h em
+ * Araguaína: o teto diário zerava três horas antes e o dot podia escrever o
+ * dobro do limite num mesmo dia de calendário — 20 até as 21h e mais 20 das
+ * 21h à meia-noite. A jornada (dias e horário) já lia a hora neste fuso; só a
+ * contagem do dia tinha ficado para trás.
+ */
 function hoje() {
-  return new Date().toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: FUSO,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 }
 
 function erro(mensagem, status = 400) {
@@ -300,6 +314,9 @@ function normalizarJornada(entrada = {}) {
     saida_quantidade: destino === 'rascunho' ? 1 : inteiro(entrada.saida_quantidade ?? entrada.saidaQuantidade, 1, 10, 1),
     saida_minutos: destino === 'rascunho' ? 15 : inteiro(entrada.saida_minutos ?? entrada.saidaMinutos, 5, 1440, 15),
     limite_dia: inteiro(entrada.limite_dia ?? entrada.limiteDia, 1, 200, 20),
+    // Escrever no estilo do que mais engajou nesta página. Desligado por
+    // padrão: ligar sozinho mudaria a voz de páginas já em produção.
+    usar_estilo_viral: Boolean(entrada.usar_estilo_viral ?? entrada.usarEstiloViral),
     // Três escolhas da tela: a foto da notícia, sempre uma imagem de IA, ou
     // limpar com IA só a foto que tiver texto embutido. A caixa antiga
     // (gerar_imagem_com_texto) continua valendo como a terceira.
@@ -865,6 +882,7 @@ async function criar(userId, { objetivo, nome = null, facebookPageId = null, pro
     destino: config.destino,
     materias_por_volta: config.saida_quantidade,
     modo_imagem: config.modo_imagem,
+    usar_estilo_viral: config.usar_estilo_viral,
     agendar_minutos: config.destino === 'agendar' ? config.saida_minutos : null,
     dias_semana: config.dias_semana,
     hora_inicio: config.hora_inicio,
@@ -1483,6 +1501,33 @@ function postTemMaterial(post) {
   return require('./furosSociais').conteudoSuficiente(post);
 }
 
+/**
+ * O que orienta a escrita desta volta: o estilo que o editor pediu no texto
+ * do dot e, se a caixa estiver marcada, a receita do que funciona na página.
+ *
+ * O pedido do editor vem primeiro de propósito: ele é explícito, a receita é
+ * inferida. Aprendizado nunca passa por cima de ordem direta.
+ */
+async function instrucaoDeEscrita(dot) {
+  const doEditor = String(parseJson(dot.plano, {}).estilo || '').trim();
+  if (!dot.usar_estilo_viral) return doEditor || null;
+
+  try {
+    const viral = require('./aprendizadoViralService');
+    const receita = await viral.receitaParaEscrever({
+      userId: dot.user_id,
+      pageId: dot.facebook_page_id || null,
+    });
+    const trecho = viral.receitaParaPrompt(receita);
+    if (!trecho) return doEditor || null;
+    return [doEditor, trecho].filter(Boolean).join('\n\n');
+  } catch (err) {
+    // Aprendizado é extra: não derruba a escrita da matéria.
+    console.warn(`[dots #${dot.id}] receita do que bomba: ${err.message}`);
+    return doEditor || null;
+  }
+}
+
 /** Posts que falharam neste dot nas últimas horas (não voltam já na próxima volta). */
 async function urlsQueFalharamRecentemente(dot, horas = 2) {
   return db(LOG)
@@ -1533,6 +1578,8 @@ async function escrever(dot, post) {
   }
   // Link da reportagem original (não o do Google Notícias).
   const urlLeitura = await urlParaEscrever(post);
+  // Resolvido antes: a tarefa abaixo roda dentro de um callback síncrono.
+  const instrucaoEditorial = await instrucaoDeEscrita(dot);
 
   // comProvedor fixa a IA só nesta volta; sem escolha, roteamento normal.
   const tarefa = comProvedor(escolhido, () => escreverPeloChat(
@@ -1549,7 +1596,8 @@ async function escrever(dot, post) {
       origem: 'dots',
       // "título mais polêmico", "texto curto" — o pedido do editor chegava a
       // ser interpretado e guardado, mas nunca influenciava a escrita.
-      instrucaoEditorial: parseJson(dot.plano, {}).estilo || null,
+      // Junto vai a receita do que funciona nesta página, quando o dot pede.
+      instrucaoEditorial,
     }
   ));
 
@@ -2231,6 +2279,7 @@ async function listar(userId) {
       destino: d.destino,
       materias_por_volta: d.materias_por_volta || 1,
       modo_imagem: d.modo_imagem || 'original',
+      usar_estilo_viral: Boolean(d.usar_estilo_viral),
       agendar_minutos: d.agendar_minutos,
       // Para o "Editar dot" abrir com o que está valendo.
       dias_semana: d.dias_semana || null,
@@ -2512,6 +2561,7 @@ async function alterarEstado(userId, dotId, estado) {
 const CAMPOS_JORNADA = [
   'dias_semana', 'hora_inicio', 'hora_fim', 'scan_minutos', 'destino',
   'saida_quantidade', 'saida_minutos', 'limite_dia', 'modo_imagem',
+  'usar_estilo_viral',
 ];
 
 /**
@@ -2543,6 +2593,7 @@ async function atualizar(userId, dotId, { nome, provedor, objetivo, facebookPage
       saida_minutos: dot.saida_minutos || dot.intervalo_minutos,
       limite_dia: dot.limite_dia,
       modo_imagem: dot.modo_imagem,
+      usar_estilo_viral: dot.usar_estilo_viral,
     };
     const pedido = Object.fromEntries(CAMPOS_JORNADA.filter((c) => jornada[c] !== undefined).map((c) => [c, jornada[c]]));
     const config = normalizarJornada({ ...atual, ...pedido });
@@ -2559,6 +2610,7 @@ async function atualizar(userId, dotId, { nome, provedor, objetivo, facebookPage
       destino: config.destino,
       materias_por_volta: config.saida_quantidade,
       modo_imagem: config.modo_imagem,
+      usar_estilo_viral: config.usar_estilo_viral,
       agendar_minutos: config.destino === 'agendar' ? config.saida_minutos : null,
       dias_semana: config.dias_semana,
       hora_inicio: config.hora_inicio,
@@ -2632,6 +2684,43 @@ async function atualizar(userId, dotId, { nome, provedor, objetivo, facebookPage
 
   if (Object.keys(dados).length) await db(TABELA).where({ id: dotId }).update(dados);
   return { ...dados, ...(resumoFontes || {}) };
+}
+
+/** O dot é mesmo deste editor? Toda rota do painel passa por aqui. */
+async function dotDoEditor(userId, dotId) {
+  const dot = await db(TABELA).where({ id: dotId, user_id: userId }).first();
+  if (!dot) throw erro('Dot não encontrado.', 404);
+  return dot;
+}
+
+/**
+ * A receita do que bomba na página deste dot, como a tela precisa dela:
+ * as regras, a amostra em que se baseou e quando foi feita.
+ */
+async function estiloViralDoDot(userId, dotId) {
+  const dot = await dotDoEditor(userId, dotId);
+  const viral = require('./aprendizadoViralService');
+  const receita = await viral.receitaGuardada({
+    userId,
+    pageId: dot.facebook_page_id || null,
+  });
+  return {
+    ligado: Boolean(dot.usar_estilo_viral),
+    temPagina: Boolean(dot.facebook_page_id),
+    vencida: receita ? viral.receitaVencida(receita) : true,
+    minimoMaterias: viral.MINIMO_MATERIAS,
+    diasAnalisados: viral.DIAS_PADRAO,
+    ...(receita || { regras: [], amostra: [], totalMaterias: 0, geradoEm: null, ultimoErro: null }),
+  };
+}
+
+/** Refaz a receita agora, sem esperar a validade vencer. */
+async function refazerEstiloViral(userId, dotId) {
+  const dot = await dotDoEditor(userId, dotId);
+  const viral = require('./aprendizadoViralService');
+  const r = await viral.gerarReceita({ userId, pageId: dot.facebook_page_id || null });
+  if (!r.ok) throw erro(r.motivo || 'Não consegui montar a receita agora.', 422);
+  return estiloViralDoDot(userId, dotId);
 }
 
 async function renomear(userId, dotId, nome) {
@@ -2862,6 +2951,9 @@ module.exports = {
   gerarImagemDaMateria,
   renomear,
   atualizar,
+  estiloViralDoDot,
+  refazerEstiloViral,
+  instrucaoDeEscrita,
   provedores,
   listar,
   detalhe,

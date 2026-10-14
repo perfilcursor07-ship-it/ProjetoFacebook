@@ -1480,3 +1480,17 @@ body.dm-aberto { overflow: hidden; }
 @media (max-width: 560px) {
   .d-arte--acoes .d-arte-acoes .d-acao--icone { flex: 0 0 2.6rem; width: 2.6rem; padding: 0; }
 }
+
+/* Receita aprendida do desempenho (item "Escrever no estilo das que bombaram").
+   Fica dentro do campo, abaixo da caixa, com a amostra à vista: receita que o
+   editor não pode conferir é palpite com cara de ciência. */
+.dv-receita {
+  margin: .5rem 0 .35rem;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: .3rem;
+  list-style: disc;
+}
+.dv-receita li { color: var(--d-texto); line-height: 1.45; }
+.dv-receita-base { margin: 0 0 .5rem; color: var(--d-texto-3, var(--d-texto-2)); font-size: .72rem; }
+#dot-estilo-viral-receita .d-btn { font-size: .72rem; padding: .3rem .6rem; }

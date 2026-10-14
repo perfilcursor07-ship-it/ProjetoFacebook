@@ -48,6 +48,7 @@ router.get('/', async (req, res, next) => {
       q: String(req.query.q || '').slice(0, 80),
       limite: req.query.limite,
       pagina: req.query.pagina,
+      ordem: req.query.ordem,
     });
     return res.json({ ok: true, ...data });
   } catch (err) {

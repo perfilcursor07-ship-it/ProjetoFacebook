@@ -134,6 +134,7 @@
     const anterior = document.activeElement;
     let origem = '';
     let pagina = 1;
+    let ordem = 'recentes';
     let busca = '';
     let carregando = false;
 
@@ -166,6 +167,21 @@
         busca = campoBusca.value.trim();
         carregar(true);
       }, 300);
+    });
+
+    // "Mais usadas" existia na intenção do código (o uso já era contado) mas
+    // a grade sempre ordenou por data. Agora o editor escolhe.
+    const seletorOrdem = h('select', { class: 'bi-ordem', 'aria-label': 'Ordenar as imagens' });
+    for (const [valor, rotulo] of [
+      ['recentes', 'Mais recentes'],
+      ['usadas', 'Mais usadas'],
+      ['antigas', 'Mais antigas'],
+    ]) {
+      seletorOrdem.append(h('option', { value: valor, text: rotulo }));
+    }
+    seletorOrdem.addEventListener('change', () => {
+      ordem = seletorOrdem.value;
+      carregar(true);
     });
 
     const arquivo = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp', multiple: true, class: 'bi-sr' });
@@ -205,7 +221,7 @@
       ),
       h('div', { class: 'bi-barra' },
         h('label', { class: 'bi-busca' }, icone('busca'), campoBusca),
-        h('div', { class: 'bi-barra-acoes' }, menuImportar, botaoEnviar, arquivo)
+        h('div', { class: 'bi-barra-acoes' }, seletorOrdem, menuImportar, botaoEnviar, arquivo)
       ),
       filtros,
       h('div', { class: 'bi-corpo' }, grade, mais, status),
@@ -273,11 +289,14 @@
         const qs = new URLSearchParams({ pagina: String(pagina), limite: '48' });
         if (origem) qs.set('origem', origem);
         if (busca) qs.set('q', busca);
+        if (ordem && ordem !== 'recentes') qs.set('ordem', ordem);
         const data = await api(`${API}?${qs}`);
         if (reiniciar) grade.replaceChildren();
-        const total = atualizarContagem(data.contagem);
+        // A contagem por origem só vem na 1ª página: ela não muda com a
+        // rolagem, e refazer o GROUP BY a cada "ver mais" era peso à toa.
+        const total = data.contagem ? atualizarContagem(data.contagem) : null;
         // Primeira vez com o banco vazio: traz as imagens que o sistema já tinha.
-        if (!total && !importouSistema && !origem && !busca) {
+        if (total === 0 && !importouSistema && !origem && !busca) {
           carregando = false;
           await importarSistema(false);
           return;

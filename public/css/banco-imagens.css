@@ -51,6 +51,13 @@
 .bi-busca:focus-within { border-color: rgb(52 211 153 / 50%); }
 .bi-busca input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--bi-text); font-size: .85rem; outline: none; }
 .bi-barra-acoes { display: flex; align-items: center; gap: .5rem; }
+/* Mesma altura e moldura dos botões ao lado, para a barra não ficar torta. */
+.bi-ordem {
+  height: 2.4rem; padding: 0 .6rem; border-radius: .65rem;
+  border: 1px solid var(--bi-border-strong); background: var(--bi-surface);
+  color: var(--bi-text); font-size: .8rem; font-weight: 600; cursor: pointer;
+}
+.bi-ordem:focus-visible { outline: 2px solid rgb(52 211 153 / 60%); outline-offset: 1px; }
 .bi-btn {
   display: inline-flex; align-items: center; gap: .45rem; height: 2.4rem; padding: 0 .9rem; border-radius: .65rem;
   border: 1px solid var(--bi-border-strong); background: transparent; color: var(--bi-text); font-size: .8rem; font-weight: 600;

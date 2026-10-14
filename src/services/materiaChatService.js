@@ -55,6 +55,37 @@ function capaEscolhidaValida(valor, userId) {
   return /^[a-z0-9_-]+\.(?:jpe?g|png|webp)$/i.test(v.slice(pasta.length));
 }
 
+/**
+ * Primeiro endereço que a resposta da IA aponta como FONTE.
+ *
+ * Só linhas de crédito contam ("Fonte: …", "Site: …", "• Veículo — …"):
+ * endereço citado no meio do texto é conteúdo da notícia, não a procedência
+ * dela, e virava um "Link da fonte" que levava ao lugar errado.
+ *
+ * Rede social e buscador ficam de fora: não são a reportagem.
+ */
+const LINHA_DE_FONTE = /^\s*(?:(?:[•*–—-]\s*)?(?:fontes?|site|v[ei]a|leia (?:mais|também))\s*:|por\s+.+?[—–-]\s*site\s*:|[•*–—-]\s*[^\n]{1,80}?\s*[—–-]\s*https?:\/\/)/i;
+const HOST_QUE_NAO_E_FONTE =
+  /(?:^|\.)(?:google\.[a-z.]+|bing\.com|duckduckgo\.com|search\.brave\.com|serper\.dev|facebook\.com|instagram\.com|x\.com|twitter\.com|t\.co)$/i;
+
+function primeiroLinkDeFonte(texto) {
+  for (const linha of String(texto || '').split(/\r?\n/)) {
+    if (!LINHA_DE_FONTE.test(linha)) continue;
+    for (const achado of linha.matchAll(/https?:\/\/[^\s<>"')\]]+/gi)) {
+      const bruto = achado[0].replace(/[.,;:!?]+$/, '');
+      try {
+        const u = new URL(bruto);
+        if (HOST_QUE_NAO_E_FONTE.test(u.hostname)) continue;
+        u.hash = '';
+        return u.toString().slice(0, 600);
+      } catch {
+        /* endereço malformado: segue procurando */
+      }
+    }
+  }
+  return null;
+}
+
 function recortarTranscricao(texto, limite = 16000) {
   const t = String(texto || '');
   if (t.length <= limite) return t;
@@ -4813,6 +4844,18 @@ async function salvarMateriaDoChat({
     fontesDaMateria.find((fonte) => /^https?:\/\//i.test(String(fonte?.url || ''))) ||
     fontesDaMateria[0] ||
     null;
+  // Pesquisa na web que não deixou fonte registrada: a matéria nascia com
+  // `fonte_url` nulo e a caixa "Link da fonte" ficava só com o texto ("Chat de
+  // matérias + pesquisa na web"), sem como chegar na reportagem. O endereço
+  // quase sempre está escrito na própria resposta — é dele que se parte.
+  const urlDaResposta = /^https?:\/\//i.test(String(fontePrincipal?.url || ''))
+    ? null
+    : primeiroLinkDeFonte(row.content) || primeiroLinkDeFonte(corpo);
+  if (urlDaResposta) {
+    console.info(
+      `[materia-chat] mensagem #${messageId} sem fonte registrada; link tirado do texto: ${urlDaResposta}`
+    );
+  }
   let pageId = facebookPageId || row.chat_page_id || null;
   if (pageId) {
     const page = await materiaIaService.resolvePage(userId, pageId);
@@ -4918,7 +4961,7 @@ async function salvarMateriaDoChat({
       }
       return row.pesquisou_web ? 'Chat de matérias + pesquisa na web' : 'Chat de matérias';
     })(),
-    fonte_url: fontePrincipal?.url || null,
+    fonte_url: fontePrincipal?.url || urlDaResposta || null,
     fonte_resumo: String(row.chat_titulo || '').slice(0, 1500) || null,
     contexto_apuracao: fontesDaMateria.length
       ? fontesDaMateria.map((f) => `${f.veiculo || 'Web'} — ${f.url || ''}`).join('\n').slice(0, 8000)
@@ -5328,6 +5371,7 @@ async function editarConteudoDaMensagem({ userId, messageId, conteudo } = {}) {
 module.exports = {
   limparCorpoDoRascunho,
   capaEscolhidaValida,
+  primeiroLinkDeFonte,
   respostaAdmitePeriodoNaoAtendido,
   listarConversas,
   criarConversa,

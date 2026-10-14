@@ -149,14 +149,24 @@ function resolveMatterSourcePathPublico(publicUrl) {
   return absoluto;
 }
 
+const ORDENS = Object.keys(BancoImagens.ORDENS);
+
 async function listar(userId, filtros = {}) {
   const limite = Math.min(120, Math.max(1, Number(filtros.limite) || 60));
-  const linhas = await BancoImagens.listar(Number(userId), { ...filtros, limite });
+  const ordem = ORDENS.includes(filtros.ordem) ? filtros.ordem : 'recentes';
+  // A contagem por origem não muda com a rolagem: só a 1ª página paga por ela.
+  const primeiraPagina = Math.max(1, Number(filtros.pagina) || 1) === 1;
+  const [linhas, contagem] = await Promise.all([
+    BancoImagens.listar(Number(userId), { ...filtros, limite, ordem }),
+    primeiraPagina ? BancoImagens.contarPorOrigem(Number(userId)) : Promise.resolve(null),
+  ]);
   const temMais = linhas.length > limite;
   return {
     itens: linhas.slice(0, limite).map(paraCliente),
     temMais,
-    contagem: await BancoImagens.contarPorOrigem(Number(userId)),
+    ordem,
+    ordens: ORDENS,
+    ...(contagem ? { contagem } : {}),
   };
 }
 
