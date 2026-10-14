@@ -15,7 +15,7 @@
  * sorteia a réplica a cada requisição (o prefixo /--replicas/<id> não é
  * respeitado). Por isso:
  * - o resultado e o download são pedidos de novo enquanto caírem na réplica
- *   errada (404 imediato, sem gastar GPU);
+ *   errada (404, ou 403 no download — imediato, sem gastar GPU);
  * - a foto de referência sobe até estar em todas as réplicas — o caminho do
  *   upload é o hash do conteúdo, igual em todas. Imagem embutida em base64 o
  *   Space recusa.
@@ -136,32 +136,69 @@ async function baixar(url) {
   let resposta = null;
   for (let i = 0; i < TENTATIVAS_REPLICA; i += 1) {
     resposta = await requisitar(url, { headers: cabecalhos() });
-    if (resposta.status !== 404) break;
+    // Arquivo pedido à réplica que não o gerou: o Gradio responde 403 ou 404.
+    if (resposta.status !== 404 && resposta.status !== 403) break;
   }
-  if (!resposta.ok) throw erro(`O Qwen gerou a imagem, mas o download falhou (HTTP ${resposta.status}).`, resposta.status === 404 ? 410 : 502);
+  if (!resposta.ok) throw erro(`O Qwen gerou a imagem, mas o download falhou (HTTP ${resposta.status}).`, [403, 404].includes(resposta.status) ? 410 : 502);
   const buffer = Buffer.from(await resposta.arrayBuffer());
   if (!buffer.length) throw erro('O Qwen devolveu uma imagem vazia.');
   return { buffer, mimeType: String(resposta.headers.get('content-type') || 'image/png').split(';')[0] };
 }
 
 /**
- * Mesmo contrato do ChatGPT/Grok/Gemini (imagemIaService): com a foto da
- * notícia como referência, edita; no modo 'simbolica', cria do zero.
+ * Pedidos do Qwen. O prompt do ChatGPT (português, longo, com o título da
+ * matéria no fim) não servia: o Qwen segue melhor instruções curtas em inglês
+ * e é ótimo em DESENHAR texto — mandar o título no pedido convidava a imagem a
+ * sair com letras, e era preciso gerar duas vezes para limpar.
  */
-async function gerarImagem({ sourceUrl, prompt, titulo, materia, recoveryKey, modo = 'referencia' }) {
-  const chatgpt = require('./chatgptImageService');
-  await require('./iaPausaService').garantirLiberada();
-  const simbolica = modo === 'simbolica';
-  const pedido = simbolica
-    ? chatgpt.promptComFormatoFacebook(chatgpt.promptSimbolicoPadrao(), {}, { semReferencia: true })
-    : chatgpt.promptComFormatoFacebook(prompt, { titulo, materia });
+const SEM_TEXTO =
+  'The final image must contain absolutely no text: no words, letters, numbers, captions, headlines, subtitles, ' +
+  'logos, watermarks, banners, lower thirds, frames or graphic overlays anywhere.';
+const PEDIDO_LIMPAR =
+  'Remove ALL text and graphic overlays from this photo: every headline, caption, subtitle, word, letter, number, ' +
+  'logo, watermark, banner, lower third, frame and sticker. Rebuild those areas naturally with the surrounding ' +
+  'background so no trace remains. Keep the same people, faces, identity, clothing, pose, setting, lighting and ' +
+  'composition. Photorealistic editorial news photo, vertical framing. ' + SEM_TEXTO;
+const PEDIDO_LIMPAR_DE_NOVO =
+  'This image still has some text left. Erase every remaining word, letter, number, logo and watermark completely, ' +
+  'filling the area with the natural background. Change nothing else in the photo. ' + SEM_TEXTO;
+const PEDIDO_SIMBOLICO =
+  'Original symbolic editorial illustration about faith and hope: soft light coming through a window onto a simple ' +
+  'wooden table with a closed Bible. No people, no silhouettes, no hospital, not a documentary photo of a real event. ' +
+  'Vertical framing. ' + SEM_TEXTO;
 
+/** O pedido padrão da capa (ChatGPT) começa assim; pedido personalizado do editor, não. */
+function pedidoPadraoDoSistema(prompt) {
+  const t = String(prompt || '').trim();
+  return !t || /^crie uma nova imagem editorial fotorrealista inspirada/i.test(t);
+}
+
+function pedidoParaQwen({ prompt, simbolica }) {
+  if (simbolica) return PEDIDO_SIMBOLICO;
+  if (pedidoPadraoDoSistema(prompt)) return PEDIDO_LIMPAR;
+  // Pedido escrito pelo editor: vai como está, sem título/matéria, com a regra do texto.
+  return `${String(prompt).trim().slice(0, 1500)}
+
+Keep the people and their identity from the reference photo. ${SEM_TEXTO}`;
+}
+
+/** Foto em JPEG ≤1536 px para subir como referência. */
+async function paraReferencia(buffer) {
+  const jpeg = await require('sharp')(buffer, { failOn: 'error', limitInputPixels: 40_000_000 })
+    .rotate()
+    .resize(1536, 1536, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 92, mozjpeg: true })
+    .toBuffer();
+  return { name: 'referencia.jpg', mimeType: 'image/jpeg', buffer: jpeg };
+}
+
+/** Uma chamada ao Space: devolve a imagem, o link dela e a linha de info. */
+async function gerarNoSpace(pedido, referencia = null) {
   const refs = [];
-  if (!simbolica) {
-    const caminho = await enviarReferencia(await chatgpt.imagemParaUpload(sourceUrl));
+  if (referencia) {
+    const caminho = await enviarReferencia(referencia);
     refs.push({ image: { path: caminho, meta: { _type: 'gradio.FileData' } }, caption: null });
   }
-
   // Ordem dos campos do botão "Generate" do Space: prompt, referências, tamanho,
   // seed, seed aleatória, melhorar prompt, passos, largura, altura, versão.
   // "Melhorar prompt" fica desligado: ele manda texto e foto para um serviço de
@@ -177,15 +214,51 @@ async function gerarImagem({ sourceUrl, prompt, titulo, materia, recoveryKey, mo
 
   const [arquivo, info] = await aguardarResultado(eventoId);
   if (!arquivo?.url) throw erro('O Qwen (Hugging Face) não devolveu a imagem.');
+  return { ...(await baixar(arquivo.url)), url: arquivo.url, info: String(info || '').replace(/`/g, '') };
+}
 
-  const imagem = await baixar(arquivo.url);
+/** Passadas extras de limpeza quando o OCR ainda acha texto na imagem. */
+const LIMPEZAS_EXTRAS = 2;
+
+/** OCR da imagem gerada; falha do OCR não impede a entrega. */
+async function aindaTemTexto(buffer) {
+  try {
+    const ocr = await require('./imageOcrService').analisarTextoDaImagem(buffer);
+    return ocr.temTexto ? ocr : null;
+  } catch (err) {
+    console.warn('[imagem-qwen] OCR falhou, sigo sem conferir o texto:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Mesmo contrato do ChatGPT/Grok/Gemini (imagemIaService): com a foto da
+ * notícia como referência, edita; no modo 'simbolica', cria do zero.
+ *
+ * O editor clica UMA vez: se o OCR ainda achar texto no resultado, a imagem
+ * volta ao Qwen para mais uma limpeza (até LIMPEZAS_EXTRAS) antes de entregar.
+ */
+async function gerarImagem({ sourceUrl, prompt, recoveryKey, modo = 'referencia' }) {
+  await require('./iaPausaService').garantirLiberada();
+  const simbolica = modo === 'simbolica';
+  const pedido = pedidoParaQwen({ prompt, simbolica });
+  const referencia = simbolica ? null : await require('./chatgptImageService').imagemParaUpload(sourceUrl);
+
+  let imagem = await gerarNoSpace(pedido, referencia);
+  console.info(`[imagem-qwen] gerada (${Math.round(imagem.buffer.length / 1024)} KB) · ${imagem.info}`);
+  for (let passada = 1; passada <= LIMPEZAS_EXTRAS; passada += 1) {
+    const ocr = await aindaTemTexto(imagem.buffer);
+    if (!ocr) break;
+    console.info(`[imagem-qwen] ainda tem texto (${ocr.palavras} palavras, OCR ${ocr.confianca}%) — limpeza extra ${passada}/${LIMPEZAS_EXTRAS}`);
+    imagem = await gerarNoSpace(PEDIDO_LIMPAR_DE_NOVO, await paraReferencia(imagem.buffer));
+  }
+
   const chave = String(recoveryKey || '').trim();
   if (chave) {
-    ultimasGeradas.set(chave, arquivo.url);
+    ultimasGeradas.set(chave, imagem.url);
     while (ultimasGeradas.size > 200) ultimasGeradas.delete(ultimasGeradas.keys().next().value);
   }
-  console.info(`[imagem-qwen] gerada (${Math.round(imagem.buffer.length / 1024)} KB) · ${String(info || '').replace(/`/g, '')}`);
-  return { ...imagem, prompt: pedido, model: NOME };
+  return { buffer: imagem.buffer, mimeType: imagem.mimeType, prompt: pedido, model: NOME };
 }
 
 /** "Pegar imagem nova gerada": baixa de novo a última desta matéria. */
