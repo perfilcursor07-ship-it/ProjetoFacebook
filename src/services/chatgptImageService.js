@@ -72,8 +72,25 @@ async function obterBrowser() {
   return conexaoBrowser;
 }
 
+const SELETOR_EDITOR = '#prompt-textarea:visible, textarea:visible, [contenteditable="true"]:visible';
+
+/**
+ * A caixa de mensagem já está na tela? Devolve o locator ou null, sem lançar
+ * e sem recarregar nada.
+ *
+ * Serve para o caminho feliz: com a caixa visível, a sessão está de pé e não
+ * há o que conferir. A checagem de sessão é um fetch à API da OpenAI dentro
+ * da página, e rodá-la antes de toda mensagem punha um ida-e-volta de rede na
+ * frente até das que iam dar certo.
+ */
+async function editorVisivel(page, timeout = 12_000) {
+  const input = page.locator(SELETOR_EDITOR).first();
+  const apareceu = await input.waitFor({ state: 'visible', timeout }).then(() => true, () => false);
+  return apareceu ? input : null;
+}
+
 async function aguardarEditor(page) {
-  const input = page.locator('#prompt-textarea:visible, textarea:visible, [contenteditable="true"]:visible').first();
+  const input = page.locator(SELETOR_EDITOR).first();
   for (let tentativa = 0; tentativa < 2; tentativa += 1) {
     try {
       await input.waitFor({ state: 'visible', timeout: 45_000 });
@@ -867,6 +884,7 @@ module.exports = {
   // Reaproveitados pelo "ChatGPT livre" do /materia-manual (chatgptLivreService).
   aguardarEditor,
   reservarPreparacao,
+  editorVisivel,
   imagemParaUpload,
   // Exposto somente para validar a compatibilidade dos cookies do Chrome.
   cookiesDoHeader,

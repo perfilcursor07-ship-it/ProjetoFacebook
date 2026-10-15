@@ -50,20 +50,54 @@ async function paginas() {
   }
 
   const provedor = String(process.env.PUBLISH_PROVIDER || 'graph').toLowerCase();
-  console.log(`   Provedor de envio configurado: ${provedor}\n`);
+  console.log(`   Provedor de envio padrão: ${provedor}\n`);
+
+  // Páginas padrão de cada editor: elas podem usar o Primary Profile do
+  // Ayrshare sem chave própria, então "sem Profile Key" nelas não é falta.
+  const padroes = new Set();
+  try {
+    const temColuna = await db.schema.hasColumn('users', 'default_facebook_page_id');
+    if (temColuna) {
+      const ids = await db('users').whereNotNull('default_facebook_page_id').pluck('default_facebook_page_id');
+      for (const id of ids) padroes.add(Number(id));
+    }
+  } catch {
+    /* sem a coluna, ninguém é padrão */
+  }
+
+  /**
+   * Por onde ESTA página publica.
+   *
+   * O provedor não é só o global: página importada do PostSyncer guarda
+   * `postsyncer:` no token e `ps:<id>` no page_id, e não usa Ayrshare para
+   * nada. Julgar essas pela régua do Ayrshare marcava "FALTA" numa página
+   * que publica normalmente — inclusive numa com 3.397 matérias no ar.
+   */
+  function provedorDaPagina(p) {
+    const token = String(p.page_access_token || '');
+    if (token.startsWith('postsyncer:') || String(p.page_id || '').startsWith('ps:')) return 'postsyncer';
+    if (token.startsWith('ayrshare:')) return 'ayrshare';
+    return provedor;
+  }
 
   for (const p of lista) {
-    console.log(`  #${p.id} ${p.page_name} (page_id ${p.page_id})`);
+    const via = provedorDaPagina(p);
+    console.log(`  #${p.id} ${p.page_name} (page_id ${p.page_id}) — via ${via}`);
 
     const token = String(p.page_access_token || '').trim();
     linha(token ? OK : FALTA, token ? 'token da Página gravado' : 'sem token da Página — reconecte em /paginas');
 
     if (temAyrshare) {
       const chave = String(p.ayrshare_profile_key || '').trim();
-      if (provedor === 'ayrshare') {
-        linha(chave ? OK : FALTA, chave ? 'Profile Key do Ayrshare' : 'sem Profile Key — o envio por Ayrshare falha');
+      const ehPadrao = padroes.has(Number(p.id));
+      if (via !== 'ayrshare') {
+        if (chave) linha(OK, 'Profile Key do Ayrshare (não usada: esta página publica por outro caminho)');
+      } else if (chave) {
+        linha(OK, 'Profile Key do Ayrshare');
+      } else if (ehPadrao) {
+        linha(OK, 'sem Profile Key, mas é a página padrão — usa o Primary Profile');
       } else {
-        linha(chave ? OK : AVISO, chave ? 'Profile Key do Ayrshare' : 'sem Profile Key (só faz falta se trocar o provedor)');
+        linha(FALTA, 'sem Profile Key — o envio por Ayrshare falha nesta página');
       }
     }
 
@@ -93,6 +127,55 @@ async function paginas() {
     }
     console.log('');
   }
+
+  await duplicadas(lista, provedorDaPagina);
+}
+
+/**
+ * A mesma Página cadastrada mais de uma vez.
+ *
+ * Acontece quando ela entra pelo login do Facebook E pela importação do
+ * PostSyncer/Ayrshare: viram registros diferentes com o mesmo nome. Daí em
+ * diante metade do sistema aponta para um registro e metade para o outro —
+ * uma publica, a outra reclama de credencial, e o editor não sabe qual é qual
+ * na hora de escolher "Publicar em".
+ */
+async function duplicadas(lista, provedorDaPagina) {
+  const porNome = new Map();
+  for (const p of lista) {
+    const chave = String(p.page_name || '').trim().toLowerCase();
+    if (!chave) continue;
+    if (!porNome.has(chave)) porNome.set(chave, []);
+    porNome.get(chave).push(p);
+  }
+
+  const repetidas = [...porNome.entries()].filter(([, ps]) => ps.length > 1);
+  if (!repetidas.length) return;
+
+  console.log('  --- PÁGINAS REPETIDAS ---');
+  for (const [, ps] of repetidas) {
+    console.log(`\n  "${ps[0].page_name}" está cadastrada ${ps.length} vezes:`);
+    const usos = [];
+    for (const p of ps) {
+      const [{ total = 0 } = {}] = await db('ai_matters')
+        .where({ facebook_page_id: p.id, status: 'publicado' })
+        .count({ total: '*' })
+        .catch(() => [{ total: 0 }]);
+      usos.push({ p, publicadas: Number(total) || 0 });
+    }
+    usos.sort((a, b) => b.publicadas - a.publicadas);
+    for (const [i, u] of usos.entries()) {
+      const marca = i === 0 ? '  ← a que o sistema vem usando' : '';
+      console.log(
+        `     #${u.p.id} via ${provedorDaPagina(u.p)} | page_id ${u.p.page_id} | ${u.publicadas} publicada(s)${marca}`
+      );
+    }
+  }
+  console.log(
+    '\n  Escolha UMA de cada e apague as outras em /paginas (as sem publicação' +
+      '\n  saem sem perda). Enquanto houver repetidas, "Publicar em" mostra o' +
+      '\n  mesmo nome várias vezes e o dot pode escolher a errada.'
+  );
 }
 
 async function canais() {

@@ -109,3 +109,37 @@ test('a tela manda a ordem escolhida', () => {
   assert.match(TELA, /qs\.set\('ordem', ordem\)/);
   assert.match(TELA, /\['usadas', 'Mais usadas'\]/);
 });
+
+// ── Diagnóstico de publicação: não pode acusar o inocente ─────────────────
+
+test('página do PostSyncer não é cobrada por Profile Key do Ayrshare', () => {
+  // A primeira versão marcou FALTA numa página com 3.397 matérias no ar.
+  // Ela publica por PostSyncer e não usa Ayrshare para nada.
+  const script = require('node:fs').readFileSync('scripts/diagnostico-publicacao.js', 'utf8');
+  assert.match(script, /function provedorDaPagina\(p\)/);
+  assert.match(script, /token\.startsWith\('postsyncer:'\) \|\| String\(p\.page_id \|\| ''\)\.startsWith\('ps:'\)/);
+  assert.match(script, /if \(via !== 'ayrshare'\)/, 'só cobra chave de quem publica por Ayrshare');
+});
+
+test('a página padrão não é cobrada por chave própria', () => {
+  // Ela usa o Primary Profile — é o que a própria mensagem de erro diz.
+  const script = require('node:fs').readFileSync('scripts/diagnostico-publicacao.js', 'utf8');
+  assert.match(script, /const padroes = new Set\(\);/);
+  assert.match(script, /default_facebook_page_id/);
+  assert.match(script, /é a página padrão — usa o Primary Profile/);
+});
+
+test('páginas repetidas são apontadas, com qual delas está em uso', () => {
+  const script = require('node:fs').readFileSync('scripts/diagnostico-publicacao.js', 'utf8');
+  assert.match(script, /PÁGINAS REPETIDAS/);
+  assert.match(script, /usos\.sort\(\(a, b\) => b\.publicadas - a\.publicadas\)/);
+  assert.match(script, /a que o sistema vem usando/);
+});
+
+test('o diagnóstico não publica nem altera nada', () => {
+  const script = require('node:fs').readFileSync('scripts/diagnostico-publicacao.js', 'utf8');
+  for (const perigoso of ['.update(', '.insert(', '.del(', '.delete(']) {
+    assert.ok(!script.includes(perigoso), `diagnóstico não pode ${perigoso}`);
+  }
+  assert.match(script, /Nada foi publicado nem alterado por este script/);
+});
