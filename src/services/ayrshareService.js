@@ -787,12 +787,25 @@ async function publishToFacebook({
         })) ||
       null;
 
+    // Resumo da resposta, sem o texto do post: sem isto uma matéria marcada
+    // como publicada que não aparece na Página não deixava rastro no log.
+    console.log('[ayrshare] resposta', {
+      id: data?.id || null,
+      status: data?.status || null,
+      plataformas: Array.isArray(data?.postIds)
+        ? data.postIds.map((p) => `${p?.platform}:${p?.status || '?'}`)
+        : null,
+      erros: Array.isArray(data?.errors)
+        ? data.errors.map((e) => `${e?.platform || '?'}:${e?.code || '?'}`)
+        : null,
+    });
+
     // Às vezes o POST retorna o ID superior antes de preencher postIds. O GET
     // oficial pelo ID reconcilia o resultado sem disparar uma publicação nova.
     if (
-      (vaiNoInstagram || vaiNoX) &&
       data?.id &&
-      ((vaiNoInstagram && !platformOutcome(data, 'instagram') && !platformFailure(data, 'instagram')) ||
+      ((publicarFacebook && !platformOutcome(data, 'facebook') && !platformFailure(data, 'facebook')) ||
+        (vaiNoInstagram && !platformOutcome(data, 'instagram') && !platformFailure(data, 'instagram')) ||
         (vaiNoX && !platformOutcome(data, 'twitter') && !platformFailure(data, 'twitter')))
     ) {
       console.warn('[ayrshare] instagram sem resultado imediato; consultando post', {
@@ -834,6 +847,24 @@ async function publishToFacebook({
       err.status = 502;
       err.response = wrap.response;
       throw err;
+    }
+
+    // Com `postIds: []` a falha do Facebook vem só no array `errors` (ex.: 274,
+    // frequência alta; 137, duplicado). Sem olhar ali, a matéria era marcada
+    // como "Publicada" e nunca aparecia na Página.
+    if (publicarFacebook && !fb) {
+      const fbFalha = platformFailure(data, 'facebook');
+      if (fbFalha || String(data?.status || '').toLowerCase() === 'error') {
+        const wrap = {
+          response: { data: fbFalha ? { ...data, errors: [fbFalha] } : data, config: { url: `${API}/post` } },
+        };
+        const err = new Error(
+          apiErrorMessage(wrap) || fbFalha?.message || 'A Ayrshare não publicou no Facebook'
+        );
+        err.status = 502;
+        err.response = wrap.response;
+        throw err;
+      }
     }
 
     const ig =
