@@ -99,6 +99,50 @@ function primeiroLinkDeFonte(texto) {
   return null;
 }
 
+/**
+ * Capa gerada para a conversa do "ChatGPT livre" quando nenhuma fonte trouxe
+ * foto. É o que o modo pelo navegador entregava junto com o texto.
+ *
+ * Ilustração simbólica: não há foto de referência para enviar, e inventar uma
+ * cena com pessoas reais a partir de um título seria pior que não ter capa.
+ *
+ * Nunca lança — imagem é acessório, e a matéria escrita não se perde por ela.
+ */
+async function capaDaConversaLivre({ userId, chatId, titulo, registrarPasso = () => {} }) {
+  const assunto = String(titulo || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  if (!assunto) return null;
+  registrarPasso({ kind: 'pensando', texto: 'Nenhuma foto nas fontes — gerando a imagem da capa…' });
+  try {
+    const gerada = await require('./imagemIaService').gerarImagem({
+      modo: 'simbolica',
+      titulo: assunto,
+      recoveryKey: `chat:${chatId}`,
+    });
+    if (!gerada?.buffer?.length) throw new Error('a IA respondeu sem imagem');
+    const capa = await require('./matterArtworkService').storeMatterSourceImage({
+      userId,
+      matterId: 0,
+      buffer: gerada.buffer,
+      prefixo: `chat_${chatId}`,
+    });
+    registrarPasso({ kind: 'fontes', texto: 'Imagem da capa pronta ✓ — já entra ao salvar o rascunho.' });
+    return {
+      veiculo: 'Imagem gerada por IA',
+      titulo: 'Capa da matéria',
+      url: null,
+      imagem: capa.publicUrl,
+      creditoImagem: 'Imagem gerada por IA',
+    };
+  } catch (err) {
+    console.warn(`[materia-chat] capa da conversa #${chatId}: ${err.message}`);
+    registrarPasso({
+      kind: 'aviso',
+      texto: `Não consegui gerar a capa (${err.message}). Escolha uma foto no painel ao salvar.`,
+    });
+    return null;
+  }
+}
+
 function recortarTranscricao(texto, limite = 16000) {
   const t = String(texto || '');
   if (t.length <= limite) return t;
@@ -2815,9 +2859,20 @@ async function responder({
     return { chatId: chat.id, mensagem };
   };
 
-  // ChatGPT livre: pedido vai direto ao chatgpt.com (Chrome do servidor). O
-  // ChatGPT pesquisa, escreve e mostra a imagem; a imagem vira a capa.
-  if (chat.modo === 'chatgpt') {
+  // ChatGPT livre pelo NAVEGADOR (chatgpt.com no Chrome do servidor).
+  //
+  // Desligado por padrão. Ele dependia de ler o DOM do chatgpt.com, e o site
+  // passou a entregar a conversa de um jeito que não conseguimos ler: o log
+  // do servidor mostrou a resposta pronta na tela e, para nós, `turnos: 0` —
+  // nem a mensagem do próprio editor aparecia, com a aba já visível e com
+  // viewport (1706x1200). Ficava minutos em "pesquisando e escrevendo…" para
+  // uma conversa já respondida.
+  //
+  // O modo "ChatGPT livre" agora usa o MESMO caminho de "Criar matéria", que
+  // funciona e responde em segundos, e traz a imagem junto (veja
+  // `capaDaConversaLivre`). Para voltar ao navegador: CHATGPT_LIVRE_NAVEGADOR=true.
+  const usarNavegador = String(process.env.CHATGPT_LIVRE_NAVEGADOR || '').toLowerCase() === 'true';
+  if (chat.modo === 'chatgpt' && usarNavegador) {
     const conversaUrl = [...anteriores]
       .reverse()
       .map((m) => (m.role === 'assistant' ? parseJson(m.fontes, []) : []))
@@ -3137,6 +3192,17 @@ async function responder({
       } catch {
         registrarPasso({ kind: 'aviso', texto: 'Não foi possível recuperar a imagem de capa da fonte.' });
       }
+    }
+    // "ChatGPT livre" promete a matéria JÁ com a imagem. Sem foto na fonte,
+    // gera uma — é o que o modo pelo navegador fazia e o que o editor espera.
+    if (chat.modo === 'chatgpt' && !fontesFinais.some((f) => f?.imagem)) {
+      const gerada = await capaDaConversaLivre({
+        userId,
+        chatId: chat.id,
+        titulo: interpretarRespostaLivreParaRascunho(respostaLivreFinal)?.titulo || pedido,
+        registrarPasso,
+      });
+      if (gerada) fontesFinais.push(gerada);
     }
     return finalizarLivre(respostaLivreFinal, {
       fontesUsadas: fontesFinais,
