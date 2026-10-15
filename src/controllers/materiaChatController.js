@@ -84,7 +84,7 @@ async function criar(req, res, next) {
     const chat = await chatService.criarConversa({
       userId: req.session.userId,
       titulo: req.body?.titulo || null,
-      modo: req.body?.modo === 'livre' ? 'livre' : 'materia',
+      modo: ['livre', 'chatgpt'].includes(req.body?.modo) ? req.body.modo : 'materia',
       tom: req.body?.tom || 'natural',
     });
     return res.status(201).json({ ok: true, chat });
@@ -243,8 +243,9 @@ async function enviar(req, res, next) {
       periodo: body.periodo || undefined,
       palavrasChave: body.palavrasChave || null,
       modo: body.modo === 'pautas' ? 'pautas' : 'escrever',
-      tipoConversa: body.tipoConversa === 'livre' || body.tipo_conversa === 'livre'
-        ? 'livre'
+      // 'livre' = Claude livre; 'chatgpt' = ChatGPT livre (chatgpt.com no Chrome do servidor).
+      tipoConversa: ['livre', 'chatgpt'].includes(body.tipoConversa ?? body.tipo_conversa)
+        ? (body.tipoConversa ?? body.tipo_conversa)
         : 'materia',
       transcreverVideo:
         body.transcreverVideo == null

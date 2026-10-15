@@ -172,6 +172,15 @@
       : { provider: 'claude', nome: 'Sonnet 5', nivel: 'Médio', origem: 'redação' };
   }
 
+  /** 'livre' (Claude) e 'chatgpt' (ChatGPT no navegador do servidor) são conversas livres. */
+  function ehLivre(tipo = state.tipoConversa) {
+    return tipo === 'livre' || tipo === 'chatgpt';
+  }
+  /** Quem responde na conversa livre. */
+  function nomeLivre(tipo = state.tipoConversa) {
+    return tipo === 'chatgpt' ? 'ChatGPT' : 'Claude';
+  }
+
   const MODELO_KEY = 'ViralizeAI.materiaModelo';
   const ROTULO_PROVEDOR = { claude: 'Claude', chatgpt: 'ChatGPT' };
   // Gerador de imagem escolhido em /claude (ChatGPT, Grok ou Google Gemini).
@@ -255,7 +264,7 @@
 
   function atualizarModeloIa() {
     if (!el.modeloIa) return;
-    const tipo = state.tipoConversa === 'livre' ? 'livre' : 'materia';
+    const tipo = ehLivre() ? 'livre' : 'materia';
     const escolhido = opcaoEscolhida();
     const modelo = escolhido
       ? {
@@ -791,10 +800,10 @@
       const audioTranscrito = kinds.includes('transcricao');
       const audioFalhou = kinds.includes('transcricao-falhou');
       const rotulo =
-        state.tipoConversa === 'livre'
+        ehLivre()
           ? temPesquisaWeb
-            ? 'Pesquisa do Claude'
-            : 'Conversa com Claude'
+            ? `Pesquisa do ${nomeLivre()}`
+            : `Conversa com ${nomeLivre()}`
           : temPesquisaWeb
             ? 'Pesquisa e apuração'
             : 'Leitura e reescrita';
@@ -1596,7 +1605,7 @@
     if (titulo && !/^(achei|encontrei|aqui est[aá]|claro|vamos)\b/i.test(titulo)) {
       return titulo.slice(0, 180);
     }
-    return 'Matéria criada no Claude';
+    return `Matéria criada no ${nomeLivre()}`;
   }
 
   function areaSalvar(mensagem, container, { livre = false } = {}) {
@@ -2250,8 +2259,13 @@
             credito.dataset.auto = '1';
           }
           desenharPrevia(data.imagem);
-          capaTitulo.textContent = 'Imagem da fonte';
-          capaAviso.textContent = 'A imagem do link (vídeo, post ou matéria) já é a capa. Para trocar, escolha outra ao lado.';
+          if (data.origem === 'chatgpt') {
+            capaTitulo.textContent = 'Imagem do ChatGPT';
+            capaAviso.textContent = 'A imagem que o ChatGPT trouxe já é a capa ✓ Use “Recortar” para ajustar ou escolha outra ao lado.';
+          } else {
+            capaTitulo.textContent = 'Imagem da fonte';
+            capaAviso.textContent = 'A imagem do link (vídeo, post ou matéria) já é a capa. Para trocar, escolha outra ao lado.';
+          }
         })
         .catch(() => {});
     }
@@ -2379,7 +2393,8 @@
     capaIa.addEventListener('click', () => iniciarCapaIa());
     imagem.addEventListener('mia-fotos-sugeridas', (e) => {
       fotosSugeridas = Array.isArray(e.detail) ? e.detail : [];
-      if (autoIa.checked && mensagem.recemChegada && !mensagem.matterId && !capaIaAutomaticaFeita) {
+      // No ChatGPT livre a capa já vem do ChatGPT: a automática não pode substituí-la.
+      if (autoIa.checked && mensagem.recemChegada && !mensagem.matterId && !capaIaAutomaticaFeita && state.tipoConversa !== 'chatgpt') {
         capaIaAutomaticaFeita = true;
         iniciarCapaIa({ automatico: true });
       }
@@ -3442,17 +3457,17 @@
       /\b(?:posso seguir de duas formas|n[ãa]o encontrei(?:,| nas fontes| nenhum)|casos que já usei nesta conversa)\b/i.test(
         inicioRespostaLivre
       );
-    if (state.tipoConversa === 'livre') {
+    if (ehLivre()) {
       const escolha = blocoEscolhaNumerada(mensagem.content);
       if (escolha) wrap.appendChild(escolha);
     }
     const respostaLivreSalvavel =
-      state.tipoConversa === 'livre' &&
+      ehLivre() &&
       mensagem.podeSalvarRascunho !== false &&
       !devolutivaDePesquisa &&
       String(mensagem.content || '').trim().length >= 120;
-    if ((mensagem.ehMateria && state.tipoConversa !== 'livre') || respostaLivreSalvavel) {
-      areaSalvar(mensagem, wrap, { livre: state.tipoConversa === 'livre' });
+    if ((mensagem.ehMateria && !ehLivre()) || respostaLivreSalvavel) {
+      areaSalvar(mensagem, wrap, { livre: ehLivre() });
       // Atalhos só na última matéria, para não repetir a cada mensagem antiga
       if (ultima) {
         const continuar = blocoContinuar();
@@ -3495,7 +3510,7 @@
     } catch {
       /* ignore */
     }
-    el.titulo.textContent = state.tipoConversa === 'livre' ? 'Nova conversa com Claude' : 'Nova conversa';
+    el.titulo.textContent = ehLivre() ? `Nova conversa com ${nomeLivre()}` : 'Nova conversa';
     el.renomear?.classList.add('hidden');
     state.pesquisarWeb = false;
     // Cada conversa começa com uma escolha editorial limpa. O destaque na
@@ -3527,7 +3542,7 @@
       }
       el.titulo.textContent = chat.titulo || 'Nova conversa';
       el.renomear?.classList.remove('hidden');
-      state.tipoConversa = chat.modo === 'livre' ? 'livre' : 'materia';
+      state.tipoConversa = ['livre', 'chatgpt'].includes(chat.modo) ? chat.modo : 'materia';
       aplicarTipoConversa();
       state.pesquisarWeb = chat.pesquisarWeb === true;
       aplicarToggleWeb();
@@ -3560,7 +3575,10 @@
   }
 
   function aplicarTipoConversa() {
-    const livre = state.tipoConversa === 'livre';
+    const livre = ehLivre();
+    const chatgptLivre = state.tipoConversa === 'chatgpt';
+    // No ChatGPT livre quem escolhe o modelo é o próprio chatgpt.com.
+    el.modeloIa?.closest('.mia-chat-model')?.classList.toggle('hidden', chatgptLivre);
     el.tipoBtns?.forEach((btn) => {
       const ativo = btn.dataset.chatTipo === state.tipoConversa;
       btn.setAttribute('aria-pressed', ativo ? 'true' : 'false');
@@ -3575,7 +3593,7 @@
     if (el.toggleWeb) {
       el.toggleWeb.disabled = livre;
       el.toggleWeb.title = livre
-        ? 'A pesquisa nativa da sua conta Claude fica disponível automaticamente.'
+        ? `A pesquisa nativa da sua conta ${nomeLivre()} fica disponível automaticamente.`
         : 'Desligado: extrai o link e escreve sem verificar. Ligado: pesquisa outras fontes, verifica os fatos e revisa.';
     }
     if (el.toggleWebLabel) {
@@ -3589,7 +3607,9 @@
       aplicarToggleWeb();
     }
     if (el.input) {
-      el.input.placeholder = livre
+      el.input.placeholder = chatgptLivre
+        ? 'Peça a matéria ao ChatGPT. Ex.: uma notícia recente que desperte curiosidade no público evangélico'
+        : livre
         ? 'Converse normalmente com o Claude…'
         : state.modo === 'pautas'
           ? 'Tema para pesquisar. Ex.: Polêmica Silas Malafaia'
@@ -3599,14 +3619,16 @@
   }
 
   function definirTipoConversa(novo) {
-    const tipo = novo === 'livre' ? 'livre' : 'materia';
+    const tipo = ['livre', 'chatgpt'].includes(novo) ? novo : 'materia';
     if (tipo === state.tipoConversa) return;
     const tinhaConversa = Boolean(state.chatId);
     state.tipoConversa = tipo;
     if (tinhaConversa) novaConversa({ preservarTipo: true });
     aplicarTipoConversa();
     setStatus(
-      tipo === 'livre'
+      tipo === 'chatgpt'
+        ? 'ChatGPT livre · ele pesquisa, escreve e traz a imagem. A capa entra sozinha.'
+        : tipo === 'livre'
         ? 'Claude ativo · conversa sem regras editoriais.'
         : 'Pronto para criar. Cole um link ou conte o que deseja escrever.'
     );
@@ -3654,7 +3676,7 @@
       state.pesquisarWeb = true;
       aplicarToggleWeb();
     }
-    if (el.input && state.tipoConversa !== 'livre') {
+    if (el.input && !ehLivre()) {
       el.input.placeholder =
         state.modo === 'pautas'
           ? 'Digite o tema para pesquisar. Ex.: Polêmica Silas Malafaia'
@@ -3784,7 +3806,7 @@
     }
     const escolhaNumerada = entradaEhEscolhaNumerada(texto);
     const pedePesquisaLivre =
-      state.tipoConversa === 'livre' &&
+      ehLivre() &&
       /\b(pesquis\w*|busc\w*|procur\w*|recent\w*|hoje|agora|atual(?:mente)?|últim\w*)\b/i.test(texto);
     const linksPedido = urlsDoTexto(texto);
     if (texto.length < 3 && !escolhaNumerada) {
@@ -3799,7 +3821,9 @@
     setEnviando(true);
     const janela = el.periodo?.selectedOptions?.[0]?.textContent?.trim() || '';
     setStatus(
-      state.tipoConversa === 'livre'
+      state.tipoConversa === 'chatgpt'
+        ? 'ChatGPT está pesquisando e escrevendo — pode levar alguns minutos…'
+        : state.tipoConversa === 'livre'
         ? pedePesquisaLivre
           ? 'Claude está pesquisando na web…'
           : state.pesquisarWeb
@@ -3990,7 +4014,7 @@
   });
   el.selecaoExcluir?.addEventListener('click', excluirSelecionadas);
   el.toggleWeb?.addEventListener('click', () => {
-    if (state.tipoConversa === 'livre') return;
+    if (ehLivre()) return;
     state.pesquisarWeb = !state.pesquisarWeb;
     aplicarToggleWeb();
     // Sem busca não há como listar pautas

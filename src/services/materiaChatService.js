@@ -40,6 +40,19 @@ const JANELAS_DE_RESGATE = Object.freeze({
  * A lista antiga só aceitava `chat_*.jpg` e descartava o resto **em silêncio**:
  * a foto escolhida na tela sumia e o rascunho nascia com a foto da fonte.
  */
+/**
+ * Tipos de conversa: 'materia' (fluxo editorial), 'livre' (Claude) e
+ * 'chatgpt' (ChatGPT livre — conversa no chatgpt.com do Chrome do servidor).
+ */
+function tipoDaConversa(modo) {
+  return modo === 'livre' || modo === 'chatgpt' ? modo : 'materia';
+}
+
+/** Claude livre e ChatGPT livre seguem o mesmo caminho de resposta livre. */
+function ehConversaLivre(modo) {
+  return modo === 'livre' || modo === 'chatgpt';
+}
+
 function capaEscolhidaValida(valor, userId) {
   const v = String(valor || '').trim();
   if (!v) return false;
@@ -1681,7 +1694,7 @@ function serializarMensagem(row) {
       ? removerSecaoTitulosAlternativos(conteudoBruto)
       : conteudoBruto;
   const info = row.role === 'assistant' ? interpretarResposta(conteudo) : null;
-  const infoLivre = row.role === 'assistant' && row.chat_modo === 'livre'
+  const infoLivre = row.role === 'assistant' && ehConversaLivre(row.chat_modo)
     ? interpretarRespostaLivreParaRascunho(conteudo)
     : null;
   const guardadas = parseJson(row.fontes, []);
@@ -1689,7 +1702,7 @@ function serializarMensagem(row) {
   // Trechos completos ficam no banco para dar continuidade factual ao chat,
   // mas o navegador só precisa dos metadados exibidos no painel de fontes.
   const fontesVisiveis = (Array.isArray(guardadas) ? guardadas : [])
-    .filter((f) => f && !f.ehPauta)
+    .filter((f) => f && !f.ehPauta && !f.conversaChatgpt)
     .map(({ trecho, ...fonte }) => ({
       ...fonte,
       url: fonte.urlOriginal || fonte.url || null,
@@ -1726,8 +1739,8 @@ function serializarMensagem(row) {
     ehMateria:
       row.role === 'assistant' ? Boolean(info?.ehMateria) || multiplas.length >= 2 : false,
     podeSalvarRascunho:
-      row.role === 'assistant' && row.chat_modo === 'livre'
-        ? respostaLivrePodeVirarMateria(infoLivre)
+      row.role === 'assistant' && ehConversaLivre(row.chat_modo)
+        ? respostaLivrePodeVirarMateria(infoLivre, { sempreEditorial: row.chat_modo === 'chatgpt' })
         : true,
     createdAt: row.created_at,
   };
@@ -1749,7 +1762,7 @@ async function listarConversas(userId) {
   return rows.map((c) => ({
     id: c.id,
     titulo: c.titulo || 'Nova conversa',
-    modo: c.modo === 'livre' ? 'livre' : 'materia',
+    modo: tipoDaConversa(c.modo),
     origem: normalizarOrigem(c.origem),
     fixada: Boolean(c.fixado),
     pesquisarWeb: Boolean(c.pesquisar_web),
@@ -1772,7 +1785,7 @@ async function criarConversa({
     user_id: userId,
     facebook_page_id: facebookPageId || null,
     titulo: titulo ? tituloDaConversa(titulo) : null,
-    modo: modo === 'livre' ? 'livre' : 'materia',
+    modo: tipoDaConversa(modo),
     tom: normalizarTomTitulos(tom),
     origem: normalizarOrigem(origem),
   });
@@ -1780,7 +1793,7 @@ async function criarConversa({
   return {
     id: chat.id,
     titulo: chat.titulo || 'Nova conversa',
-    modo: chat.modo === 'livre' ? 'livre' : 'materia',
+    modo: tipoDaConversa(chat.modo),
     tom: chat.tom || 'natural',
     fixada: Boolean(chat.fixado),
     mensagens: [],
@@ -1805,7 +1818,7 @@ async function duplicarConversa({ userId, chatId }) {
       user_id: original.user_id,
       facebook_page_id: original.facebook_page_id || null,
       titulo,
-      modo: original.modo === 'livre' ? 'livre' : 'materia',
+      modo: tipoDaConversa(original.modo),
       fixado: false,
       pesquisar_web: Boolean(original.pesquisar_web),
       tom: original.tom || 'natural',
@@ -2041,7 +2054,11 @@ function interpretarRespostaLivreParaRascunho(conteudo, tituloEscolhido = null) 
  * este filtro, o tamanho do texto fazia o Claude Livre oferecer rascunho e
  * manchetes para uma simples devolutiva de pesquisa.
  */
-function respostaLivrePodeVirarMateria(info, { pedido = '' } = {}) {
+/**
+ * `sempreEditorial`: no ChatGPT livre toda resposta é matéria (o pedido é
+ * curto — "quero uma recente", "outra"), então só as recusas ficam de fora.
+ */
+function respostaLivrePodeVirarMateria(info, { pedido = '', sempreEditorial = false } = {}) {
   if (!info?.ehMateria || info.devolutivaDePesquisa) return false;
   const conteudo = `${info.titulo || ''}\n${info.corpo || ''}`;
   const inicio = conteudo
@@ -2076,7 +2093,7 @@ function respostaLivrePodeVirarMateria(info, { pedido = '' } = {}) {
   // Uma frase em negrito numa conversa comum não é manchete. Só oferecemos
   // rascunho/títulos quando o pedido foi editorial ou a própria resposta tem
   // estrutura inequívoca de matéria.
-  if (!pedidoEditorial && !estruturaEditorial) return false;
+  if (!sempreEditorial && !pedidoEditorial && !estruturaEditorial) return false;
 
   return !/^(?:e\s+a[ií]|ol[aá]|oi|boa\s+(?:noite|tarde|dia)|tudo\s+certo)\b/i.test(inicio) &&
     !/\b(?:s[oó]\s+bater\s+papo|como\s+posso\s+ajudar|quer\s+fazer\s+outra\s+mat[eé]ria)\b/i.test(inicio);
@@ -2444,7 +2461,7 @@ async function obterConversa({ userId, chatId }) {
   return {
     id: chat.id,
     titulo: chat.titulo || 'Nova conversa',
-    modo: chat.modo === 'livre' ? 'livre' : 'materia',
+    modo: tipoDaConversa(chat.modo),
     // A tela usa a origem para abrir a aba certa da lista.
     origem: normalizarOrigem(chat.origem),
     fixada: Boolean(chat.fixado),
@@ -2585,16 +2602,17 @@ async function responder({
   // Quem escreve "quero 5 pautas sobre X" está pedindo a lista, mesmo sem ter
   // clicado no chip "Pautas". Antes esse pedido caía no modo de escrever, que
   // exige fonte, e a resposta virava "me mande os links".
-  const tipoSolicitado = tipoConversa === 'livre' ? 'livre' : 'materia';
+  const tipoSolicitado = tipoDaConversa(tipoConversa);
   const pedeListaDePautas =
     /\b(pautas?|sugest(ão|ões)\s+de\s+mat[ée]rias?)\b/i.test(String(texto || '')) &&
     !/https?:\/\//i.test(String(texto || ''));
   const modoPautas =
-    tipoSolicitado !== 'livre' &&
+    !ehConversaLivre(tipoSolicitado) &&
     (String(modo) === 'pautas' || (String(modo) !== 'manual' && pedeListaDePautas));
   const deepseekService = require('./deepseekService');
   const materiaIaService = require('./materiaIaService');
-  deepseekService.assertDeepseek('conversa');
+  // O ChatGPT livre escreve no navegador; a DeepSeek/gateway só é exigida nos outros tipos.
+  if (tipoSolicitado !== 'chatgpt') deepseekService.assertDeepseek('conversa');
 
   const pedido = String(texto || '').replace(/\s+$/g, '').trim();
   if (pedido.length < 3) throw erro('Escreva o que você quer que a IA faça', 400);
@@ -2617,9 +2635,9 @@ async function responder({
     chat = await AiChats.findById(novoId);
     onEvent({ tipo: 'conversa', chat: { id: chat.id, titulo: chat.titulo, nova: true } });
   } else {
-    const tipoExistente = chat.modo === 'livre' ? 'livre' : 'materia';
+    const tipoExistente = tipoDaConversa(chat.modo);
     if (tipoExistente !== tipoSolicitado) {
-      throw erro('Inicie uma nova conversa para trocar entre Matéria e Claude livre.', 409);
+      throw erro('Inicie uma nova conversa para trocar o tipo (Matéria, Claude livre ou ChatGPT livre).', 409);
     }
     const patch = { pesquisar_web: pesquisarWeb ? 1 : 0, tom: tomTitulos, periodo: periodoFinal };
     if (!chat.titulo) patch.titulo = tituloDaConversa(pedido);
@@ -2629,7 +2647,7 @@ async function responder({
     }
   }
 
-  const conversaLivre = (chat.modo === 'livre' ? 'livre' : tipoSolicitado) === 'livre';
+  const conversaLivre = ehConversaLivre(tipoDaConversa(chat.modo));
   const anteriores = await AiChatMessages.findByChat(chat.id);
   const pedidoMemoriaEditorial = conversaLivre && (
     /\b(?:grave|gravar|salve|salvar|memorize|guarde|aprenda)\b[\s\S]{0,180}\b(?:pr[oó]xim|futur|conte[uú]do|mat[eé]ria|conversa|sempre)\b/i.test(pedido) ||
@@ -2699,7 +2717,7 @@ async function responder({
   const finalizarLivre = async (resposta, { fontesUsadas = [], usouWeb = false } = {}) => {
     let respostaLimpa = limparArtefatosDeTextoLivre(resposta);
     let infoLivre = interpretarRespostaLivreParaRascunho(respostaLimpa);
-    let podeSalvarRascunho = respostaLivrePodeVirarMateria(infoLivre, { pedido });
+    let podeSalvarRascunho = respostaLivrePodeVirarMateria(infoLivre, { pedido, sempreEditorial: chat.modo === 'chatgpt' });
     let materiasSeparadas = separarMaterias(respostaLimpa);
     if (materiasSeparadas.length >= 2) {
       podeSalvarRascunho = false;
@@ -2708,7 +2726,7 @@ async function responder({
       const { removerComentariosEditoriaisIa } = require('./editorialGuidelinesFb');
       respostaLimpa = removerComentariosEditoriaisIa(respostaLimpa);
       infoLivre = interpretarRespostaLivreParaRascunho(respostaLimpa);
-      podeSalvarRascunho = respostaLivrePodeVirarMateria(infoLivre, { pedido });
+      podeSalvarRascunho = respostaLivrePodeVirarMateria(infoLivre, { pedido, sempreEditorial: chat.modo === 'chatgpt' });
       materiasSeparadas = separarMaterias(respostaLimpa);
       if (materiasSeparadas.length >= 2) {
         podeSalvarRascunho = false;
@@ -2755,6 +2773,10 @@ async function responder({
       ...(fonte.plataforma ? { plataforma: limparParaBanco(fonte.plataforma, 30) } : {}),
       ...(fonte.ehRedeSocial ? { ehRedeSocial: true } : {}),
       ...(fonte.fonteColada ? { fonteColada: true } : {}),
+      // ChatGPT livre: a imagem que o ChatGPT mostrou (capa) e a conversa no chatgpt.com.
+      ...(fonte.capaChatgpt ? { capaChatgpt: limparParaBanco(fonte.capaChatgpt, 20) } : {}),
+      ...(fonte.creditoImagem ? { creditoImagem: limparParaBanco(fonte.creditoImagem, 120) } : {}),
+      ...(fonte.conversaChatgpt ? { conversaChatgpt: limparParaBanco(fonte.conversaChatgpt, 300) } : {}),
     }));
     const assistantId = await AiChatMessages.create({
       chat_id: chat.id,
@@ -2792,6 +2814,72 @@ async function responder({
     onEvent({ tipo: 'fim', chatId: chat.id, mensagem });
     return { chatId: chat.id, mensagem };
   };
+
+  // ChatGPT livre: pedido vai direto ao chatgpt.com (Chrome do servidor). O
+  // ChatGPT pesquisa, escreve e mostra a imagem; a imagem vira a capa.
+  if (chat.modo === 'chatgpt') {
+    const conversaUrl = [...anteriores]
+      .reverse()
+      .map((m) => (m.role === 'assistant' ? parseJson(m.fontes, []) : []))
+      .flat()
+      .find((f) => f?.conversaChatgpt)?.conversaChatgpt || null;
+    onEvent({ tipo: 'inicio-resposta' });
+    const resposta = await require('./chatgptLivreService').conversar({
+      pedido,
+      conversaUrl,
+      onPasso: registrarPasso,
+    });
+    const fontesChatgpt = [];
+    let capa = null;
+    if (resposta.imagem) {
+      try {
+        capa = await require('./matterArtworkService').storeMatterSourceImage({
+          userId,
+          matterId: 0,
+          buffer: resposta.imagem.buffer,
+          prefixo: `chat_${chat.id}`,
+        });
+      } catch (err) {
+        console.warn('[chatgpt-livre] imagem não gravada:', err.message);
+      }
+    }
+    fontesChatgpt.push({
+      veiculo: 'ChatGPT',
+      titulo: 'Conversa no ChatGPT',
+      url: null,
+      conversaChatgpt: resposta.conversaUrl,
+      ...(capa
+        ? {
+            imagem: capa.publicUrl,
+            capaChatgpt: resposta.imagem.gerada ? 'gerada' : 'web',
+            creditoImagem: resposta.imagem.gerada ? 'Imagem gerada por IA' : 'Reprodução/Internet',
+          }
+        : {}),
+    });
+    for (const link of resposta.links) {
+      fontesChatgpt.push({
+        veiculo: hostDoLink(link.url) || 'Fonte',
+        titulo: link.titulo || hostDoLink(link.url) || link.url,
+        url: link.url,
+      });
+    }
+    if (capa) {
+      // Também fica em Minhas imagens, como as capas geradas pelo editor.
+      try {
+        require('./bancoImagensService').registrarEmSegundoPlano({
+          publicUrl: capa.publicUrl,
+          origem: resposta.imagem.gerada ? 'ia' : 'upload',
+          userId,
+          gerador: 'chatgpt',
+          titulo: tituloDaConversa(pedido),
+        });
+      } catch {
+        /* banco de imagens é opcional */
+      }
+    }
+    onEvent({ tipo: 'delta', texto: resposta.texto });
+    return finalizarLivre(resposta.texto, { fontesUsadas: fontesChatgpt, usouWeb: true });
+  }
 
   if (conversaLivre) {
     let fontesWeb = [];
@@ -4740,7 +4828,7 @@ function fontesDaMensagemParaCapa(row) {
     const lista = parseJson(row.fontes, []);
     return Array.isArray(lista) ? lista.filter((f) => f && !f.ehPauta) : [];
   })();
-  return row.chat_modo === 'livre'
+  return ehConversaLivre(row.chat_modo)
     ? selecionarFontesRespostaLivre(row.content, { fontesSalvas: fontesLista })
     : fontesLista;
 }
@@ -4750,6 +4838,15 @@ async function imagemDaFonteDaMensagem({ userId, messageId } = {}) {
   const row = await AiChatMessages.findByIdWithChat(messageId);
   if (!row || Number(row.chat_user_id) !== Number(userId)) {
     throw erro('Mensagem não encontrada', 404);
+  }
+  const daChatgpt = (parseJson(row.fontes, []) || []).find((f) => f?.capaChatgpt && f.imagem);
+  if (daChatgpt) {
+    return {
+      imagem: daChatgpt.imagem,
+      veiculo: 'ChatGPT',
+      origem: 'chatgpt',
+      credito: daChatgpt.creditoImagem || 'Reprodução/Internet',
+    };
   }
   const capa = await imagemDaFonte({ fontesDaMateria: fontesDaMensagemParaCapa(row) });
   return {
@@ -4778,7 +4875,7 @@ async function salvarMateriaDoChat({
     throw erro('Mensagem não encontrada', 404);
   }
   if (row.role !== 'assistant') throw erro('Só é possível salvar a resposta da IA', 400);
-  const conversaLivre = row.chat_modo === 'livre';
+  const conversaLivre = ehConversaLivre(row.chat_modo);
 
   // Resposta com várias matérias: cada índice salva um rascunho separado.
   const multiplas = separarMaterias(row.content);
@@ -4821,7 +4918,7 @@ async function salvarMateriaDoChat({
   if (conversaLivre && !escolhida) {
     info = interpretarRespostaLivreParaRascunho(row.content, tituloEscolhido);
   }
-  if (conversaLivre && !escolhida && !respostaLivrePodeVirarMateria(info)) {
+  if (conversaLivre && !escolhida && !respostaLivrePodeVirarMateria(info, { sempreEditorial: row.chat_modo === 'chatgpt' })) {
     throw erro('Esta é uma devolutiva de apuração, não uma matéria pronta para salvar.', 400);
   }
   const corpo = String(info.corpo || (escolhida ? escolhida.conteudo : row.content) || '').trim();
@@ -5258,12 +5355,12 @@ async function gerarTitulosAlternativosDaMensagem({
     throw erro('Só respostas do Claude podem receber sugestões de título.', 400);
   }
 
-  const conversaLivre = row.chat_modo === 'livre';
+  const conversaLivre = ehConversaLivre(row.chat_modo);
   const info = conversaLivre
     ? interpretarRespostaLivreParaRascunho(row.content)
     : interpretarResposta(row.content);
   if (!info.ehMateria || !String(info.corpo || '').trim() ||
-    (conversaLivre && !respostaLivrePodeVirarMateria(info))) {
+    (conversaLivre && !respostaLivrePodeVirarMateria(info, { sempreEditorial: row.chat_modo === 'chatgpt' }))) {
     throw erro('Esta resposta não tem uma matéria pronta para sugerir títulos.', 400);
   }
 
@@ -5321,7 +5418,7 @@ async function sugerirImagensDaMensagem({ userId, messageId, consulta = null, li
   const q = String(consulta || '').trim();
   if (q) return buscarImagensPorPalavra(q, { limite: total });
 
-  const info = row.chat_modo === 'livre'
+  const info = ehConversaLivre(row.chat_modo)
     ? interpretarRespostaLivreParaRascunho(row.content)
     : interpretarResposta(row.content);
   const titulo = require('./chatgptMarkup')
@@ -5357,7 +5454,7 @@ async function editarConteudoDaMensagem({ userId, messageId, conteudo } = {}) {
   const texto = String(conteudo || '').replace(/\r\n/g, '\n').trim();
   if (texto.length < 40) throw erro('O texto ficou curto demais para uma matéria.', 400);
   if (texto.length > 20000) throw erro('O texto passou do limite de 20 mil caracteres.', 400);
-  const info = row.chat_modo === 'livre'
+  const info = ehConversaLivre(row.chat_modo)
     ? interpretarRespostaLivreParaRascunho(texto)
     : interpretarResposta(texto);
   await AiChatMessages.update(row.id, {

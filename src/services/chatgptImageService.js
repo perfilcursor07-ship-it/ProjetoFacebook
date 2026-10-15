@@ -864,6 +864,9 @@ module.exports = {
   promptComFormatoFacebook,
   // Reaproveitados pela geração no Grok e no Gemini (imagemWebService).
   obterBrowser,
+  // Reaproveitados pelo "ChatGPT livre" do /materia-manual (chatgptLivreService).
+  aguardarEditor,
+  reservarPreparacao,
   imagemParaUpload,
   // Exposto somente para validar a compatibilidade dos cookies do Chrome.
   cookiesDoHeader,
