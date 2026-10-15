@@ -1376,7 +1376,8 @@ async function gerarEPublicarLote({ userId, topicos, facebookPageId, tipoPublica
   const criados = [];
   const erros = [];
 
-  for (const topico of lista) {
+  for (let i = 0; i < lista.length; i += 1) {
+    const topico = lista[i];
     try {
       const gerado = await gerarPreviewDeTopico(topico, {
         userId,
@@ -1407,6 +1408,12 @@ async function gerarEPublicarLote({ userId, topicos, facebookPageId, tipoPublica
         imagem_url: gerado.imagemUrl,
       });
       criados.push({ matterId: matter.id, publicationId: pub.publicationId, titulo: gerado.titulo });
+
+      // Delay de 2 min entre publicações para evitar spam (Ayrshare)
+      if (i < lista.length - 1) {
+        console.log(`[lote] aguardando 2min antes da próxima publicação (${i + 1}/${lista.length})`);
+        await new Promise((resolve) => setTimeout(resolve, 120_000));
+      }
     } catch (err) {
       erros.push({ titulo: topico?.titulo || '—', erro: err.message });
     }
