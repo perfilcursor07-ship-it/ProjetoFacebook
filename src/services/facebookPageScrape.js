@@ -630,17 +630,29 @@ async function listarPostsPerfil(pageUrl, limite = 20) {
   let htmlTotal = 0;
   const porVariante = {};
 
+  // Sessão caída vale para a página inteira: a 1ª variante que redireciona
+  // para login (401) encerra as outras. Insistir nas 8 baixava ~80 MB de
+  // muro de login por página — e, com ~20 páginas assim por volta, era isso
+  // que deixava o servidor inteiro lento.
+  let sessaoCaiu = null;
+
   const paginas = await mapearComLimite(variantes, 2, async (variante) => {
+    if (sessaoCaiu) return { variante, encontrados: [], htmlLen: 0, pulada: true };
     try {
       const { html } = await baixarHtmlPagina(variante);
       const encontrados = extrairUrlsDePosts(html).urls;
       return { variante, encontrados, htmlLen: html.length };
     } catch (err) {
+      if (Number(err?.status) === 401) sessaoCaiu = err;
       // Variante indisponível não invalida o scan; a principal já basta.
       console.warn(`[fb-page] variante ${variante.slice(-40)}: ${err.message}`);
       return { variante, encontrados: [], htmlLen: 0 };
     }
   });
+
+  // Nenhuma variante leu nada porque a sessão caiu: isso é erro de sessão, e
+  // precisa chegar como tal para o recuo da Biblioteca espaçar as tentativas.
+  if (sessaoCaiu && !paginas.some((p) => p.encontrados.length)) throw sessaoCaiu;
 
   // Junta na ordem de prioridade definida acima. Antes, duas requisições
   // concorrentes disputavam quem inseria primeiro e fotos de cabeçalho podiam

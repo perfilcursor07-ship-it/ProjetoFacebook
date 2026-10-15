@@ -360,6 +360,27 @@ function nextRun(intervaloMinutos) {
   return new Date(Date.now() + mins * 60_000);
 }
 
+/** Teto do recuo: 12 h. Sessão reexportada é percebida no mesmo dia. */
+const ESPERA_MAX_MIN = Math.max(60, Number(process.env.FONTE_RECUO_MAX_MIN) || 12 * 60);
+
+/**
+ * Quanto esperar antes de tentar de novo uma fonte que falhou.
+ *
+ * Dobra a cada falha seguida (2× o intervalo, 4×, 8×…) até o teto. O motivo
+ * é CPU, não educação com o site: ~20 páginas do Facebook com sessão caída,
+ * relidas de 15 em 15 min, baixavam ~1,6 GB de HTML por volta para devolver
+ * zero post — e, sendo o Node single-thread, era o site inteiro que ficava
+ * lento enquanto isso era varrido.
+ *
+ * Com o recuo, uma fonte quebrada custa quase nada e uma que volte a
+ * funcionar é percebida na tentativa seguinte.
+ */
+function esperaAposFalha(falhasSeguidas, intervaloMinutos) {
+  const base = Math.min(Math.max(Number(intervaloMinutos) || 60, 15), 24 * 60);
+  const vezes = 2 ** Math.min(Math.max(Number(falhasSeguidas) || 1, 1) - 1, 10);
+  return Math.min(base * 2 * vezes, ESPERA_MAX_MIN);
+}
+
 const SCAN_LIMIT = 10;
 /** Facebook: API devolve poucos por página — pedimos mais e paginamos. */
 const SCAN_LIMIT_FACEBOOK = 40;
@@ -2624,12 +2645,28 @@ async function tickFontes() {
     if (fonte.user_id) userIds.add(Number(fonte.user_id));
     try {
       await escanearFonte(fonte, { silentFirst: true });
+      // Voltou a responder: ritmo normal de novo.
+      if (Number(fonte.falhas_seguidas) > 0) {
+        await BibliotecaFontes.update(fonte.id, { falhas_seguidas: 0 }).catch(() => {});
+      }
     } catch (err) {
-      console.error(`[biblioteca] fonte #${fonte.id}:`, err.message);
+      const falhas = (Number(fonte.falhas_seguidas) || 0) + 1;
+      const minutos = esperaAposFalha(falhas, fonte.intervalo_minutos);
+      console.error(
+        `[biblioteca] fonte #${fonte.id}: ${err.message} (falha ${falhas}; próxima em ${minutos} min)`
+      );
       await BibliotecaFontes.update(fonte.id, {
         ultimo_erro: String(err.message || err).slice(0, 1000),
-        proxima_execucao: nextRun(fonte.intervalo_minutos),
+        proxima_execucao: new Date(Date.now() + minutos * 60_000),
         ultimo_scan: new Date(),
+        falhas_seguidas: falhas,
+      }).catch(async () => {
+        // Banco sem a coluna ainda (migração não rodou): grava o resto.
+        await BibliotecaFontes.update(fonte.id, {
+          ultimo_erro: String(err.message || err).slice(0, 1000),
+          proxima_execucao: new Date(Date.now() + minutos * 60_000),
+          ultimo_scan: new Date(),
+        }).catch(() => {});
       });
     }
   }
@@ -3219,6 +3256,7 @@ async function tickAutopilot() {
 
 module.exports = {
   detectarPlataforma,
+  esperaAposFalha,
   pareceFeed,
   descobrirFeedsRss,
   criarFonte,
