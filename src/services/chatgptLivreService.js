@@ -173,6 +173,10 @@ async function diagnosticar(page, motivo) {
       turnos: document.querySelectorAll('article, [data-testid^="conversation-turn"]').length,
       mensagensDoUsuario: document.querySelectorAll('[data-message-author-role="user"], [data-turn="user"]').length,
       botaoParar: Boolean(document.querySelector('[data-testid="stop-button"]')),
+      // Aba de fundo sem viewport não renderiza a lista virtualizada do
+      // ChatGPT: dava turnos=0 numa conversa cheia. Se voltar, é por aqui.
+      visibilidade: document.visibilityState,
+      viewport: `${window.innerWidth}x${window.innerHeight}`,
       textoNaCaixa: String(composer?.innerText || composer?.value || '').trim().slice(0, 80),
       ultimoTurno: String(ultimoTurno?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 300),
       avisoNaTela: String(document.querySelector('[role="alert"], .text-token-text-error, [class*="error" i]')?.innerText || '').trim().slice(0, 200),

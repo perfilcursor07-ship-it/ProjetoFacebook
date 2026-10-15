@@ -82,6 +82,43 @@ function marcar(pagina, targetId) {
   return pagina;
 }
 
+/** Tamanho da janela emulada. Largura de desktop: o ChatGPT muda o layout no estreito. */
+const LARGURA = Number(process.env.CHROME_ABA_LARGURA) || 1280;
+const ALTURA = Number(process.env.CHROME_ABA_ALTURA) || 900;
+
+/**
+ * Faz a aba de fundo se comportar como se estivesse à vista.
+ *
+ * Aba criada com `background: true` nunca é renderizada pelo Chrome: ela não
+ * tem viewport de layout e se considera oculta. Páginas comuns não ligam,
+ * mas o ChatGPT monta as mensagens numa lista VIRTUALIZADA — sem altura
+ * visível, ela monta ZERO linhas. O resultado era uma conversa respondida e
+ * perfeitamente visível no VNC que, para nós, tinha `turnos: 0`: nem a
+ * mensagem do próprio editor aparecia, só o `document.title` (que não depende
+ * de layout) vinha certo.
+ *
+ * `setDeviceMetricsOverride` dá o viewport e `setFocusEmulationEnabled` faz a
+ * página se considerar visível e focada — sem trazer a aba para a frente, que
+ * é justamente o que fazia o desktop do noVNC piscar.
+ *
+ * Nunca lança: Chrome que não suporte um dos comandos segue como antes.
+ */
+async function prepararAba(context, pagina) {
+  const sessao = await context.newCDPSession(pagina).catch(() => null);
+  if (!sessao) return pagina;
+  await sessao
+    .send('Emulation.setDeviceMetricsOverride', {
+      width: LARGURA,
+      height: ALTURA,
+      deviceScaleFactor: 1,
+      mobile: false,
+    })
+    .catch(() => {});
+  await sessao.send('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {});
+  await sessao.detach().catch(() => {});
+  return pagina;
+}
+
 async function novaAbaEmSegundoPlano(browser, context) {
   let cdp = null;
   let targetId = null;
@@ -93,7 +130,9 @@ async function novaAbaEmSegundoPlano(browser, context) {
     while (Date.now() < limite) {
       for (const pagina of context.pages()) {
         if (antes.has(pagina)) continue;
-        if ((await idDaAba(context, pagina)) === targetId) return marcar(pagina, targetId);
+        if ((await idDaAba(context, pagina)) === targetId) {
+          return prepararAba(context, marcar(pagina, targetId));
+        }
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
@@ -104,8 +143,10 @@ async function novaAbaEmSegundoPlano(browser, context) {
   } finally {
     if (cdp) await cdp.detach().catch(() => {});
   }
+  // Reserva: `newPage()` traz a aba para a frente, mas ela também precisa do
+  // viewport — o Chrome do VNC pode estar com a janela minúscula.
   const pagina = await context.newPage();
-  return marcar(pagina, await idDaAba(context, pagina));
+  return prepararAba(context, marcar(pagina, await idDaAba(context, pagina)));
 }
 
 /**
@@ -139,4 +180,11 @@ async function fecharAba(pagina) {
   if (fechou) esquecer(targetId);
 }
 
-module.exports = { novaAbaEmSegundoPlano, fecharAba, abasRegistradas, esquecer, ARQUIVO_REGISTRO };
+module.exports = {
+  novaAbaEmSegundoPlano,
+  prepararAba,
+  fecharAba,
+  abasRegistradas,
+  esquecer,
+  ARQUIVO_REGISTRO,
+};
