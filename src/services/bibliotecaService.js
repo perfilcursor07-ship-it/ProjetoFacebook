@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const db = require('../config/db');
 const BibliotecaFontes = require('../models/BibliotecaFontes');
 const BibliotecaPosts = require('../models/BibliotecaPosts');
 const BibliotecaAlertas = require('../models/BibliotecaAlertas');

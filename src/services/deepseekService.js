@@ -63,12 +63,29 @@ function erroTransitorioDeepseek(err) {
 }
 
 /** Uma queda transitória não deve eliminar o dossiê inteiro da matéria. */
+/** Prazo de cada tentativa de títulos alternativos na DeepSeek. */
+const TITULOS_PRAZO_MS = 45_000;
+
 async function postDeepseekComRetry(body, opcoes, tentativas = 2) {
   let ultimoErro;
+  const prazoMs = Number(opcoes?.timeout) || 0;
   for (let tentativa = 1; tentativa <= tentativas; tentativa += 1) {
     try {
-      return await axios.post(DEEPSEEK_URL, body, opcoes);
+      // O `timeout` do axios só conta tempo SEM receber bytes. Com a API
+      // sobrecarregada, a DeepSeek segura a conexão mandando linhas vazias de
+      // keep-alive e a chamada ficava 15 min pendurada (log: "900.4s"),
+      // travando títulos, matérias e o tick dos Dots. O sinal corta no prazo
+      // total, receba bytes ou não.
+      const sinal = !opcoes?.signal && prazoMs ? AbortSignal.timeout(prazoMs) : opcoes?.signal;
+      return await axios.post(DEEPSEEK_URL, body, { ...opcoes, ...(sinal ? { signal: sinal } : {}) });
     } catch (err) {
+      if (axios.isCancel(err) || err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') {
+        // Repetir dobraria a espera; quem chamou decide o que fazer.
+        const prazo = new Error(`DeepSeek não respondeu em ${Math.round(prazoMs / 1000)}s`);
+        prazo.code = 'DEEPSEEK_PRAZO';
+        prazo.status = 504;
+        throw prazo;
+      }
       ultimoErro = err;
       if (tentativa >= tentativas || !erroTransitorioDeepseek(err)) throw err;
       const esperaMs = 600 * tentativa;
@@ -341,7 +358,7 @@ async function chatCompletion(
 /** Chamada direta à API oficial do DeepSeek, sem passar por gateway nem Claude. */
 async function chatCompletionDeepseekDireto(
   messages,
-  { temperature = 0.78, json = true, thinking = false, model = DEEPSEEK_MODEL } = {}
+  { temperature = 0.78, json = true, thinking = false, model = DEEPSEEK_MODEL, timeout = 120_000 } = {}
 ) {
   assertDeepseek();
   const selectedModel = String(model || DEEPSEEK_MODEL);
@@ -364,7 +381,7 @@ async function chatCompletionDeepseekDireto(
       Authorization: `Bearer ${env.deepseekApiKey}`,
       'Content-Type': 'application/json',
     },
-    timeout: 120_000,
+    timeout,
   });
   logarDuracao(
     selectedModel,
@@ -438,10 +455,18 @@ async function chatCompletionClaudeObrigatorio(messages, options = {}) {
  */
 async function completarComModeloDeTitulos(messages, options = {}, { somenteClaude = false } = {}) {
   const fixo = await require('./iaModeloTarefaService').modeloDaTarefa('titulos').catch(() => null);
-  if (fixo && /deepseek/i.test(fixo) && env.deepseekApiKey) {
-    return chatCompletionDeepseekDireto(messages, options);
-  }
   const completar = somenteClaude ? chatCompletionClaudeObrigatorio : chatCompletion;
+  if (fixo && /deepseek/i.test(fixo) && env.deepseekApiKey) {
+    try {
+      // Títulos são um extra da matéria: a tela fica em "Montando 3 títulos…"
+      // enquanto isto não volta. Prazo curto e, falhando, tenta a cadeia normal.
+      return await chatCompletionDeepseekDireto(messages, { ...options, timeout: TITULOS_PRAZO_MS });
+    } catch (err) {
+      if (err.iaPausada) throw err;
+      console.warn(`[titulos-alternativos] DeepSeek falhou (${err.message}); tentando o modelo padrão`);
+      return completar(messages, options);
+    }
+  }
   return require('./tokenFreeGatewayService').comModelo(fixo, () => completar(messages, options));
 }
 
@@ -4584,6 +4609,7 @@ module.exports = {
   chatCompletionStream,
   comProvedor,
   chatCompletionClaudeObrigatorio,
+  chatCompletionDeepseekDireto,
   completarComModeloDeTitulos,
   traduzirPostsParaPortugues,
   sugerirConsultasImagem,
