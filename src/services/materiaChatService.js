@@ -2997,7 +2997,15 @@ async function responder({
       }
     }
 
-    const pesquisarLivre = !pediuSemPesquisaLivre && !pedidoMemoriaEditorial &&
+    // No "ChatGPT livre" quem pesquisa é a própria IA: o pedido vai inteiro
+    // para ela, que busca e já devolve a matéria. Pesquisar aqui ANTES era
+    // trabalho dobrado — o editor via "Pesquisando na internet… 6 fonte(s)"
+    // e esperava por uma busca que a IA ia refazer do jeito dela.
+    //
+    // Link colado continua sendo extraído aqui: isso é leitura de uma fonte
+    // que o editor escolheu, não pesquisa.
+    const iaPesquisaSozinha = chat.modo === 'chatgpt';
+    const pesquisarLivre = !iaPesquisaSozinha && !pediuSemPesquisaLivre && !pedidoMemoriaEditorial &&
       (pesquisarWeb || artigoNaoExtraidoLivre || pedidoSolicitaPesquisa(pedido));
     if (pesquisarLivre) {
       registrarPasso({ kind: 'pesquisa', texto: 'Pesquisando na internet…' });
@@ -3041,14 +3049,18 @@ async function responder({
     }
     fontesWeb = fontesUnicas.slice(0, 12);
 
-    const pediuPesquisaClaude = !pedidoMemoriaEditorial && (
+    const pediuPesquisaClaude = !iaPesquisaSozinha && !pedidoMemoriaEditorial && (
       artigoNaoExtraidoLivre ||
       Boolean(pesquisarWeb) ||
       pedidoSolicitaPesquisa(pedido)
     );
     registrarPasso({
-      kind: pediuPesquisaClaude ? 'pesquisa' : 'pensando',
-      texto: pediuPesquisaClaude ? 'Pesquisando na web…' : 'Escrevendo a resposta…',
+      kind: iaPesquisaSozinha || pediuPesquisaClaude ? 'pesquisa' : 'pensando',
+      texto: iaPesquisaSozinha
+        ? 'O ChatGPT está pesquisando e escrevendo…'
+        : pediuPesquisaClaude
+          ? 'Pesquisando na web…'
+          : 'Escrevendo a resposta…',
     });
     onEvent({ tipo: 'inicio-resposta' });
     const historicoLivre = anteriores.map((mensagem) => ({
@@ -3078,7 +3090,11 @@ async function responder({
       conversationName: chat.titulo || tituloDaConversa(pedido),
       // Preserva a pesquisa nativa para consultas livres, mas não a dispara
       // sobre uma publicação que já foi extraída pelo próprio sistema.
-      pesquisarWeb: Boolean(pesquisarLivre),
+      //
+      // No "ChatGPT livre" ela fica SEMPRE ligada: é ela que substitui a
+      // nossa busca. Amarrar as duas na mesma variável desligaria as duas e
+      // o modo responderia sem internet nenhuma — o contrário do que ele é.
+      pesquisarWeb: iaPesquisaSozinha ? true : Boolean(pesquisarLivre),
     });
     let respostaLivreFinal = limparArtefatosDeTextoLivre(respostaLivre);
     if (respostaAdmitePeriodoNaoAtendido(pedido, respostaLivreFinal)) {
@@ -3191,8 +3207,30 @@ async function responder({
         registrarPasso({ kind: 'aviso', texto: 'Não foi possível recuperar a imagem de capa da fonte.' });
       }
     }
-    // "ChatGPT livre" promete a matéria JÁ com a imagem. Sem foto na fonte,
-    // gera uma — é o que o modo pelo navegador fazia e o que o editor espera.
+    // "ChatGPT livre" promete a matéria JÁ com a imagem.
+    //
+    // Como aqui não houve pesquisa nossa, a única pista é o link que a IA
+    // citou na linha "Fonte:". A foto real da reportagem é sempre melhor que
+    // uma ilustração, então ela vem primeiro; gerar é o último recurso.
+    if (chat.modo === 'chatgpt' && !fontesFinais.some((f) => f?.imagem)) {
+      const linkCitado = primeiroLinkDeFonte(respostaLivreFinal);
+      if (linkCitado) {
+        try {
+          const meta = await require('./articleSource').extrairMetadadosImagemArtigo(linkCitado);
+          if (meta?.imagem) {
+            fontesFinais.push({
+              veiculo: meta.veiculo || hostDoLink(linkCitado) || 'Fonte',
+              titulo: meta.titulo || 'Reportagem citada',
+              url: linkCitado,
+              imagem: meta.imagem,
+            });
+            registrarPasso({ kind: 'fontes', texto: 'Foto da reportagem citada localizada ✓' });
+          }
+        } catch {
+          /* sem foto no link: cai na geração abaixo */
+        }
+      }
+    }
     if (chat.modo === 'chatgpt' && !fontesFinais.some((f) => f?.imagem)) {
       const gerada = await capaDaConversaLivre({
         userId,

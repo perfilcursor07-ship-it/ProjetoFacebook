@@ -77,3 +77,44 @@ test('o arquivo do ChatGPT livre pelo navegador segue carregável', () => {
   const livre = require('../src/services/chatgptLivreService');
   assert.equal(typeof livre.conversar, 'function');
 });
+
+// ── Quem pesquisa é a IA, não o ViralizeAI ────────────────────────────────
+
+test('no ChatGPT livre o ViralizeAI não pesquisa antes', () => {
+  // Era trabalho dobrado: o editor via "Pesquisando na internet… 6 fonte(s)"
+  // e esperava por uma busca que a IA ia refazer do jeito dela.
+  assert.match(CHAT, /const iaPesquisaSozinha = chat\.modo === 'chatgpt';/);
+  assert.match(
+    CHAT,
+    /const pesquisarLivre = !iaPesquisaSozinha && !pediuSemPesquisaLivre && !pedidoMemoriaEditorial &&/
+  );
+  // O rótulo do passo também não pode anunciar busca nossa.
+  assert.match(CHAT, /const pediuPesquisaClaude = !iaPesquisaSozinha && !pedidoMemoriaEditorial/);
+});
+
+test('mas a pesquisa NATIVA da IA fica sempre ligada nesse modo', () => {
+  // Amarrar as duas na mesma variável desligaria as duas, e o modo
+  // responderia sem internet nenhuma — o contrário do que ele é.
+  assert.match(CHAT, /pesquisarWeb: iaPesquisaSozinha \? true : Boolean\(pesquisarLivre\),/);
+});
+
+test('link colado continua sendo extraído', () => {
+  // Ler uma fonte que o editor escolheu não é "pesquisar"; desligar isso
+  // tiraria do modo a capacidade de escrever a partir de um link.
+  const trecho = CHAT.slice(CHAT.indexOf('if (urlsSociaisLivre.length)'), CHAT.indexOf('const iaPesquisaSozinha'));
+  assert.match(trecho, /extrairFontesDeLinks\(urlsSociaisLivre/);
+  assert.match(trecho, /extrairFontesDeArtigos\(urlsArtigosLivre/);
+});
+
+test('a foto real da reportagem citada vem antes de gerar', () => {
+  // Sem pesquisa nossa, a única pista é o link da linha "Fonte:".
+  const capa = CHAT.indexOf('const linkCitado = primeiroLinkDeFonte(respostaLivreFinal);');
+  const gera = CHAT.indexOf('const gerada = await capaDaConversaLivre(');
+  assert.ok(capa > 0 && capa < gera, 'tentar a foto citada antes de gerar');
+  assert.match(CHAT, /Foto da reportagem citada localizada ✓/);
+});
+
+test('o passo diz que quem pesquisa é o ChatGPT', () => {
+  assert.match(CHAT, /texto: iaPesquisaSozinha\s*\n\s*\? 'O ChatGPT está pesquisando e escrevendo…'/);
+  assert.match(CHAT, /kind: iaPesquisaSozinha \|\| pediuPesquisaClaude \? 'pesquisa' : 'pensando',/);
+});

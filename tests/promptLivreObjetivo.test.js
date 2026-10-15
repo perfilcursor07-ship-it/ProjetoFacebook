@@ -81,12 +81,10 @@ test('o aviso de fim de conversa também é curto', () => {
   );
 });
 
-test('os avisos na tela não citam o nome do provedor', () => {
-  // O modo se chama "ChatGPT livre" e os avisos diziam "Claude".
+test('os avisos não chamam de Claude o que a tela chama de ChatGPT', () => {
   assert.doesNotMatch(CHAT, /Claude está pesquisando na web/);
   assert.doesNotMatch(CHAT, /o Claude responderá sem resultados novos da web/);
   assert.doesNotMatch(CHAT, /para o Claude consultar/);
-  assert.match(CHAT, /texto: pediuPesquisaClaude \? 'Pesquisando na web…' : 'Escrevendo a resposta…',/);
 
   assert.doesNotMatch(TELA, /Claude está pesquisando na web/);
   assert.doesNotMatch(TELA, /Claude está respondendo/);
@@ -95,6 +93,13 @@ test('os avisos na tela não citam o nome do provedor', () => {
     /ChatGPT está pesquisando e escrevendo — pode levar alguns minutos/,
     'esse texto descrevia o caminho pelo navegador, que saiu de cena'
   );
+});
+
+test('no modo ChatGPT o aviso nomeia quem está pesquisando', () => {
+  // Aqui citar o provedor é o certo: é ele que faz a busca, não nós.
+  assert.match(CHAT, /\? 'O ChatGPT está pesquisando e escrevendo…'/);
+  // Nos outros modos segue genérico — quem pesquisa somos nós.
+  assert.match(CHAT, /\? 'Pesquisando na web…'\s*\n\s*: 'Escrevendo a resposta…',/);
 });
 
 test('os dois modos livres mostram o mesmo aviso', () => {
