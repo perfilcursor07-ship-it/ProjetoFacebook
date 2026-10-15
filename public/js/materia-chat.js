@@ -3967,8 +3967,15 @@
       if (err.name === 'AbortError') {
         setStatus('Geração interrompida');
       } else {
+        // "network error"/"Failed to fetch": a conexão com o servidor caiu no
+        // meio da resposta (servidor reiniciou ou a internet oscilou).
+        const conexaoCaiu = err instanceof TypeError && /network|fetch|load failed/i.test(String(err.message || ''));
         // Mensagem longa (ex.: erro técnico) não pode estourar o layout do chat.
-        const curta = String(err.message || 'Falha ao gerar a resposta')
+        const curta = String(
+          conexaoCaiu
+            ? 'A conexão com o servidor caiu no meio da resposta (o servidor pode ter reiniciado). Recarregue a página e envie de novo.'
+            : err.message || 'Falha ao gerar a resposta'
+        )
           .replace(/\s+/g, ' ')
           .trim()
           .slice(0, 300);

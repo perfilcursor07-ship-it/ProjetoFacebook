@@ -13,7 +13,7 @@
 const chatgpt = require('./chatgptImageService');
 
 /** Pesquisa + raciocínio + imagem podem levar alguns minutos no ChatGPT. */
-const LIMITE_RESPOSTA_MS = 6 * 60_000;
+const LIMITE_RESPOSTA_MS = Number(process.env.CHATGPT_LIVRE_LIMITE_MS) || 6 * 60_000;
 /** A resposta é dada como pronta quando o texto fica parado por este tempo. */
 const ESTAVEL_MS = 5_000;
 const URL_CONVERSA = /^https:\/\/chatgpt\.com\/c\/[a-z0-9-]+/i;
@@ -36,21 +36,31 @@ function erro(message, status = 502, code = '') {
   return err;
 }
 
+// Versões do ChatGPT marcam a resposta de jeitos diferentes: aceita os dois.
 const SELETOR_ASSISTENTE = '[data-message-author-role="assistant"]';
+const SELETOR_TURNO_ASSISTENTE = 'article[data-turn="assistant"], [data-testid^="conversation-turn"][data-turn="assistant"]';
 const SELETOR_PARAR = '[data-testid="stop-button"], button[aria-label*="Stop" i], button[aria-label*="Parar" i]';
 
 /** Quantas respostas do ChatGPT a conversa já tem (para achar a nova). */
 function contarRespostas(page) {
-  return page.locator(SELETOR_ASSISTENTE).count().catch(() => 0);
+  return page.evaluate(([a, b]) => Math.max(
+    document.querySelectorAll(a).length,
+    document.querySelectorAll(b).length
+  ), [SELETOR_ASSISTENTE, SELETOR_TURNO_ASSISTENTE]).catch(() => 0);
 }
+
+/** Última falha ao ler a página — vai para o diagnóstico em vez de sumir. */
+let ultimoErroLeitura = null;
 
 /**
  * Lê a última resposta: texto (só a parte em markdown, sem botões), links
  * citados e imagens do turno inteiro — a foto pode vir fora da mensagem.
  */
 function lerUltimaResposta(page) {
-  return page.evaluate((seletor) => {
-    const mensagens = [...document.querySelectorAll(seletor)];
+  return page.evaluate(([seletor, seletorTurno]) => {
+    const porPapel = [...document.querySelectorAll(seletor)];
+    const porTurno = [...document.querySelectorAll(seletorTurno)];
+    const mensagens = porPapel.length >= porTurno.length ? porPapel : porTurno;
     const ultima = mensagens[mensagens.length - 1];
     if (!ultima) return null;
     const turno = ultima.closest('article, [data-testid^="conversation-turn"]') || ultima.parentElement || ultima;
@@ -83,7 +93,46 @@ function lerUltimaResposta(page) {
       // grande no arquivo E aparecer grande na conversa.
       .filter((i) => i.src && i.largura >= 300 && i.altura >= 200 && i.naTela >= 100);
     return { texto, links, imagens, total: mensagens.length };
-  }, SELETOR_ASSISTENTE).catch(() => null);
+  }, [SELETOR_ASSISTENTE, SELETOR_TURNO_ASSISTENTE]).catch((err) => {
+    // Troca de página no meio (nova conversa vira /c/<id>) é passageira.
+    ultimoErroLeitura = String(err?.message || err).split('\n')[0].slice(0, 200);
+    return null;
+  });
+}
+
+/**
+ * Retrato da aba quando algo dá errado: o que havia na página e um print em
+ * ~/logs (fora da pasta pública — a tela é da conta do ChatGPT).
+ */
+async function diagnosticar(page, motivo) {
+  const resumo = await page.evaluate(([a, b]) => {
+    const ultimoTurno = [...document.querySelectorAll('article, [data-testid^="conversation-turn"]')].pop();
+    const composer = document.querySelector('#prompt-textarea, textarea, [contenteditable="true"]');
+    return {
+      titulo: document.title,
+      respostasPorPapel: document.querySelectorAll(a).length,
+      respostasPorTurno: document.querySelectorAll(b).length,
+      turnos: document.querySelectorAll('article, [data-testid^="conversation-turn"]').length,
+      mensagensDoUsuario: document.querySelectorAll('[data-message-author-role="user"], [data-turn="user"]').length,
+      botaoParar: Boolean(document.querySelector('[data-testid="stop-button"]')),
+      textoNaCaixa: String(composer?.innerText || composer?.value || '').trim().slice(0, 80),
+      ultimoTurno: String(ultimoTurno?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 300),
+      avisoNaTela: String(document.querySelector('[role="alert"], .text-token-text-error, [class*="error" i]')?.innerText || '').trim().slice(0, 200),
+    };
+  }, [SELETOR_ASSISTENTE, SELETOR_TURNO_ASSISTENTE]).catch((err) => ({ falhaAoLer: err.message }));
+  let print = null;
+  try {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const pasta = fs.existsSync(path.join(os.homedir(), 'logs')) ? path.join(os.homedir(), 'logs') : os.tmpdir();
+    print = path.join(pasta, `chatgpt-livre-${Date.now()}.png`);
+    await page.screenshot({ path: print, fullPage: false, timeout: 15_000 });
+  } catch {
+    print = null;
+  }
+  console.warn(`[chatgpt-livre] ${motivo} · url=${page.url()} · ${JSON.stringify({ ...resumo, erroLeitura: ultimoErroLeitura })}${print ? ` · print: ${print}` : ''}`);
+  return print;
 }
 
 /** Espera a resposta nova terminar: sem botão "parar" e texto parado. */
@@ -117,10 +166,11 @@ async function aguardarResposta(page, respostasAntes, onPasso) {
     if (Date.now() - paradoDesde >= ESTAVEL_MS) return lida;
   }
   const parcial = String(anterior || '').replace(/\s+/g, ' ').trim();
+  await diagnosticar(page, parcial ? 'resposta não terminou' : 'nenhuma resposta encontrada');
   throw erro(
     parcial
       ? `O ChatGPT não terminou a resposta a tempo. Último trecho: ${parcial.slice(-200)}`
-      : 'O ChatGPT não respondeu dentro do tempo esperado. Confira o Chrome do servidor em /claude.',
+      : 'O ChatGPT não respondeu dentro do tempo esperado. Os detalhes (e um print da tela) foram gravados no log do servidor como [chatgpt-livre].',
     504
   );
 }
@@ -221,6 +271,20 @@ async function conversar({ pedido, conversaUrl = null, onPasso = () => {} }) {
       await input.press('Enter');
     }
     await page.waitForURL(URL_CONVERSA, { timeout: 45_000 }).catch(() => {});
+    // O pedido saiu? Se a caixa ainda tem o texto e a conversa não andou,
+    // tenta o Enter uma vez; senão avisa já, em vez de esperar 6 minutos.
+    const naoSaiu = async () => {
+      const naCaixa = String(await input.innerText().catch(() => '') || await input.inputValue().catch(() => '')).trim();
+      return naCaixa.length > 20 && (await contarRespostas(page)) <= respostasAntes;
+    };
+    if (await naoSaiu()) {
+      await input.press('Enter').catch(() => {});
+      await page.waitForTimeout(5000);
+      if (await naoSaiu()) {
+        await diagnosticar(page, 'pedido não foi enviado');
+        throw erro('O pedido ficou parado na caixa do ChatGPT e não foi enviado. Veja o log [chatgpt-livre] no servidor.', 502);
+      }
+    }
     liberar();
     onPasso({ kind: 'pesquisa', texto: 'ChatGPT está pesquisando e escrevendo (pode levar alguns minutos)…' });
 
