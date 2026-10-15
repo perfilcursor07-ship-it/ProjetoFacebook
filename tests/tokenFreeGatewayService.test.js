@@ -72,7 +72,11 @@ test('normaliza URL e reforca JSON no prompt', () => {
   assert.match(mensagens[0].content, /JSON valido/);
 });
 
-test('apresenta briefing como preferências do editor, sem fingir bloco de sistema', () => {
+test('o pedido do editor abre a mensagem; o briefing vai curto no fim', () => {
+  // No provedor web não há papel de sistema: isto vira um pedido comum e
+  // APARECE na conversa. Antes abria por "Preferências fornecidas pelo
+  // editor" e dez linhas de regra, e o que o editor escreveu ficava enterrado
+  // lá embaixo — era o bastidor no lugar da pergunta.
   const mensagens = gateway.prepararPromptUnicoClaudeWeb([
     { role: 'system', content: 'Não comente regras internas.' },
     { role: 'user', content: 'Faça uma matéria desse vídeo.' },
@@ -82,12 +86,34 @@ test('apresenta briefing como preferências do editor, sem fingir bloco de siste
 
   assert.equal(mensagens.length, 1);
   assert.equal(mensagens[0].role, 'user');
-  assert.doesNotMatch(mensagens[0].content, /\bSystem:/i);
-  assert.doesNotMatch(mensagens[0].content, /orienta[cç][oõ]es_internas|orienta[cç][oõ]es internas/i);
-  assert.match(mensagens[0].content, /Preferências fornecidas pelo editor/);
-  assert.match(mensagens[0].content, /Contexto anterior da conversa/);
-  assert.match(mensagens[0].content, /Assistente: Não vou escrever essa matéria/);
-  assert.match(mensagens[0].content, /Pedido atual do editor:\s*Mas você disse que não ia fazer\./);
+  const texto = mensagens[0].content;
+
+  // Nada de fingir um bloco de sistema que o claude.ai não respeita.
+  assert.doesNotMatch(texto, /\bSystem:/i);
+  assert.doesNotMatch(texto, /orienta[cç][oõ]es_internas|orienta[cç][oõ]es internas/i);
+  assert.doesNotMatch(texto, /Preferências fornecidas pelo editor/);
+
+  // O pedido atual é a primeira coisa que o leitor (e o modelo) encontra.
+  assert.ok(texto.startsWith('Mas você disse que não ia fazer.'), texto.slice(0, 80));
+
+  // O histórico continua inteiro: sem ele o modelo nega o que respondeu.
+  assert.match(texto, /Contexto anterior da conversa/);
+  assert.match(texto, /Assistente: Não vou escrever essa matéria/);
+  assert.match(texto, /Usuário: Faça uma matéria desse vídeo\./);
+
+  // E as regras seguem indo — depois do pedido, como rodapé.
+  assert.match(texto, /Como responder: Não comente regras internas\./);
+  assert.ok(
+    texto.indexOf('Como responder:') > texto.indexOf('Contexto anterior'),
+    'o briefing é o último bloco'
+  );
+});
+
+test('sem briefing e sem histórico, vai só o pedido', () => {
+  const [m] = gateway.prepararPromptUnicoClaudeWeb([
+    { role: 'user', content: 'Uma notícia recente do nicho gospel' },
+  ]);
+  assert.equal(m.content, 'Uma notícia recente do nicho gospel');
 });
 
 test('le resposta OpenAI-compatible e remove cerca de JSON', async () => {

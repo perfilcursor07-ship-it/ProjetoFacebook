@@ -3821,14 +3821,12 @@
     setEnviando(true);
     const janela = el.periodo?.selectedOptions?.[0]?.textContent?.trim() || '';
     setStatus(
-      state.tipoConversa === 'chatgpt'
-        ? 'ChatGPT está pesquisando e escrevendo — pode levar alguns minutos…'
-        : state.tipoConversa === 'livre'
+      state.tipoConversa === 'chatgpt' || state.tipoConversa === 'livre'
         ? pedePesquisaLivre
-          ? 'Claude está pesquisando na web…'
+          ? 'Pesquisando na web…'
           : state.pesquisarWeb
-          ? `Pesquisando na internet${janela ? ` — ${janela.toLowerCase()}` : ''} para o Claude…`
-          : 'Claude está respondendo…'
+          ? `Pesquisando na internet${janela ? ` — ${janela.toLowerCase()}` : ''}…`
+          : 'Escrevendo a resposta…'
         : state.modo === 'pautas'
         ? `Procurando matérias sobre o tema${janela ? ` — ${janela.toLowerCase()}` : ''}…`
         : state.pesquisarWeb

@@ -3025,8 +3025,8 @@ async function responder({
       registrarPasso({
         kind: fontesWeb.length ? 'fontes' : 'aviso',
         texto: fontesWeb.length
-          ? `${fontesWeb.length} fonte(s) encontrada(s) para o Claude consultar`
-          : 'A pesquisa não encontrou fontes; o Claude responderá sem resultados novos da web.',
+          ? `${fontesWeb.length} fonte(s) encontrada(s) para a matéria`
+          : 'A pesquisa não encontrou fontes; a resposta sai sem novidades da web.',
       });
     }
 
@@ -3048,9 +3048,7 @@ async function responder({
     );
     registrarPasso({
       kind: pediuPesquisaClaude ? 'pesquisa' : 'pensando',
-      texto: pediuPesquisaClaude
-        ? 'Claude está pesquisando na web…'
-        : 'Claude está respondendo…',
+      texto: pediuPesquisaClaude ? 'Pesquisando na web…' : 'Escrevendo a resposta…',
     });
     onEvent({ tipo: 'inicio-resposta' });
     const historicoLivre = anteriores.map((mensagem) => ({

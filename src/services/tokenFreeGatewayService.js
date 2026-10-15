@@ -121,17 +121,22 @@ function prepararPromptUnicoClaudeWeb(messages) {
   const indiceAtual = atual ? dialogo.lastIndexOf(atual) : -1;
   const historico = indiceAtual >= 0 ? dialogo.slice(0, indiceAtual) : dialogo;
 
+  // O PEDIDO VEM PRIMEIRO.
+  //
+  // Antes a mensagem abria com "Preferências fornecidas pelo editor para esta
+  // resposta:" e dez linhas de briefing; o que o editor tinha escrito ficava
+  // lá embaixo. Como aqui tudo é um pedido comum do usuário (não há papel de
+  // sistema), era isso que aparecia na conversa — e o editor via o bastidor
+  // no lugar da própria pergunta. As regras continuam indo, curtas e no fim,
+  // onde servem de rodapé em vez de enterrar o pedido.
   const partes = [
-    instrucoes.length
-      ? `Preferências fornecidas pelo editor para esta resposta:\n\n${instrucoes.join('\n\n')}`
-      : null,
+    atual?.content || '',
     historico.length
       ? `Contexto anterior da conversa:\n\n${historico
           .map((mensagem) => `${mensagem.role === 'assistant' ? 'Assistente' : 'Usuário'}: ${mensagem.content}`)
           .join('\n\n')}`
       : null,
-    `Pedido atual do editor:\n\n${atual?.content || ''}`,
-    'Entregue diretamente a resposta ao pedido atual.',
+    instrucoes.length ? `---\nComo responder: ${instrucoes.join('\n')}` : null,
   ].filter(Boolean);
 
   return [{ role: 'user', content: partes.join('\n\n') }];
