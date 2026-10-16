@@ -70,6 +70,40 @@ const patches = [
       '\treturn handleChatCompletions(body, provider, req.signal);',
     ].join('\n'),
   },
+  // A imagem da resposta do ChatGPT chega no stream e é descartada: o parser
+  // lê só `parts[0]` e só aproveita se for texto. Quando vem foto, a parte é
+  // um objeto sem `.text` e some ali.
+  //
+  // Antes de construir o resgate, é preciso saber em que formato ela vem —
+  // URL pública (foto achada na web) ou `file-service://` (imagem gerada,
+  // que exige download autenticado). Este patch registra isso no log.
+  {
+    file: 'src/providers/chatgpt/stream.ts',
+    marca: 'viralizeai-imagem',
+    procurar: '\t\t\tconst rawPart = data.message?.content?.parts?.[0];',
+    trocar: [
+      '\t\t\t// viralizeai-imagem: mostra no log toda parte que NÃO é texto, com',
+      '\t\t\t// o tipo e os campos dela. Só registra; não muda a resposta.',
+      '\t\t\tfor (const parte of data.message?.content?.parts ?? []) {',
+      '\t\t\t\tif (!parte || typeof parte !== "object") continue;',
+      '\t\t\t\tconst p = parte as Record<string, unknown>;',
+      '\t\t\t\tif (typeof p.text === "string") continue;',
+      '\t\t\t\tconst alvo = [p.asset_pointer, p.url, p.image_url, p.src].find(',
+      '\t\t\t\t\t(v) => typeof v === "string" && v,',
+      '\t\t\t\t);',
+      '\t\t\t\tconsole.log(',
+      '\t\t\t\t\t"[viralizeai-imagem] parte nao-texto:",',
+      '\t\t\t\t\tJSON.stringify({',
+      '\t\t\t\t\t\ttipo: p.content_type,',
+      '\t\t\t\t\t\tcampos: Object.keys(p),',
+      '\t\t\t\t\t\talvo,',
+      '\t\t\t\t\t}).slice(0, 400),',
+      '\t\t\t\t);',
+      '\t\t\t}',
+      '',
+      '\t\t\tconst rawPart = data.message?.content?.parts?.[0];',
+    ].join('\n'),
+  },
 ];
 
 if (!fs.existsSync(path.join(targetRoot, 'package.json'))) {
