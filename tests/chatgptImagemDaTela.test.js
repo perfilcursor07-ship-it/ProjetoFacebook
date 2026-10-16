@@ -106,3 +106,29 @@ test('imagem gerada pelo ChatGPT é descartada quando a conversa pediu "não ger
   // Antes de virar capa.
   assert.ok(i < CHAT.indexOf('capaDaConversa = await capaGeradaNaConversa('));
 });
+
+test('foto da tela do ChatGPT: crédito com o site do selo ("Reprodução/lagunabaptist.org")', async () => {
+  const axios = require('axios');
+  const original = axios.get;
+  axios.get = async () => ({ data: Buffer.alloc(4096, 5) });
+  try {
+    const foto = 'https://images.openai.com/thumbnails/jon-szeto.jpg';
+    const capa = await capaGeradaNaConversa({
+      userId: 1,
+      chatId: 2,
+      urls: [foto],
+      paginas: { [foto]: 'https://www.lagunabaptist.org/staff/jon' },
+    });
+    assert.equal(capa.capaChatgpt, 'web', 'foto achada na web, não gerada');
+    assert.equal(capa.creditoImagem, 'Reprodução/lagunabaptist.org');
+  } finally {
+    axios.get = original;
+  }
+});
+
+test('só miniaturas de links citados: busca a foto da tela antes, miniatura fica de reserva', () => {
+  const fs = require('node:fs');
+  const CHAT = fs.readFileSync('src/services/materiaChatService.js', 'utf8');
+  assert.match(CHAT, /buscasDeImagem\.length && \(!imagensDaConversa\.length \|\| fotosDaTela === 0\)/);
+  assert.match(CHAT, /for \(const url of reserva\) if \(!imagensDaConversa\.includes\(url\)\) imagensDaConversa\.push\(url\);/);
+});

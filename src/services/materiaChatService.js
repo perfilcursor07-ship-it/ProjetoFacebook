@@ -168,7 +168,7 @@ function imagemGeradaPeloChatgpt(url) {
   return /oaiusercontent\.com|chatgpt\.com\/backend-api|openai\.com|\/files\/file[-_]|estuary/i.test(String(url || ''));
 }
 
-async function capaGeradaNaConversa({ userId, chatId, urls, registrarPasso = () => {}, aoSalvar = () => {} }) {
+async function capaGeradaNaConversa({ userId, chatId, urls, paginas = {}, registrarPasso = () => {}, aoSalvar = () => {} }) {
   const lista = (Array.isArray(urls) ? urls : [])
     .map((u) => String(u || '').trim())
     .filter((u) => /^https?:\/\//i.test(u) || /^data:image\/[a-z0-9.+-]+(;[^;,]+)*;base64,/i.test(u));
@@ -193,7 +193,9 @@ async function capaGeradaNaConversa({ userId, chatId, urls, registrarPasso = () 
         prefixo: `chat_${chatId}`,
       });
       const gerada = imagemGeradaPeloChatgpt(url);
-      const creditoImagem = gerada ? 'Imagem gerada por IA' : 'Reprodução/Internet';
+      // O selo que a tela do ChatGPT mostra na foto ("lagunabaptist.org").
+      const site = hostDoLink(paginas?.[url] || '');
+      const creditoImagem = gerada ? 'Imagem gerada por IA' : `Reprodução/${site || 'Internet'}`;
       registrarPasso({ kind: 'fontes', texto: 'Imagem do ChatGPT salva ✓ — já entra como capa ao salvar o rascunho.' });
       try {
         aoSalvar({ imagem: capa.publicUrl, credito: creditoImagem, gerada });
@@ -3225,6 +3227,10 @@ async function responder({
     // Consultas da galeria de fotos que o ChatGPT mostrou (ele manda a busca,
     // não a foto) — usadas abaixo para buscar as mesmas fotos reais.
     const buscasDeImagem = [];
+    // De qual site veio cada foto (crédito "Reprodução/site") e quantas das
+    // primeiras são a foto que a tela do ChatGPT mostrou.
+    const paginasDasImagens = {};
+    let fotosDaTela;
     const fioAnterior = escreveNoChatgpt
       ? [...anteriores]
         .reverse()
@@ -3269,10 +3275,12 @@ async function responder({
       // nossa busca. Amarrar as duas na mesma variável desligaria as duas e
       // o modo responderia sem internet nenhuma — o contrário do que ele é.
       pesquisarWeb: iaPesquisaSozinha ? true : Boolean(pesquisarLivre),
-      aoReceberImagens: (urls) => {
+      aoReceberImagens: (urls, extras = {}) => {
         for (const url of urls) {
           if (!imagensDaConversa.includes(url)) imagensDaConversa.push(url);
         }
+        Object.assign(paginasDasImagens, extras.paginas || {});
+        if (Number.isFinite(extras.daTela)) fotosDaTela = extras.daTela;
       },
       aoReceberBuscasDeImagem: escreveNoChatgpt
         ? (buscas) => {
@@ -3413,7 +3421,11 @@ async function responder({
     // (a tela dele busca as imagens com a consulta). Sem foto pelos dados, a
     // mesma consulta vai ao buscador de imagens do ViralizeAI: são as fotos
     // reais que o editor viu, não uma pesquisa nossa com outro critério.
-    if (chat.modo === 'chatgpt' && !imagensDaConversa.length && buscasDeImagem.length) {
+    // Também quando só vieram miniaturas de links citados (fotosDaTela === 0):
+    // a foto da tela era outra — caso do banner da SOLA Network no lugar da
+    // foto do pastor. A busca vem antes; as miniaturas ficam de reserva.
+    if (chat.modo === 'chatgpt' && buscasDeImagem.length && (!imagensDaConversa.length || fotosDaTela === 0)) {
+      const reserva = imagensDaConversa.splice(0, imagensDaConversa.length);
       registrarPasso({ kind: 'pesquisa', texto: `Buscando a foto que o ChatGPT mostrou: “${buscasDeImagem[0]}”…` });
       try {
         const { buscarImagensPorPalavra } = require('./imageSuggestService');
@@ -3428,12 +3440,14 @@ async function responder({
       } catch (err) {
         console.warn('[materia-chat] busca da foto do ChatGPT:', err.message);
       }
+      for (const url of reserva) if (!imagensDaConversa.includes(url)) imagensDaConversa.push(url);
     }
     if (chat.modo === 'chatgpt' && imagensDaConversa.length) {
       capaDaConversa = await capaGeradaNaConversa({
         userId,
         chatId: chat.id,
         urls: imagensDaConversa,
+        paginas: paginasDasImagens,
         registrarPasso,
         // Aparece na conversa assim que é salva, como no próprio ChatGPT.
         aoSalvar: (imagem) => onEvent({ tipo: 'imagem', ...imagem }),

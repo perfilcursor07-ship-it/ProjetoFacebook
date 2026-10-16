@@ -206,3 +206,30 @@ test("<AsyncImage>: a foto que o servidor do ChatGPT resolveu entra; o link da p
 	assert.deepEqual(r.imagens, ["https://images.openai.com/thumbnails/url/ella.jpg"]);
 	assert.equal(r.aguardandoImagem, true, "com <AsyncImage> o client ainda confere a conversa salva");
 });
+
+// Caso do pastor Jon Szeto: a tela do ChatGPT mostrou a foto do pastor
+// (lagunabaptist.org), mas a miniatura do link citado (banner da SOLA Network)
+// chegou antes e virou a capa.
+test("foto da tela ganha da miniatura do link citado, mesmo chegando depois", async () => {
+	const r = await parseChatGPTStream(
+		streamOf(
+			add("a-1", "assistant", {
+				metadata: {
+					content_references: [
+						{ type: "grouped_webpages", items: [{ url: "https://sola.network/article/x", thumbnail_url: "https://images.openai.com/thumbnails/sola-banner.jpg" }] },
+					],
+				},
+			}),
+			linha({ v: '<AsyncImage query="Pastor Jon Szeto" aspectRatio="16:9"/>\nPastor de 45 anos recebe diagnóstico' }),
+			linha({
+				p: "/message/metadata",
+				o: "append",
+				v: { model_dil_v2: { appData: { opGenui: { componentResults: { c1: { images: [{ content_url: "https://images.openai.com/thumbnails/jon-szeto.jpg", url: "https://lagunabaptist.org/staff/jon" }] } } } } } },
+			}),
+			"data: [DONE]\n\n",
+		),
+	);
+	assert.deepEqual(r.imagens, ["https://images.openai.com/thumbnails/jon-szeto.jpg", "https://images.openai.com/thumbnails/sola-banner.jpg"]);
+	assert.equal(r.fotosDaTela, 1);
+	assert.equal(r.paginasDasImagens?.["https://images.openai.com/thumbnails/jon-szeto.jpg"], "https://lagunabaptist.org/staff/jon");
+});

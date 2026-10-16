@@ -250,14 +250,20 @@ function logar(inicio, tipo, usage = null) {
  * texto. Então nada aqui pode quebrar por ausência, e um erro do consumidor
  * não pode derrubar a geração da matéria.
  */
-function entregarImagens(callback, valor) {
+function entregarImagens(callback, valor, extras = {}) {
   if (typeof callback !== 'function') return;
   const urls = (Array.isArray(valor) ? valor : [])
     .map((item) => String(item || '').trim())
     .filter(Boolean);
   if (!urls.length) return;
   try {
-    callback(urls);
+    // `paginas`: de qual site veio cada foto (crédito). `daTela`: quantas das
+    // primeiras são a foto que a tela do ChatGPT mostrou (o resto são
+    // miniaturas de links citados). Gateway antigo não manda: undefined.
+    callback(urls, {
+      paginas: extras?.imagens_paginas && typeof extras.imagens_paginas === 'object' ? extras.imagens_paginas : {},
+      daTela: Number.isFinite(extras?.imagens_da_tela) ? extras.imagens_da_tela : undefined,
+    });
   } catch (err) {
     console.warn('[token-free] imagens da resposta ignoradas:', err.message);
   }
@@ -369,7 +375,7 @@ async function chatCompletion(
     );
     entregarBuscasDeImagem(aoReceberBuscasDeImagem, data?.choices?.[0]?.message?.content);
     const texto = limparMarcacaoChatgpt(data?.choices?.[0]?.message?.content || '').trim();
-    entregarImagens(aoReceberImagens, data?.imagens);
+    entregarImagens(aoReceberImagens, data?.imagens, data);
     entregarConversa(aoReceberConversa, data);
     if (!texto) throw new Error('resposta vazia');
     logar(inicio, tarefa, data?.usage);
@@ -476,7 +482,7 @@ async function chatCompletionStream(
           }
           // Evento sem `choices`: é o nosso, com as imagens da resposta. O
           // gateway o emite depois do "stop" para não cair no meio do texto.
-          entregarImagens(aoReceberImagens, evento?.imagens);
+          entregarImagens(aoReceberImagens, evento?.imagens, evento);
           entregarConversa(aoReceberConversa, evento);
           const delta = evento?.choices?.[0]?.delta?.content || '';
           if (delta) {

@@ -160,7 +160,7 @@ async function handleNonStreaming(
 			},
 			// viralizeai: a foto que veio junto da resposta. So aparece quando
 			// existe, para nao mudar o formato de quem nao usa.
-			...(result.imagens?.length ? { imagens: result.imagens, imagens_paginas: result.paginasDasImagens } : {}),
+			...(result.imagens?.length ? { imagens: result.imagens, imagens_paginas: result.paginasDasImagens, imagens_da_tela: result.fotosDaTela } : {}),
 			...(result.conversa ? { conversa: result.conversa, conversa_url: result.conversaUrl } : {}),
 		};
 
@@ -312,7 +312,7 @@ async function streamWithoutTools(
 	w.writeChunk(id, model, [{ index: 0, delta: {}, finish_reason: "stop" }]);
 	// viralizeai: a foto que veio junto da resposta. Vai depois do "stop" para
 	// nao se misturar ao texto que o cliente esta montando.
-	if (result.imagens?.length) w.writeExtra({ imagens: result.imagens, imagens_paginas: result.paginasDasImagens });
+	if (result.imagens?.length) w.writeExtra({ imagens: result.imagens, imagens_paginas: result.paginasDasImagens, imagens_da_tela: result.fotosDaTela });
 	writeConversa(w, result);
 }
 
@@ -336,7 +336,7 @@ async function streamWithTools(
 		}
 		w.writeChunk(id, model, [{ index: 0, delta: {}, finish_reason: "stop" }]);
 	}
-	if (result.imagens?.length) w.writeExtra({ imagens: result.imagens, imagens_paginas: result.paginasDasImagens }); // viralizeai
+	if (result.imagens?.length) w.writeExtra({ imagens: result.imagens, imagens_paginas: result.paginasDasImagens, imagens_da_tela: result.fotosDaTela }); // viralizeai
 	writeConversa(w, result);
 }
 
