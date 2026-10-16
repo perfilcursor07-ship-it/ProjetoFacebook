@@ -812,10 +812,120 @@ async function testar() {
   }
 }
 
+/**
+ * Vigia do gateway e do Chrome do servidor.
+ *
+ * Os dois não são processos do PM2: quando o servidor reinicia (mudança de
+ * plano, manutenção) ou o desktop virtual cai, eles ficam desligados até
+ * alguém abrir /claude e clicar em "Iniciar" — e enquanto isso todo pedido ao
+ * ChatGPT/Claude falhava com "Não consegui salvar esta resposta".
+ *
+ * A cada minuto confere os dois. Desligado em duas conferências seguidas (para
+ * não reagir a uma oscilação), religa pelo mesmo caminho do botão
+ * "Reiniciar". Nunca mexe durante uma autorização em andamento — ela derruba
+ * o Chrome de propósito — e espera 5 min entre tentativas que falharam.
+ */
+const VIGIA_INTERVALO_MS = 60_000;
+const VIGIA_ESPERA_ENTRE_TENTATIVAS_MS = 5 * 60_000;
+const vigia = {
+  timer: null,
+  falhasSeguidas: 0,
+  ultimaTentativa: 0,
+  religando: null,
+  // O mesmo caminho do botão "Reiniciar" do /claude; o gateway novo começa
+  // sem a sessão do Claude em memória, então ela é recapturada em seguida.
+  async religar() {
+    const resultado = await reiniciar();
+    await recuperarClaudeAposReload();
+    return resultado;
+  },
+};
+
+function vigiaLigado() {
+  return (
+    process.platform === 'linux' &&
+    String(process.env.TFG_VIGIA || 'true').toLowerCase() !== 'false' &&
+    require('./tokenFreeGatewayService').isConfigured() &&
+    fs.existsSync(ENTRY_FILE)
+  );
+}
+
+function autorizacaoEmAndamento() {
+  return ['running', 'waiting_login', 'waiting_browser_login'].includes(authJob.status);
+}
+
+async function gatewayNoAr() {
+  try {
+    await require('./tokenFreeGatewayService').verificarSaude({ timeout: 4_000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Confere e, se preciso, religa. `imediato`: um pedido real acabou de falhar
+ * por conexão recusada — não precisa esperar a segunda conferência.
+ */
+async function vigiarGateway({ imediato = false, agora = Date.now() } = {}) {
+  if (vigia.religando) return vigia.religando;
+  if (autorizacaoEmAndamento()) {
+    vigia.falhasSeguidas = 0;
+    return { ok: true, motivo: 'autorizacao' };
+  }
+  const [gatewayOk, chromeOk] = await Promise.all([gatewayNoAr(), aguardarChromeCdp(1_500)]);
+  if (gatewayOk && chromeOk) {
+    vigia.falhasSeguidas = 0;
+    return { ok: true };
+  }
+  vigia.falhasSeguidas += 1;
+  if (!imediato && vigia.falhasSeguidas < 2) return { ok: false, motivo: 'confirmando' };
+  if (agora - vigia.ultimaTentativa < VIGIA_ESPERA_ENTRE_TENTATIVAS_MS) {
+    return { ok: false, motivo: 'aguardando' };
+  }
+  vigia.ultimaTentativa = agora;
+  const fora = [!gatewayOk && 'gateway', !chromeOk && 'Chrome'].filter(Boolean).join(' e ');
+  console.warn(`[vigia-gateway] ${fora} fora do ar — religando…`);
+  vigia.religando = (async () => {
+    try {
+      const resultado = await vigia.religar();
+      vigia.falhasSeguidas = 0;
+      console.info(`[vigia-gateway] ${resultado.message}`);
+      return { ok: true, religado: true };
+    } catch (err) {
+      console.warn(`[vigia-gateway] não consegui religar: ${err.message} (nova tentativa em 5 min)`);
+      return { ok: false, motivo: 'falhou', erro: err.message };
+    } finally {
+      vigia.religando = null;
+    }
+  })();
+  return vigia.religando;
+}
+
+function iniciarVigia() {
+  if (vigia.timer || !vigiaLigado()) return false;
+  vigia.timer = setInterval(() => {
+    vigiarGateway().catch((err) => console.warn('[vigia-gateway]', err.message));
+  }, VIGIA_INTERVALO_MS);
+  vigia.timer.unref?.();
+  return true;
+}
+
+/** Um pedido falhou porque o gateway recusou a conexão: tenta religar já. */
+function religarSeCaiu() {
+  if (!vigiaLigado()) return;
+  vigiarGateway({ imediato: true }).catch((err) => console.warn('[vigia-gateway]', err.message));
+}
+
 module.exports = {
   status,
   iniciar,
   reiniciar,
+  iniciarVigia,
+  religarSeCaiu,
+  vigiarGateway,
+  // Só para teste.
+  _vigia: vigia,
   iniciarAutorizacao,
   continuarAutorizacao,
   testar,

@@ -106,6 +106,10 @@ app.listen(env.port, async () => {
     const { recuperarClaudeAposReload } = require('./services/tokenFreeAdminService');
     void recuperarClaudeAposReload();
   }, 8_000);
+  // Gateway e Chrome não são do PM2: depois de um reinício do servidor (ou
+  // se caírem) ficavam desligados até alguém clicar em "Iniciar" no /claude.
+  // O vigia confere a cada minuto e religa sozinho. TFG_VIGIA=false desliga.
+  require('./services/tokenFreeAdminService').iniciarVigia();
 
   try {
     const materiaIaService = require('./services/materiaIaService');

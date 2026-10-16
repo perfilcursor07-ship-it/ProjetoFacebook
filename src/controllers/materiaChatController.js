@@ -271,6 +271,19 @@ async function enviar(req, res, next) {
   } catch (err) {
     clearInterval(heartbeat);
     // Erro de banco/driver traz SQL e dados na mensagem: fica no log, não na tela.
+    // Gateway (ChatGPT/Claude do servidor) desligado não é erro de banco: a
+    // tela dizia "Não consegui salvar esta resposta" e ninguém sabia que era
+    // só religar. O vigia já tenta religar na hora.
+    const gatewayFora = ['ECONNREFUSED', 'ENOTFOUND'].includes(String(err.code || '').toUpperCase()) &&
+      /Token-Free Gateway/i.test(String(err.message || ''));
+    if (gatewayFora) {
+      require('../services/tokenFreeAdminService').religarSeCaiu();
+      const aviso = 'O ChatGPT/Claude do servidor estava desligado e já está sendo religado. Envie de novo em 1 ou 2 minutos.';
+      console.warn('[materia-chat] gateway fora do ar:', err.message);
+      if (!res.headersSent) return res.status(503).json({ error: aviso });
+      enviarEvento({ tipo: 'erro', erro: aviso });
+      return res.end();
+    }
     const ehErroInterno = Boolean(err.sql || err.sqlMessage || err.code);
     // A conversa foi excluída (na lista ou em outra aba) durante a pesquisa:
     // a chave estrangeira recusa a resposta. Não é falha do sistema.
