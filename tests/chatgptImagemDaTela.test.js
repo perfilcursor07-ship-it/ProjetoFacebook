@@ -82,3 +82,27 @@ test('"quero a imagem": a foto volta junto da matéria anterior, não presa numa
   assert.match(trecho, /respostaLivreFinal = String\(materiaAnterior\.content\)/);
   assert.match(trecho, /fontesFinais = \[\.\.\.fontesDaAnterior, capaDaConversa\]/);
 });
+
+test('pedido seguinte que fala em imagem leva o lembrete de foto real; pedir para gerar não', () => {
+  const { lembreteDeFotoReal } = require('../src/services/deepseekService');
+  assert.match(lembreteDeFotoReal('quero uma imagem para essa materia'), /não gere imagem/);
+  assert.match(lembreteDeFotoReal('vc pegou a imagem errada, quero uma imagem para essa materia nao gere imagem'), /não gere imagem/);
+  assert.equal(lembreteDeFotoReal('outra'), '');
+  assert.equal(lembreteDeFotoReal('gere uma imagem bonita para a capa'), '');
+});
+
+test('a orientação da 1ª mensagem pede foto real, não "mostre ou gere"', () => {
+  const fs = require('node:fs');
+  const fonte = fs.readFileSync('src/services/deepseekService.js', 'utf8');
+  assert.doesNotMatch(fonte, /mostre ou gere a imagem/);
+  assert.match(fonte, /FOTO REAL da notícia achada na internet/);
+});
+
+test('imagem gerada pelo ChatGPT é descartada quando a conversa pediu "não gere"', () => {
+  const fs = require('node:fs');
+  const CHAT = fs.readFileSync('src/services/materiaChatService.js', 'utf8');
+  const i = CHAT.indexOf('const geradas = imagensDaConversa.filter((url) => imagemGeradaPeloChatgpt(url));');
+  assert.ok(i > 0);
+  // Antes de virar capa.
+  assert.ok(i < CHAT.indexOf('capaDaConversa = await capaGeradaNaConversa('));
+});

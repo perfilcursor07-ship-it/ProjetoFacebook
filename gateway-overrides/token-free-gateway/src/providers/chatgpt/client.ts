@@ -56,6 +56,26 @@ const SINAL_DE_IMAGEM = /image_group|image_v2|image_results|image_asset_pointer|
  * entre reinícios. Tarefas internas não entram aqui: cada uma abre conversa
  * própria, para uma não contaminar a outra.
  */
+/**
+ * Começo da resposta (o título, normalmente), para achar na tela o turno
+ * desta resposta e não o de uma matéria anterior da mesma conversa.
+ */
+export function assinaturaDaResposta(texto: string): string {
+	const primeira = String(texto || "")
+		.split("\n")
+		.map((l) => l.replace(/[#*_>`\[\]]/g, "").trim())
+		.find((l) => l.length >= 12) || "";
+	return primeira
+		.toLowerCase()
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.replace(/[^a-z0-9]+/g, " ")
+		.trim()
+		.split(" ")
+		.slice(0, 8)
+		.join(" ");
+}
+
 const conversasDoChatgptLivre = new Map<string, { conversationId: string; parentMessageId: string }>();
 const PREFIXO_CHATGPT_LIVRE = "viralizeai:chatgpt:";
 
@@ -590,7 +610,7 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 				sinalDeImagem = Boolean(lida?.sinalDeImagem);
 			}
 			if (!resultado.imagens?.length && (fio.pediuImagem || sinalDeImagem)) {
-				const daTela = await this.imagensDaTela(conversa).catch((err) => {
+				const daTela = await this.imagensDaTela(conversa, assinaturaDaResposta(resultado.text)).catch((err) => {
 					console.warn(`[viralizeai-imagem] tela da conversa não lida: ${err instanceof Error ? err.message : err}`);
 					return [] as string[];
 				});
@@ -713,7 +733,7 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 		}
 	}
 
-	private async imagensDaTela(conversationId: string): Promise<string[]> {
+	private async imagensDaTela(conversationId: string, assinatura = ""): Promise<string[]> {
 		const ctx = await BrowserManager.getInstance().getContext();
 		const aba = await ctx.newPage();
 		try {
@@ -727,26 +747,43 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 			await aba
 				.waitForSelector('[data-message-author-role="assistant"], [data-turn="assistant"]', { timeout: 30_000 })
 				.catch(() => {});
-			// Leva o último turno para a tela: imagem com loading=lazy só carrega visível.
-			await aba
-				.evaluate(() => {
-					const turnos = Array.from(document.querySelectorAll('article, [data-testid^="conversation-turn"]'));
-					turnos[turnos.length - 1]?.scrollIntoView({ block: "start" });
-				})
-				.catch(() => {});
+			// Acha o turno DESTA resposta pelo texto dela (o começo da matéria) e
+			// leva para a tela — imagem com loading=lazy só carrega visível.
+			//
+			// Antes, sem achar o turno, valiam "as últimas imagens da página": numa
+			// conversa com uma única imagem (gerada na 1ª matéria) ela era pega de
+			// novo em TODAS as matérias seguintes.
+			const turno = await aba
+				.evaluate((alvo: string) => {
+					const normalizar = (t: string) =>
+						t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+					const doAssistente = (el: Element) =>
+						el.matches('[data-turn="assistant"]') ||
+						Boolean(el.querySelector('[data-message-author-role="assistant"]'));
+					const turnos = Array.from(document.querySelectorAll('article, [data-testid^="conversation-turn"]'))
+						.filter(doAssistente)
+						.reverse();
+					const procurado = normalizar(alvo);
+					const achado = procurado
+						? turnos.find((t) => normalizar((t as HTMLElement).innerText || "").includes(procurado))
+						: turnos[0];
+					if (!achado) return { achou: false, turnos: turnos.length };
+					achado.setAttribute("data-viralizeai-turno", "1");
+					achado.scrollIntoView({ block: "start" });
+					return { achou: true, turnos: turnos.length };
+				}, assinatura)
+				.catch(() => ({ achou: false, turnos: -1 }));
+			if (!turno.achou) {
+				console.log(
+					`[viralizeai-imagem] não achei na tela o turno desta resposta (${turno.turnos} turno(s) do assistente; procurei "${assinatura.slice(0, 60)}") — sem imagem da conversa`,
+				);
+				return [];
+			}
 			await aba.waitForTimeout(3_500);
 
 			const { candidatas, diagnostico } = await aba.evaluate(() => {
-				const doAssistente = (el: Element) =>
-					el.matches('[data-turn="assistant"]') ||
-					Boolean(el.querySelector('[data-message-author-role="assistant"]'));
-				const turnos = Array.from(document.querySelectorAll('article, [data-testid^="conversation-turn"]'));
-				const ultimo = [...turnos].reverse().find(doAssistente);
-				// Turnos não achados (o ChatGPT mudou o DOM): as últimas imagens
-				// grandes da página são as da resposta mais recente.
-				const imgs = ultimo
-					? Array.from(ultimo.querySelectorAll("img"))
-					: Array.from((document.querySelector("main") || document.body).querySelectorAll("img"));
+				const ultimo = document.querySelector('[data-viralizeai-turno="1"]');
+				const imgs = ultimo ? Array.from(ultimo.querySelectorAll("img")) : [];
 				// A maior versão anunciada no srcset (a galeria mostra miniatura).
 				const maiorDoSrcset = (img: HTMLImageElement) => {
 					let melhor = { url: "", w: 0 };
@@ -773,10 +810,8 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 					// site, avatar e favicon (até ~64 px) continuam de fora.
 					.filter((c) => c.src && c.largura >= 200 && c.altura >= 140 && c.naTela >= 80);
 				return {
-					candidatas: (ultimo ? grandes : grandes.slice(-3))
-						.sort((a, b) => b.largura * b.altura - a.largura * a.altura)
-						.slice(0, 3),
-					diagnostico: { turnos: turnos.length, achouTurno: Boolean(ultimo), imagens: imgs.length, grandes: grandes.length },
+					candidatas: grandes.sort((a, b) => b.largura * b.altura - a.largura * a.altura).slice(0, 3),
+					diagnostico: { achouTurno: Boolean(ultimo), imagens: imgs.length, grandes: grandes.length },
 				};
 			});
 			if (!candidatas.length) {

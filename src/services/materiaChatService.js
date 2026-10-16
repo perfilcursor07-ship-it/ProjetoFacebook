@@ -3380,6 +3380,24 @@ async function responder({
     // só valia se nenhuma fonte tivesse foto, e a foto do site citado (buscada
     // logo abaixo) ganhava sempre.
     let capaDaConversa = null;
+    // "não gere imagem" em qualquer pedido da conversa vale para todas as
+    // matérias dela.
+    const proibiuGerarImagem = chat.modo === 'chatgpt' && [
+      ...anteriores.filter((m) => m.role === 'user').map((m) => m.content),
+      pedido,
+    ].some((t) => PROIBE_GERAR_IMAGEM.test(String(t || '')));
+    // E vale também para a imagem que o PRÓPRIO ChatGPT gerar: ela não vira
+    // capa — o editor pediu foto real.
+    if (proibiuGerarImagem) {
+      const geradas = imagensDaConversa.filter((url) => imagemGeradaPeloChatgpt(url));
+      if (geradas.length) {
+        for (const url of geradas) imagensDaConversa.splice(imagensDaConversa.indexOf(url), 1);
+        registrarPasso({
+          kind: 'aviso',
+          texto: 'O ChatGPT gerou uma imagem com IA — descartei, como você pediu (só foto real).',
+        });
+      }
+    }
     if (chat.modo === 'chatgpt' && imagensDaConversa.length) {
       capaDaConversa = await capaGeradaNaConversa({
         userId,
@@ -3447,10 +3465,6 @@ async function responder({
     }
     // "não gere imagem" em qualquer pedido da conversa vale para todas as
     // matérias dela: sem foto real, o editor escolhe — nada de ilustração.
-    const proibiuGerarImagem = chat.modo === 'chatgpt' && [
-      ...anteriores.filter((m) => m.role === 'user').map((m) => m.content),
-      pedido,
-    ].some((t) => PROIBE_GERAR_IMAGEM.test(String(t || '')));
     if (proibiuGerarImagem && !fontesFinais.some((f) => f?.imagem)) {
       registrarPasso({
         kind: 'aviso',

@@ -251,3 +251,14 @@ test("foto de site que bloqueia o download na página: baixa o arquivo original 
 	// Ícone minúsculo também não.
 	assert.equal(await baixar(abaFalsa({ ok: true, tipo: "image/png", corpo: Buffer.alloc(300) }), "https://x/i.png"), null);
 });
+
+test("acha o turno desta resposta pelo começo do texto (não o de uma matéria anterior)", { skip: pular }, async () => {
+	const { assinaturaDaResposta } = await import(INSTALADO.href);
+	assert.equal(
+		assinaturaDaResposta("**Banky W [[“também sou pastor e professor”]] após uma virada inesperada**\n\nO cantor..."),
+		"banky w tambem sou pastor e professor apos",
+	);
+	// Linha curta demais (ex.: "Claro!") não serve de assinatura: usa a próxima.
+	assert.equal(assinaturaDaResposta("Claro!\n\n# MC Guimê e esposa descem às águas"), "mc guime e esposa descem as aguas");
+	assert.equal(assinaturaDaResposta(""), "");
+});
