@@ -216,3 +216,34 @@ test("sem pedir imagem e sem sinal dela na conversa: não abre a tela", { skip: 
 	await c.parseStream(await c.sendMessage({ message: "faça uma matéria sobre o culto", conversationId: "viralizeai:chatgpt:chat:21" }));
 	assert.equal(abriu, false);
 });
+
+test("foto de site que bloqueia o download na página: baixa o arquivo original por fora (nada de print)", { skip: pular }, async () => {
+	const c = cliente({});
+	const foto = Buffer.alloc(8_000, 3);
+	const pedidos: { url: string; referer?: string }[] = [];
+	const abaFalsa = (resposta: { ok: boolean; tipo: string; corpo: Buffer }) => ({
+		context: () => ({
+			request: {
+				get: async (url: string, opcoes: { headers?: Record<string, string> }) => {
+					pedidos.push({ url, referer: opcoes?.headers?.Referer });
+					return {
+						ok: () => resposta.ok,
+						headers: () => ({ "content-type": resposta.tipo }),
+						body: async () => resposta.corpo,
+					};
+				},
+			},
+		}),
+	});
+	const baixar = (c as unknown as { baixarPorFora: (aba: unknown, src: string) => Promise<string | null> }).baixarPorFora.bind(c);
+
+	const ok = await baixar(abaFalsa({ ok: true, tipo: "image/jpeg; charset=binary", corpo: foto }), "https://www.guiame.com.br/foto.jpg");
+	assert.equal(ok, `data:image/jpeg;base64,${foto.toString("base64")}`, "é o arquivo original, byte a byte");
+	assert.deepEqual(pedidos[0], { url: "https://www.guiame.com.br/foto.jpg", referer: "https://chatgpt.com/" });
+
+	// Página de erro/HTML no lugar da foto não vira capa.
+	assert.equal(await baixar(abaFalsa({ ok: true, tipo: "text/html", corpo: foto }), "https://x/y.jpg"), null);
+	assert.equal(await baixar(abaFalsa({ ok: false, tipo: "image/jpeg", corpo: foto }), "https://x/y.jpg"), null);
+	// Ícone minúsculo também não.
+	assert.equal(await baixar(abaFalsa({ ok: true, tipo: "image/png", corpo: Buffer.alloc(300) }), "https://x/i.png"), null);
+});

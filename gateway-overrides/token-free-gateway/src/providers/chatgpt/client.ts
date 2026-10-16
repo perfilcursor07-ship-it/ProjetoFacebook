@@ -686,6 +686,28 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 	 * sessão logada. Site que não deixa baixar (CORS) vira print só da imagem.
 	 * Sai como `data:` com a origem (`web` ou `chatgpt`), para o crédito.
 	 */
+	/**
+	 * viralizeai: baixa o arquivo de uma imagem pelo navegador, fora da
+	 * página (sem a trava de CORS), com os cookies da sessão. Devolve `data:`
+	 * ou null se não for uma imagem de verdade.
+	 */
+	private async baixarPorFora(aba: Page, src: string): Promise<string | null> {
+		try {
+			const r = await aba.context().request.get(src, {
+				timeout: 30_000,
+				headers: { Referer: "https://chatgpt.com/" },
+			});
+			if (!r.ok()) return null;
+			const tipo = (String(r.headers()["content-type"] || "").split(";")[0] ?? "").trim().toLowerCase();
+			if (!tipo.startsWith("image/")) return null;
+			const corpo = await r.body();
+			if (corpo.length < 5_000 || corpo.length > 15 * 1024 * 1024) return null;
+			return `data:${tipo};base64,${corpo.toString("base64")}`;
+		} catch {
+			return null;
+		}
+	}
+
 	private async imagensDaTela(conversationId: string): Promise<string[]> {
 		const ctx = await BrowserManager.getInstance().getContext();
 		const aba = await ctx.newPage();
@@ -767,14 +789,19 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 					}, c.src)
 					.catch(() => null);
 				let dado = baixada;
-				if (!dado) {
-					const print = await aba
-						.locator(`img[data-viralizeai-img="${c.i}"]`)
-						.screenshot({ type: "jpeg", quality: 92, timeout: 15_000 })
-						.catch(() => null);
-					if (print && print.length > 5_000) dado = `data:image/jpeg;base64,${print.toString("base64")}`;
+				// Site que bloqueia o download de dentro da página (CORS): baixa o
+				// ARQUIVO original pelo navegador, por fora da página. Nada de print
+				// da tela — no ChatGPT a foto fica num cartão, cortada e com texto em
+				// cima, e o print saía com o cartão inteiro.
+				if (!dado && /^https?:/i.test(c.src)) {
+					dado = await this.baixarPorFora(aba, c.src);
 				}
-				if (dado) saida.push(dado.replace(/^data:(image\/[a-z0-9.+-]+)(;[^,]*)?;base64,/i, `data:$1;origem=${origem};base64,`));
+				if (dado) {
+					saida.push(dado.replace(/^data:(image\/[a-z0-9.+-]+)(;[^,]*)?;base64,/i, `data:$1;origem=${origem};base64,`));
+				} else if (/^https?:/i.test(c.src)) {
+					// Último recurso: o endereço da foto; o ViralizeAI tenta baixar.
+					saida.push(c.src);
+				}
 			}
 			return saida;
 		} finally {
