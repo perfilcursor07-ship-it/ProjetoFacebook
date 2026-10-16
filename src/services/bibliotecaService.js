@@ -558,7 +558,7 @@ async function coletarItensFonte(fonte) {
         erros.push(`brave: ${err.message}`);
       }
     }
-    if (collected.length < 3) {
+    if (collected.length < 3 && ytDlpAbreNoFacebook(url)) {
       try {
         collected.push(...(await coletarViaYtDlp(url, 'facebook')));
       } catch (err) {
@@ -589,6 +589,26 @@ async function coletarItensFonte(fonte) {
   }
 
   return [];
+}
+
+/**
+ * O yt-dlp consegue abrir este endereço do Facebook?
+ *
+ * Ele tem extrator para MÍDIA individual (vídeo, reel, watch, permalink),
+ * nunca para listar uma página ou um perfil. Numa URL de página a resposta é
+ * sempre a mesma, e é definitiva: "ERROR: Unsupported URL".
+ *
+ * Perguntar assim mesmo custava um processo Python por fonte, a cada volta —
+ * com ~20 páginas do Facebook, ~20 interpretadores nascendo e morrendo para
+ * ouvir "não". Era o `yt-dlp` em 55% de CPU no `ps` do servidor.
+ *
+ * O Instagram é outro caso: lá o yt-dlp lista o perfil, e continua sendo
+ * chamado normalmente.
+ */
+function ytDlpAbreNoFacebook(url) {
+  const v = String(url || '');
+  if (/(?:^|\/\/)(?:www\.)?fb\.watch\//i.test(v)) return true;
+  return /\/(?:watch\/?\?|videos?\/|reel\/|permalink\.php|story\.php|posts\/)/i.test(v);
 }
 
 async function coletarViaYtDlp(profileUrl, plataforma) {
@@ -3257,6 +3277,7 @@ async function tickAutopilot() {
 module.exports = {
   detectarPlataforma,
   esperaAposFalha,
+  ytDlpAbreNoFacebook,
   pareceFeed,
   descobrirFeedsRss,
   criarFonte,

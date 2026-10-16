@@ -99,3 +99,53 @@ test('se alguma variante trouxe post, o 401 das outras é ignorado', () => {
   // Página que respondeu em parte continua valendo.
   assert.match(FB, /!paginas\.some\(\(p\) => p\.encontrados\.length\)/);
 });
+
+// ── yt-dlp não é chamado onde ele nunca funciona ──────────────────────────
+
+test('yt-dlp é pulado em URL de página do Facebook', () => {
+  const { ytDlpAbreNoFacebook } = require('../src/services/bibliotecaService');
+  // "ERROR: Unsupported URL" é resposta DEFINITIVA do yt-dlp para página ou
+  // perfil. Perguntar assim mesmo custava um processo Python por fonte, a
+  // cada volta — era o yt-dlp em 55% de CPU no ps do servidor.
+  for (const u of [
+    'https://www.facebook.com/Poder360',
+    'https://www.facebook.com/plenonews',
+    'https://www.facebook.com/profile.php?id=61552089960643',
+    'https://www.facebook.com/share/1EddausVEq',
+  ]) {
+    assert.equal(ytDlpAbreNoFacebook(u), false, u);
+  }
+});
+
+test('mídia individual continua passando pelo yt-dlp', () => {
+  const { ytDlpAbreNoFacebook } = require('../src/services/bibliotecaService');
+  for (const u of [
+    'https://www.facebook.com/watch/?v=123',
+    'https://www.facebook.com/pagina/videos/123',
+    'https://www.facebook.com/reel/123',
+    'https://www.facebook.com/permalink.php?story_fbid=1&id=2',
+    'https://www.facebook.com/pagina/posts/123',
+    'https://fb.watch/abc123/',
+  ]) {
+    assert.equal(ytDlpAbreNoFacebook(u), true, u);
+  }
+});
+
+test('entrada inválida não vira chamada', () => {
+  const { ytDlpAbreNoFacebook } = require('../src/services/bibliotecaService');
+  assert.equal(ytDlpAbreNoFacebook(''), false);
+  assert.equal(ytDlpAbreNoFacebook(null), false);
+  assert.equal(ytDlpAbreNoFacebook(undefined), false);
+});
+
+test('a guarda está no caminho da coleta do Facebook', () => {
+  assert.match(BIBLIO, /if \(collected\.length < 3 && ytDlpAbreNoFacebook\(url\)\) \{/);
+});
+
+test('o Instagram continua usando yt-dlp normalmente', () => {
+  // Lá o yt-dlp LISTA o perfil; a guarda é só do Facebook.
+  assert.match(BIBLIO, /coletarViaYtDlp\(url, 'instagram'\)/);
+  const ig = BIBLIO.indexOf("coletarViaYtDlp(url, 'instagram')");
+  const trecho = BIBLIO.slice(Math.max(0, ig - 300), ig);
+  assert.doesNotMatch(trecho, /ytDlpAbreNoFacebook/);
+});

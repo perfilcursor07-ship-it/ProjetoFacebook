@@ -32,12 +32,8 @@ http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=remote
 Para acompanhar ao vivo:
 su - viralizeai -c 'export PATH=/home/viralizeai/.nvm/versions/node/v22.23.1/bin:/usr/bin:/bin; node /home/viralizeai/.nvm/versions/node/v22.23.1/lib/node_modules/pm2/bin/pm2 logs viralizeai --lines 80'
 
-
-
-DER ERRO PORTA 3010
+limpar servidor
 cd /home/viralizeai/htdocs/www.viralizeai.online
-pm2 delete viralizeai || true
-pm2 save
-chown -R viralizeai:viralizeai /home/viralizeai/htdocs/www.viralizeai.online
-chown -R viralizeai:viralizeai /home/viralizeai/.npm /home/viralizeai/.pm2
-ss -ltnp 'sport = :3010'
+node scripts/fechar-abas-chrome.js --listar
+node scripts/fechar-abas-chrome.js
+node scripts/fechar-abas-chrome.js --todas
