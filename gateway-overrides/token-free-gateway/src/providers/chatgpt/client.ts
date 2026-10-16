@@ -31,7 +31,18 @@ const POLL_MS = 120;
  */
 const PONTEIRO_CONVERSA = /^chatgpt:([0-9a-z-]{8,80}):([0-9a-z-]{8,80})/i;
 
-type Fio = { conversationId?: string; parentMessageId?: string; externo: boolean };
+type Fio = { conversationId?: string; parentMessageId?: string; externo: boolean; chave?: string };
+
+/**
+ * viralizeai: conversa do ChatGPT de cada conversa do "ChatGPT livre"
+ * (`viralizeai:chatgpt:…`), para continuar nela mesmo quando o ViralizeAI
+ * ainda não tem o ponteiro (resposta anterior falhou no meio, por exemplo).
+ * Fica na memória do gateway; o ponteiro salvo no ViralizeAI é o que vale
+ * entre reinícios. Tarefas internas não entram aqui: cada uma abre conversa
+ * própria, para uma não contaminar a outra.
+ */
+const conversasDoChatgptLivre = new Map<string, { conversationId: string; parentMessageId: string }>();
+const PREFIXO_CHATGPT_LIVRE = "viralizeai:chatgpt:";
 
 export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 	readonly providerId = "chatgpt-web";
@@ -123,7 +134,10 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 			};
 		}
 		const m = externo.match(PONTEIRO_CONVERSA);
-		return m ? { conversationId: m[1], parentMessageId: m[2], externo: true } : { externo: true };
+		if (m) return { conversationId: m[1], parentMessageId: m[2], externo: true };
+		if (!externo.startsWith(PREFIXO_CHATGPT_LIVRE)) return { externo: true };
+		const salva = conversasDoChatgptLivre.get(externo);
+		return { ...(salva ?? {}), externo: true, chave: externo };
 	}
 
 	/** Corpo do POST /backend-api/conversation, igual ao que a interface manda. */
@@ -538,6 +552,10 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 
 		// Sem conversation_id do cliente: guarda na instância, como antes.
 		if (!fio.externo && atual.parentMessageId) this.parentMessageId = atual.parentMessageId;
+		if (fio.chave && conversa && atual.parentMessageId) {
+			if (conversasDoChatgptLivre.size > 500) conversasDoChatgptLivre.clear();
+			conversasDoChatgptLivre.set(fio.chave, { conversationId: conversa, parentMessageId: atual.parentMessageId });
+		}
 		// viralizeai: ponteiro para a próxima mensagem continuar ESTA conversa.
 		if (conversa && atual.parentMessageId) {
 			resultado.conversa = `chatgpt:${conversa}:${atual.parentMessageId}`;
@@ -621,6 +639,71 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 	 * perder porque um ponteiro não resolveu.
 	 */
 	private async resolverImagens(valores?: string[], conversationId?: string): Promise<string[]> {
+		const urls = await this.resolverPonteiros(valores, conversationId);
+		return this.baixarNaPagina(urls);
+	}
+
+	/**
+	 * viralizeai: imagem do próprio ChatGPT vira `data:` aqui dentro.
+	 *
+	 * A URL assinada (`chatgpt.com/backend-api/estuary/content?…&sig=…`) só
+	 * abre com a sessão logada: baixada de fora pelo ViralizeAI dava 403, e a
+	 * matéria saía com uma capa gerada por outra IA no lugar da que o editor
+	 * viu na conversa. Foto pública achada na web passa como está.
+	 */
+	private async baixarNaPagina(urls: string[]): Promise<string[]> {
+		const daConta = (u: string) => /^https:\/\/([a-z0-9-]+\.)*(chatgpt\.com|oaiusercontent\.com)\//i.test(u);
+		if (!urls.some(daConta)) return urls;
+		try {
+			const page = await this.getPage();
+			const baixadas = await page.evaluate(async (lista: string[]) => {
+				let token: string | undefined;
+				try {
+					const s = await fetch("https://chatgpt.com/api/auth/session", { credentials: "include" });
+					if (s.ok) token = ((await s.json()) as { accessToken?: string }).accessToken;
+				} catch {
+					/* o cookie basta na maioria das vezes */
+				}
+				const saida: (string | null)[] = [];
+				for (const url of lista) {
+					try {
+						const r = await fetch(url, {
+							credentials: "include",
+							headers: token && url.startsWith("https://chatgpt.com/") ? { Authorization: `Bearer ${token}` } : {},
+						});
+						const blob = r.ok ? await r.blob() : null;
+						if (!blob || !blob.type.startsWith("image/") || blob.size < 1024 || blob.size > 15 * 1024 * 1024) {
+							saida.push(null);
+							continue;
+						}
+						saida.push(
+							await new Promise<string>((resolve, reject) => {
+								const leitor = new FileReader();
+								leitor.onload = () => resolve(String(leitor.result));
+								leitor.onerror = () => reject(leitor.error);
+								leitor.readAsDataURL(blob);
+							}),
+						);
+					} catch {
+						saida.push(null);
+					}
+				}
+				return saida;
+			}, urls.filter(daConta));
+			let i = 0;
+			return urls.map((u) => {
+				if (!daConta(u)) return u;
+				const dado = baixadas[i++];
+				if (!dado) console.warn(`[viralizeai-imagem] não baixei na página: ${u.slice(0, 120)}`);
+				return dado || u;
+			});
+		} catch (err) {
+			console.warn(`[viralizeai-imagem] download na página falhou: ${err instanceof Error ? err.message : String(err)}`);
+			return urls;
+		}
+	}
+
+	private async resolverPonteiros(valores?: string[], conversationId?: string): Promise<string[]> {
 		const entrada = (valores ?? []).filter(Boolean);
 		if (!entrada.length) return [];
 		const prontas: string[] = [];

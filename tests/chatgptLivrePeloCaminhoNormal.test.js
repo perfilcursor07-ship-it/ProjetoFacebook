@@ -115,6 +115,8 @@ test('a foto real da reportagem citada vem antes de gerar', () => {
 });
 
 test('o passo diz que quem pesquisa é o ChatGPT', () => {
-  assert.match(CHAT, /texto: iaPesquisaSozinha\s*\n\s*\? 'O ChatGPT está pesquisando e escrevendo…'/);
+  assert.match(CHAT, /'O ChatGPT está pesquisando e escrevendo…'/);
+  // Com imagem pedida, o aviso diz que demora — sem isso parecia travado.
+  assert.match(CHAT, /'O ChatGPT está pesquisando, escrevendo e gerando a imagem \(costuma levar de 2 a 4 minutos\)…'/);
   assert.match(CHAT, /kind: iaPesquisaSozinha \|\| pediuPesquisaClaude \? 'pesquisa' : 'pensando',/);
 });

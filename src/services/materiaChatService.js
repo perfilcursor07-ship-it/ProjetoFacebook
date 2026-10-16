@@ -156,23 +156,28 @@ async function capaDaConversaLivre({ userId, chatId, titulo, registrarPasso = ()
  */
 /** Imagem que o ChatGPT GEROU (arquivo dele), e não foto achada na web. */
 function imagemGeradaPeloChatgpt(url) {
+  // `data:` vem do gateway, que baixou o arquivo dentro da conta do ChatGPT.
+  if (/^data:image\//i.test(String(url || ''))) return true;
   return /oaiusercontent\.com|chatgpt\.com\/backend-api|openai\.com|\/files\/file[-_]|estuary/i.test(String(url || ''));
 }
 
 async function capaGeradaNaConversa({ userId, chatId, urls, registrarPasso = () => {}, aoSalvar = () => {} }) {
   const lista = (Array.isArray(urls) ? urls : [])
     .map((u) => String(u || '').trim())
-    .filter((u) => /^https?:\/\//i.test(u));
+    .filter((u) => /^https?:\/\//i.test(u) || /^data:image\/[a-z0-9.+-]+;base64,/i.test(u));
   if (!lista.length) return null;
   const axios = require('axios');
   for (const url of lista) {
     try {
-      const { data } = await axios.get(url, {
-        responseType: 'arraybuffer',
-        timeout: 30_000,
-        maxContentLength: 20 * 1024 * 1024,
-      });
-      const buffer = Buffer.from(data);
+      // A imagem do próprio ChatGPT já vem baixada pelo gateway (a URL
+      // assinada dele dá 403 fora da sessão logada).
+      const buffer = url.startsWith('data:')
+        ? Buffer.from(url.slice(url.indexOf(',') + 1), 'base64')
+        : Buffer.from((await axios.get(url, {
+          responseType: 'arraybuffer',
+          timeout: 30_000,
+          maxContentLength: 20 * 1024 * 1024,
+        })).data);
       if (buffer.length < 1024) throw new Error('arquivo vazio');
       const capa = await require('./matterArtworkService').storeMatterSourceImage({
         userId,
@@ -2730,6 +2735,12 @@ async function responder({
   origem = 'chat',
   /** Como escrever, pedido por quem chamou (ex.: o dot). Entra no pedido ao redator. */
   instrucaoEditorial = null,
+  /**
+   * "ChatGPT livre": modelo que escreve a resposta. Só a conversa usa este
+   * modelo; títulos e outras tarefas internas seguem o modelo padrão, para
+   * não abrirem conversas extras no chatgpt.com do servidor.
+   */
+  modeloConversa = null,
   onEvent = () => {},
 }) {
   // 'pautas': pesquisa o tema e devolve a lista de matérias para o usuário
@@ -3147,10 +3158,21 @@ async function responder({
       Boolean(pesquisarWeb) ||
       pedidoSolicitaPesquisa(pedido)
     );
+    // "ChatGPT livre" é UMA conversa no chatgpt.com (a do Chrome do servidor,
+    // visível no VNC) para cada conversa daqui. O gateway devolve onde a
+    // resposta ficou; a próxima mensagem continua ali, e o ChatGPT já lembra
+    // do que foi dito — por isso o histórico não é reenviado.
+    const tokenFree = require('./tokenFreeGatewayService');
+    const escreveNoChatgpt = iaPesquisaSozinha &&
+      require('./materiaModelosService').provedorDoModelo(modeloConversa || tokenFree.modeloAtual()) === 'chatgpt';
+    const pediuImagem = /\b(imagem|imagens|foto|fotos|capa|ilustra[çc][ãa]o)\b/i.test(pedido);
     registrarPasso({
       kind: iaPesquisaSozinha || pediuPesquisaClaude ? 'pesquisa' : 'pensando',
       texto: iaPesquisaSozinha
-        ? 'O ChatGPT está pesquisando e escrevendo…'
+        ? escreveNoChatgpt && pediuImagem
+          // Gerar imagem no ChatGPT leva minutos; sem aviso parecia travado.
+          ? 'O ChatGPT está pesquisando, escrevendo e gerando a imagem (costuma levar de 2 a 4 minutos)…'
+          : 'O ChatGPT está pesquisando e escrevendo…'
         : pediuPesquisaClaude
           ? 'Pesquisando na web…'
           : 'Escrevendo a resposta…',
@@ -3166,12 +3188,6 @@ async function responder({
     // A foto que o ChatGPT mostra na conversa chega junto da resposta, pelo
     // gateway. Ela é recolhida aqui e virará a "Imagem destacada" mais abaixo.
     const imagensDaConversa = [];
-    // "ChatGPT livre" é UMA conversa no chatgpt.com (a do Chrome do servidor,
-    // visível no VNC) para cada conversa daqui. O gateway devolve onde a
-    // resposta ficou; a próxima mensagem continua ali, e o ChatGPT já lembra
-    // do que foi dito — por isso o histórico não é reenviado.
-    const escreveNoChatgpt = iaPesquisaSozinha &&
-      require('./materiaModelosService').provedorDoModelo(require('./tokenFreeGatewayService').modeloAtual()) === 'chatgpt';
     const fioAnterior = escreveNoChatgpt
       ? [...anteriores]
         .reverse()
@@ -3180,9 +3196,14 @@ async function responder({
         .find(Boolean) || null
       : null;
     let conversaChatgpt = null;
-    const respostaLivre = await deepseekService.conversarLivre({
+    const respostaLivre = await tokenFree.comModelo(modeloConversa, () => deepseekService.conversarLivre({
       pedido: pedidoParaClaudeLivre,
       historico: fioAnterior ? [] : historicoLivre,
+      // No ChatGPT a mensagem chega como alguém digitando na caixa dele: o
+      // pedido do editor e, só na primeira, como entregar a matéria.
+      chatgptDireto: escreveNoChatgpt
+        ? { primeira: !anteriores.some((m) => m.role === 'assistant') }
+        : null,
       fontesWeb,
       // A pauta da casa entra ANTES do que o editor já gravou: o que ele
       // ensinou ao sistema é mais específico e precisa poder sobrepor.
@@ -3221,7 +3242,7 @@ async function responder({
           conversaChatgpt = conversa;
         }
         : null,
-    });
+    }));
     let respostaLivreFinal = limparArtefatosDeTextoLivre(respostaLivre);
     if (respostaAdmitePeriodoNaoAtendido(pedido, respostaLivreFinal)) {
       registrarPasso({ kind: 'aviso', texto: 'A pesquisa não confirmou um fato no intervalo solicitado.' });

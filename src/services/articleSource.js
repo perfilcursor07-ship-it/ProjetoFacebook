@@ -690,6 +690,70 @@ function hostLiteralPrivado(hostname) {
   return false;
 }
 
+/**
+ * Abas de leitura abertas ao mesmo tempo no Chrome do gateway.
+ *
+ * Uma pesquisa devolve 15–20 links e todos eram abertos de uma vez: cada aba
+ * custa 100–300 MB, e o Chrome (que também segura o ChatGPT e o Claude do
+ * VNC) passava de 3 GB e empurrava o servidor para o swap.
+ */
+const MAX_ABAS_LEITURA = Math.max(1, Number(process.env.ARTICLE_BROWSER_MAX_ABAS) || 3);
+let abasLeituraAbertas = 0;
+const filaAbasLeitura = [];
+
+async function comAbaDeLeitura(fn) {
+  if (abasLeituraAbertas >= MAX_ABAS_LEITURA) {
+    await new Promise((resolve) => filaAbasLeitura.push(resolve));
+  }
+  abasLeituraAbertas += 1;
+  try {
+    return await fn();
+  } finally {
+    abasLeituraAbertas -= 1;
+    filaAbasLeitura.shift()?.();
+  }
+}
+
+function ehLinkGoogleNews(value) {
+  try {
+    return /(^|\.)news\.google\.com$/i.test(new URL(String(value || '')).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Links do Google Notícias que o Chrome não conseguiu levar até a notícia.
+ *
+ * O link `news.google.com/rss/articles/…` só redireciona por JavaScript, e
+ * nem sempre. Quando não redirecionava, a página do PRÓPRIO Google era lida
+ * como se fosse o artigo (sempre os mesmos 236 mil caracteres) e entrava como
+ * fonte da matéria. Agora ela é descartada, o link não é reaberto por 30 min
+ * e, depois de várias falhas seguidas, o Chrome para de tentar por 15 min.
+ */
+const GOOGLE_NEWS_FALHA_MS = 30 * 60_000;
+const GOOGLE_NEWS_PAUSA_MS = 15 * 60_000;
+const googleNewsSemRedirecionar = new Map();
+let falhasGoogleNewsSeguidas = 0;
+let googleNewsPausadoAte = 0;
+
+function googleNewsDeveSerPulado(url, agora = Date.now()) {
+  if (agora < googleNewsPausadoAte) return true;
+  const falhou = googleNewsSemRedirecionar.get(url);
+  return Boolean(falhou && agora - falhou < GOOGLE_NEWS_FALHA_MS);
+}
+
+function registrarGoogleNewsSemRedirecionar(url, agora = Date.now()) {
+  if (googleNewsSemRedirecionar.size > 500) googleNewsSemRedirecionar.clear();
+  googleNewsSemRedirecionar.set(url, agora);
+  falhasGoogleNewsSeguidas += 1;
+  if (falhasGoogleNewsSeguidas >= 3 && agora >= googleNewsPausadoAte) {
+    googleNewsPausadoAte = agora + GOOGLE_NEWS_PAUSA_MS;
+    falhasGoogleNewsSeguidas = 0;
+    console.warn('[article-source] Google Notícias não leva até a notícia no Chrome; links dele pausados por 15 min');
+  }
+}
+
 function urlPublicaParaChrome(value) {
   try {
     const parsed = new URL(String(value || '').trim());
@@ -764,7 +828,12 @@ async function conectarChromeLeitor() {
  */
 async function extrairMetadadosViaChrome(urlReal) {
   if (!urlPublicaParaChrome(urlReal)) return null;
+  const doGoogleNews = ehLinkGoogleNews(urlReal);
+  if (doGoogleNews && googleNewsDeveSerPulado(urlReal)) return null;
+  return comAbaDeLeitura(() => lerArtigoNoChrome(urlReal, { doGoogleNews }));
+}
 
+async function lerArtigoNoChrome(urlReal, { doGoogleNews = false } = {}) {
   let page = null;
   let contextoCriado = null;
   try {
@@ -798,6 +867,15 @@ async function extrairMetadadosViaChrome(urlReal) {
       Math.min(45_000, Number(process.env.ARTICLE_BROWSER_TIMEOUT_MS) || 30_000)
     );
     await page.goto(urlReal, { waitUntil: 'domcontentloaded', timeout });
+    if (doGoogleNews) {
+      // O redirecionamento para o veículo é feito por JavaScript, depois do load.
+      await page.waitForURL((u) => !ehLinkGoogleNews(String(u)), { timeout: 10_000 }).catch(() => {});
+      if (ehLinkGoogleNews(page.url())) {
+        registrarGoogleNewsSemRedirecionar(urlReal);
+        return null;
+      }
+      falhasGoogleNewsSeguidas = 0;
+    }
     await page
       .waitForFunction(
         () => {
@@ -816,6 +894,8 @@ async function extrairMetadadosViaChrome(urlReal) {
 
     const finalUrl = page.url() || urlReal;
     if (!urlPublicaParaChrome(finalUrl)) return null;
+    // A página do Google não é a notícia, por mais texto que tenha.
+    if (ehLinkGoogleNews(finalUrl)) return null;
     const html = await page.content();
     const titulo =
       extrairMeta(html, 'og:title') ||
@@ -861,9 +941,12 @@ async function extrairMetadadosViaChrome(urlReal) {
  * rankings "Mais lidas" montados por JavaScript, que chegam vazios no Axios.
  * A aba é sempre temporária e bloqueia navegação para hosts locais/privados.
  */
-async function carregarHtmlViaChrome(urlReal, { marcador = '', timeoutMs = 30_000 } = {}) {
+async function carregarHtmlViaChrome(urlReal, opcoes = {}) {
   if (!urlPublicaParaChrome(urlReal)) return null;
+  return comAbaDeLeitura(() => carregarHtmlNoChrome(urlReal, opcoes));
+}
 
+async function carregarHtmlNoChrome(urlReal, { marcador = '', timeoutMs = 30_000 } = {}) {
   let page = null;
   let contextoCriado = null;
   try {
@@ -1714,6 +1797,9 @@ module.exports = {
   extrairMetadadosViaJina,
   extrairMetadadosViaGoogleTranslate,
   extrairMetadadosViaChrome,
+  // Expostos para teste.
+  comAbaDeLeitura,
+  ehLinkGoogleNews,
   extrairMetadadosViaClaudeWebFetch,
   carregarHtmlViaChrome,
   urlProxyGoogleTranslate,

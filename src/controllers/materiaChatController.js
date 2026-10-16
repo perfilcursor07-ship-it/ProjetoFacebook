@@ -241,7 +241,12 @@ async function enviar(req, res, next) {
         ? await materiaModelos.resolverModeloChatgpt(body.modelo)
         : await materiaModelos.resolverModelo(body.modelo);
     const { comModelo } = require('../services/tokenFreeGatewayService');
-    await comModelo(modeloEscolhido, () => chatService.responder({
+    // No ChatGPT livre SÓ a conversa vai ao ChatGPT (o serviço aplica o modelo
+    // nessa chamada). Envolver o pedido inteiro mandava também os títulos
+    // alternativos e outras tarefas internas, e cada uma abria uma conversa
+    // nova no chatgpt.com do servidor.
+    const modeloDoPedido = tipoConversa === 'chatgpt' ? null : modeloEscolhido;
+    await comModelo(modeloDoPedido, () => chatService.responder({
       userId: req.session.userId,
       chatId: chatIdParam,
       texto: body.texto || body.mensagem || '',
@@ -254,6 +259,7 @@ async function enviar(req, res, next) {
       modo: body.modo === 'pautas' ? 'pautas' : 'escrever',
       // 'livre' = Claude livre; 'chatgpt' = ChatGPT livre (chatgpt.com no Chrome do servidor).
       tipoConversa,
+      modeloConversa: tipoConversa === 'chatgpt' ? modeloEscolhido : null,
       transcreverVideo:
         body.transcreverVideo == null
           ? true

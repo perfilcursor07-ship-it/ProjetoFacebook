@@ -101,7 +101,7 @@ test('os avisos não chamam de Claude o que a tela chama de ChatGPT', () => {
 
 test('no modo ChatGPT o aviso nomeia quem está pesquisando', () => {
   // Aqui citar o provedor é o certo: é ele que faz a busca, não nós.
-  assert.match(CHAT, /\? 'O ChatGPT está pesquisando e escrevendo…'/);
+  assert.match(CHAT, /[?:] 'O ChatGPT está pesquisando e escrevendo…'/);
   // Nos outros modos segue genérico — quem pesquisa somos nós.
   assert.match(CHAT, /\? 'Pesquisando na web…'\s*\n\s*: 'Escrevendo a resposta…',/);
 });

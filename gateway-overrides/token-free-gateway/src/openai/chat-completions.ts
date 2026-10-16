@@ -2,6 +2,7 @@ import { evictProviderClient } from "../providers/registry.ts";
 import type { WebProviderClient } from "../providers/types.ts";
 import { ProviderApiError, SessionExpiredError } from "../providers/types.ts";
 import { buildPromptFromMessages, parseToolResponse } from "../tool-calling/converter.ts";
+import { comecarPedido } from "../viralizeai/abas.ts";
 import { makeChunk, sseDone, sseEvent, sseHeaders } from "./sse.ts";
 import type {
 	ChatCompletionRequest,
@@ -43,7 +44,7 @@ export async function handleChatCompletions(
 
 	const id = generateId();
 	const model = body.model;
-	const { prompt, hasTools } = buildPromptFromMessages(body.messages, body.tools, body.tool_choice);
+	const { prompt, hasTools } = promptDoPedido(body, client);
 
 	if (!prompt) {
 		return jsonError("Could not construct prompt from messages", 400);
@@ -56,8 +57,11 @@ export async function handleChatCompletions(
 	if (signal?.aborted) upstream.abort();
 	signal?.addEventListener("abort", onClientGone, { once: true });
 
+	// viralizeai: pedido em andamento — as abas não são recarregadas no meio
+	// dele (veja ../viralizeai/abas.ts). No streaming quem encerra é o stream.
+	const encerrarPedido = await comecarPedido();
 	const handler = body.stream
-		? handleStreaming(id, model, prompt, hasTools, body, client, upstream)
+		? handleStreaming(id, model, prompt, hasTools, body, client, upstream, encerrarPedido)
 		: handleNonStreaming(id, model, prompt, hasTools, body, client, upstream.signal);
 
 	let timer: ReturnType<typeof setTimeout> | undefined;
@@ -74,7 +78,35 @@ export async function handleChatCompletions(
 	} finally {
 		clearTimeout(timer);
 		signal?.removeEventListener("abort", onClientGone);
+		if (!body.stream) encerrarPedido();
 	}
+}
+
+/**
+ * viralizeai: o texto que vai para o provedor.
+ *
+ * O formato padrão junta as mensagens como "Human: …" / "System: …" — no
+ * ChatGPT isso aparecia literalmente na conversa ("Human: uma notícia
+ * recente…"). Quando o pedido é uma mensagem só do usuário, sem ferramentas,
+ * o ChatGPT recebe exatamente o que foi escrito, como se alguém tivesse
+ * digitado na caixa dele.
+ */
+function promptDoPedido(body: ChatCompletionRequest, client: WebProviderClient) {
+	const unica = body.messages.length === 1 ? body.messages[0] : null;
+	const semFerramentas = !body.tools?.length;
+	if (client.providerId === "chatgpt-web" && unica?.role === "user" && semFerramentas) {
+		const conteudo = unica.content as unknown;
+		const texto =
+			typeof conteudo === "string"
+				? conteudo
+				: Array.isArray(conteudo)
+					? conteudo
+							.map((p) => (p && typeof p === "object" && "text" in p ? String((p as { text?: unknown }).text ?? "") : ""))
+							.join("")
+					: "";
+		if (texto.trim()) return { prompt: texto.trim(), hasTools: false };
+	}
+	return buildPromptFromMessages(body.messages, body.tools, body.tool_choice);
 }
 
 async function handleNonStreaming(
@@ -215,6 +247,7 @@ async function handleStreaming(
 	body: ChatCompletionRequest,
 	client: WebProviderClient,
 	upstream: AbortController,
+	encerrarPedido: () => void = () => {},
 ): Promise<Response> {
 	// Await sendMessage BEFORE creating the SSE stream so that pre-stream
 	// errors (auth, rate-limit, model-not-available) return a proper HTTP
@@ -231,6 +264,7 @@ async function handleStreaming(
 			webSearch: body.web_search,
 		});
 	} catch (err) {
+		encerrarPedido();
 		return providerErrorResponse(err, "streaming (pre-stream)");
 	}
 
@@ -254,6 +288,7 @@ async function handleStreaming(
 				w.done();
 			}
 			w.close();
+			encerrarPedido();
 		},
 		cancel() {
 			// Cliente fechou a conexão no meio da resposta.

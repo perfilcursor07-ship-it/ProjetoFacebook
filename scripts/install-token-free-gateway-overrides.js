@@ -14,6 +14,10 @@ const strict = process.argv.includes('--strict');
 const UPSTREAM_VERSION = '0.5.2';
 
 const files = [
+  // Inteiro: além do original, registra as abas dos provedores para serem
+  // recarregadas de tempos em tempos (inclui o antigo patch de cookies).
+  'src/browser/manager.ts',
+  'src/viralizeai/abas.ts',
   'src/openai/chat-completions.ts',
   'src/openai/types.ts',
   'src/providers/claude/chunk-stream.ts',
@@ -37,23 +41,6 @@ const files = [
 // Cada patch procura um trecho exato; se o arquivo já tiver a marca, pula; se
 // o trecho não existir (outra versão do gateway), avisa e não mexe em nada.
 const patches = [
-  {
-    file: 'src/browser/manager.ts',
-    marca: 'viralizeai: não sobrescreve sessão viva',
-    procurar: '\t\t\t\tawait ctx.addCookies(cookies);',
-    trocar: [
-      '\t\t\t\t// viralizeai: não sobrescreve sessão viva. O Chrome logado (pelo',
-      '\t\t\t\t// noVNC/webauth) é a fonte de verdade; o cookie salvo em',
-      '\t\t\t\t// auth-profiles.json só entra se o Chrome ainda não tiver aquele',
-      '\t\t\t\t// cookie. Antes, um sessionKey antigo derrubava o login do Claude.',
-      '\t\t\t\tconst atuais = await ctx.cookies().catch(() => []);',
-      '\t\t\t\tconst chave = (c: { name: string; domain?: string }) =>',
-      '\t\t\t\t\t`${c.name}|${String(c.domain || "").replace(/^\\./, "")}`;',
-      '\t\t\t\tconst existentes = new Set(atuais.filter((c) => c.value).map(chave));',
-      '\t\t\t\tconst faltando = cookies.filter((c) => !existentes.has(chave(c)));',
-      '\t\t\t\tif (faltando.length) await ctx.addCookies(faltando);',
-    ].join('\n'),
-  },
   {
     file: 'src/cli/chrome.ts',
     marca: '--disable-renderer-backgrounding',

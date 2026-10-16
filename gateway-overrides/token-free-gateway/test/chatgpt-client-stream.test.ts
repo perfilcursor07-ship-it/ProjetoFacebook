@@ -94,6 +94,15 @@ test("devolve o ponteiro da conversa e continua nela na mensagem seguinte", { sk
 	// Outra conversa do ViralizeAI não herda a conversa anterior.
 	await c.parseStream(await c.sendMessage({ message: "3", conversationId: "viralizeai:chatgpt:chat:8" }));
 	assert.equal((corpos[2] as { conversation_id?: string }).conversation_id, undefined);
+
+	// Sem o ponteiro, a MESMA conversa do ViralizeAI continua na mesma do ChatGPT.
+	await c.parseStream(await c.sendMessage({ message: "4", conversationId: "viralizeai:chatgpt:chat:8" }));
+	assert.equal((corpos[3] as { conversation_id?: string }).conversation_id, "6710a1b2-0000-4000-8000-00000000c0de");
+
+	// Tarefa interna nunca reaproveita conversa.
+	await c.parseStream(await c.sendMessage({ message: "5", conversationId: "viralizeai:internal:conversa" }));
+	await c.parseStream(await c.sendMessage({ message: "6", conversationId: "viralizeai:internal:conversa" }));
+	assert.equal((corpos[5] as { conversation_id?: string }).conversation_id, undefined);
 });
 
 test("erro HTTP do ChatGPT continua virando erro antes do stream", { skip: pular }, async () => {
@@ -134,7 +143,24 @@ test("stream sem texto reconhecível: o texto e a imagem vêm da conversa salva"
 		if (String(url).includes("/backend-api/files/download/file_123")) {
 			return new Response(JSON.stringify({ download_url: "https://files.oaiusercontent.com/file_123.png" }), { status: 200 });
 		}
+		// A URL assinada só abre com a sessão: o arquivo é baixado na própria aba.
+		if (String(url) === "https://files.oaiusercontent.com/file_123.png") {
+			return new Response(new Uint8Array(2048).fill(7), { status: 200, headers: { "Content-Type": "image/png" } });
+		}
 		return anterior(url, init);
+	};
+	// FileReader é do navegador; aqui, o mínimo que a página usa.
+	g.FileReader = class {
+		result: string | null = null;
+		onload: (() => void) | null = null;
+		onerror: (() => void) | null = null;
+		error = null;
+		readAsDataURL(blob: Blob) {
+			blob.arrayBuffer().then((b) => {
+				this.result = `data:${blob.type};base64,${Buffer.from(b).toString("base64")}`;
+				this.onload?.();
+			});
+		}
 	};
 	const c = cliente(page);
 	const deltas: string[] = [];
@@ -143,7 +169,8 @@ test("stream sem texto reconhecível: o texto e a imagem vêm da conversa salva"
 	);
 	assert.equal(r.text, "Título\n\nCorpo.");
 	assert.deepEqual(deltas, ["Título\n\nCorpo."], "o texto recuperado também vai para a tela");
-	assert.deepEqual(r.imagens, ["https://files.oaiusercontent.com/file_123.png"]);
+	assert.equal(r.imagens?.length, 1);
+	assert.match(r.imagens?.[0] ?? "", /^data:image\/png;base64,/, "a imagem sai já baixada, não como URL que dá 403 de fora");
 	assert.equal(r.conversa, `chatgpt:${conversa}:a-2`);
 	assert.equal(lidas.length, 1);
 });
