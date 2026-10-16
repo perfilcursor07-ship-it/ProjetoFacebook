@@ -328,6 +328,18 @@ function limparArtefatosDeTextoLivre(texto) {
       .replace(/(^|\n)[ \t]*\\[ \t]*(?=\n|$)/g, '$1')
   )
     .replace(/\\(?=\s*(?:\n|$))/g, '')
+    // O Facebook não renderiza Markdown: "### Subtítulo" sai com as
+    // cerquilhas no post. Desde que a pauta passou a pedir subtítulos, a IA
+    // entrega cabeçalhos de Markdown — aqui viram linha de texto comum.
+    //
+    // `#{1,6}[ \t]+` exige espaço depois das cerquilhas, então a linha de
+    // hashtags (#Gospel #Fe) não é tocada.
+    .replace(/^[ \t]*#{1,6}[ \t]+/gm, '')
+    // Negrito e itálico também sairiam literais.
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+    .replace(/__([^_\n]+)__/g, '$1')
+    // Link em Markdown: fica o texto; o endereço vai na linha Fonte.
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/gi, '$1')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
@@ -5575,6 +5587,7 @@ async function editarConteudoDaMensagem({ userId, messageId, conteudo } = {}) {
 module.exports = {
   limparCorpoDoRascunho,
   capaEscolhidaValida,
+  limparArtefatosDeTextoLivre,
   primeiroLinkDeFonte,
   respostaAdmitePeriodoNaoAtendido,
   listarConversas,
