@@ -66,10 +66,10 @@ test('a conversa do ChatGPT continua na mensagem seguinte', () => {
 
 test('o campo atravessa o gateway até a resposta HTTP', () => {
   assert.match(TIPOS, /imagens\?: string\[\];/, 'StreamResult não carrega as imagens');
-  assert.match(COMPLETIONS, /result\.imagens\?\.length \? \{ imagens: result\.imagens \} : \{\}/);
+  assert.match(COMPLETIONS, /result\.imagens\?\.length \? \{ imagens: result\.imagens, imagens_paginas: result\.paginasDasImagens/);
   // No streaming a foto vai num evento solto, DEPOIS do "stop", para não
   // entrar no meio do texto que o cliente está montando.
-  assert.match(COMPLETIONS, /w\.writeExtra\(\{ imagens: result\.imagens \}\)/);
+  assert.match(COMPLETIONS, /w\.writeExtra\(\{ imagens: result\.imagens, imagens_paginas: result\.paginasDasImagens/);
   const semFerramentas = COMPLETIONS.slice(
     COMPLETIONS.indexOf('async function streamWithoutTools('),
     COMPLETIONS.indexOf('async function streamWithTools(')
@@ -83,9 +83,9 @@ test('o campo atravessa o gateway até a resposta HTTP', () => {
 test('o cliente entrega as imagens sem mudar o retorno', () => {
   // `chatCompletion`/`chatCompletionStream` devolvem string para dezenas de
   // chamadores: a foto sai por um callback, não trocando o tipo do retorno.
-  assert.match(SERVICO, /function entregarImagens\(callback, valor\)/);
-  assert.match(SERVICO, /entregarImagens\(aoReceberImagens, data\?\.imagens\)/);
-  assert.match(SERVICO, /entregarImagens\(aoReceberImagens, evento\?\.imagens\)/);
+  assert.match(SERVICO, /function entregarImagens\(callback, valor, extras = \{\}\)/);
+  assert.match(SERVICO, /entregarImagens\(aoReceberImagens, data\?\.imagens, data\)/);
+  assert.match(SERVICO, /entregarImagens\(aoReceberImagens, evento\?\.imagens, evento\)/);
   // Erro de quem consome não pode derrubar a geração da matéria.
   assert.match(SERVICO, /imagens da resposta ignoradas/);
 });
@@ -94,7 +94,7 @@ test('a imagem da conversa é a PRIMEIRA opção de capa', () => {
   // O editor viu a foto aparecer no ChatGPT; é essa que ele espera na
   // "Imagem destacada" — não uma do link citado nem uma gerada aqui.
   assert.match(CHAT, /async function capaGeradaNaConversa\(/);
-  assert.match(CHAT, /aoReceberImagens: \(urls\) => \{/);
+  assert.match(CHAT, /aoReceberImagens: \(urls, extras = \{\}\) => \{/);
   const daConversa = CHAT.indexOf('capaDaConversa = await capaGeradaNaConversa(');
   // E antes até da foto do site citado na resposta (fonteCapa).
   assert.ok(daConversa > 0 && daConversa < CHAT.indexOf('const fonteCapa = fontesFinais.find('),

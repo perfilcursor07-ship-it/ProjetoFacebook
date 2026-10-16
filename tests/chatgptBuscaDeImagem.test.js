@@ -66,7 +66,7 @@ test('no stream: a busca chega ao ViralizeAI e a marca não entra no texto da ma
 
 test('sem foto pelos dados, a busca do ChatGPT vai ao buscador de imagens do ViralizeAI', () => {
   const CHAT = fs.readFileSync('src/services/materiaChatService.js', 'utf8');
-  const i = CHAT.indexOf("if (chat.modo === 'chatgpt' && !imagensDaConversa.length && buscasDeImagem.length)");
+  const i = CHAT.indexOf("if (chat.modo === 'chatgpt' && buscasDeImagem.length && (!imagensDaConversa.length || fotosDaTela === 0))");
   assert.ok(i > 0);
   assert.match(CHAT.slice(i, i + 900), /buscarImagensPorPalavra\(consulta/);
   // Antes de virar capa (e antes da foto do site citado).
