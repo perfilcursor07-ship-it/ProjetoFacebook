@@ -71,3 +71,34 @@ test('durante uma autorização no /claude o vigia não mexe', async () => {
   // A autorização derruba o Chrome de propósito; religar no meio estragaria o login.
   assert.match(fonte, /if \(autorizacaoEmAndamento\(\)\) \{\s*vigia\.falhasSeguidas = 0;/);
 });
+
+test('depois do deploy: percebe que o gateway rodando é mais velho que o código instalado', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'vigia-'));
+  const overridesDir = path.join(raiz, 'overrides', 'src');
+  const toolSrcDir = path.join(raiz, 'tool', 'src');
+  const pidFile = path.join(raiz, 'gateway.pid');
+  fs.mkdirSync(path.join(overridesDir, 'providers'), { recursive: true });
+  fs.mkdirSync(path.join(toolSrcDir, 'providers'), { recursive: true });
+  fs.writeFileSync(path.join(overridesDir, 'providers', 'client.ts'), 'novo');
+  fs.writeFileSync(path.join(toolSrcDir, 'providers', 'client.ts'), 'novo');
+  fs.writeFileSync(pidFile, '123');
+  const opcoes = { pidFile, overridesDir, toolSrcDir };
+
+  // Gateway subiu DEPOIS da cópia: nada a fazer.
+  const antes = new Date(Date.now() - 60_000);
+  fs.utimesSync(path.join(toolSrcDir, 'providers', 'client.ts'), antes, antes);
+  assert.equal(admin.gatewayDesatualizado(opcoes), false);
+
+  // O deploy copiou arquivo novo depois que o gateway subiu: reiniciar.
+  const depois = new Date(Date.now() + 60_000);
+  fs.utimesSync(path.join(toolSrcDir, 'providers', 'client.ts'), depois, depois);
+  assert.equal(admin.gatewayDesatualizado(opcoes), true);
+
+  // Sem gateway.pid (nunca subiu): quem cuida é o vigia normal.
+  fs.rmSync(pidFile);
+  assert.equal(admin.gatewayDesatualizado(opcoes), false);
+  fs.rmSync(raiz, { recursive: true, force: true });
+});

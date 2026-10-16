@@ -902,12 +902,81 @@ async function vigiarGateway({ imediato = false, agora = Date.now() } = {}) {
   return vigia.religando;
 }
 
+/**
+ * O deploy copia o código novo do gateway (`gateway:sync`), mas o gateway que
+ * está rodando continua com o antigo até alguém reiniciá-lo — correção
+ * "publicada" que não valia. Compara a hora em que ele subiu (gateway.pid)
+ * com a dos arquivos que mantemos em gateway-overrides.
+ */
+function gatewayDesatualizado({
+  pidFile = path.join(DATA_DIR, 'gateway.pid'),
+  overridesDir = path.join(PROJECT_ROOT, 'gateway-overrides', 'token-free-gateway', 'src'),
+  toolSrcDir = path.join(TOOL_DIR, 'src'),
+} = {}) {
+  let iniciadoEm;
+  try {
+    iniciadoEm = fs.statSync(pidFile).mtimeMs;
+  } catch {
+    return false;
+  }
+  let maisNovo = 0;
+  const andar = (dir) => {
+    let itens = [];
+    try {
+      itens = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const item of itens) {
+      const origem = path.join(dir, item.name);
+      if (item.isDirectory()) {
+        andar(origem);
+        continue;
+      }
+      try {
+        const instalado = path.join(toolSrcDir, path.relative(overridesDir, origem));
+        maisNovo = Math.max(maisNovo, fs.statSync(instalado).mtimeMs);
+      } catch {
+        // arquivo ainda não instalado: o gateway:sync cuida
+      }
+    }
+  };
+  andar(overridesDir);
+  return maisNovo > iniciadoEm;
+}
+
+/** Logo depois do deploy: reinicia o gateway uma vez se o código dele mudou. */
+async function atualizarGatewayAposDeploy() {
+  if (!vigiaLigado() || vigia.religando || autorizacaoEmAndamento()) return false;
+  if (!gatewayDesatualizado()) return false;
+  // Gateway fora do ar fica com o vigia normal, que sobe já a versão nova.
+  if (!(await gatewayNoAr())) return false;
+  console.info('[vigia-gateway] o código do gateway mudou desde que ele subiu — reiniciando para usar a versão nova');
+  vigia.religando = (async () => {
+    try {
+      const resultado = await vigia.religar();
+      console.info(`[vigia-gateway] ${resultado.message}`);
+      return true;
+    } catch (err) {
+      console.warn(`[vigia-gateway] não consegui reiniciar o gateway após o deploy: ${err.message}`);
+      return false;
+    } finally {
+      vigia.religando = null;
+    }
+  })();
+  return vigia.religando;
+}
+
 function iniciarVigia() {
   if (vigia.timer || !vigiaLigado()) return false;
   vigia.timer = setInterval(() => {
     vigiarGateway().catch((err) => console.warn('[vigia-gateway]', err.message));
   }, VIGIA_INTERVALO_MS);
   vigia.timer.unref?.();
+  // Dá tempo do site subir antes de mexer no gateway.
+  setTimeout(() => {
+    atualizarGatewayAposDeploy().catch((err) => console.warn('[vigia-gateway]', err.message));
+  }, 20_000).unref?.();
   return true;
 }
 
@@ -924,6 +993,7 @@ module.exports = {
   iniciarVigia,
   religarSeCaiu,
   vigiarGateway,
+  gatewayDesatualizado,
   // Só para teste.
   _vigia: vigia,
   iniciarAutorizacao,
