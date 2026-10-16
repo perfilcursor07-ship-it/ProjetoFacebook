@@ -303,6 +303,18 @@ function buscasDeImagemNoTexto(texto) {
       // marca truncada: segue
     }
   }
+  // <AsyncImage query="…"/> (e o grupo): o servidor do ChatGPT busca a foto
+  // com essa consulta. Se a foto resolvida não chegar, ela serve de plano B.
+  const ATRIBUTO = /\bquer(?:y|ies)=(?:"([^"]+)"|\{\[([^\]]*)\]\})/g;
+  for (const tag of String(texto || '').matchAll(/<AsyncImage(?:Group)?\b[^>]*>/g)) {
+    for (const m of tag[0].matchAll(ATRIBUTO)) {
+      const lista = m[1] ? [m[1]] : String(m[2] || '').split(',').map((x) => x.replace(/^\s*["']|["']\s*$/g, ''));
+      for (const c of lista) {
+        const q = String(c || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+        if (q.length >= 3 && !buscas.includes(q)) buscas.push(q);
+      }
+    }
+  }
   return buscas;
 }
 

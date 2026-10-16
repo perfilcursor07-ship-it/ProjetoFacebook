@@ -173,3 +173,36 @@ test("antes e depois de uma pesquisa: as duas partes entram, separadas por pará
 	);
 	assert.equal(r.text, "Vou pesquisar.\n\nMatéria pronta.");
 });
+
+// O ChatGPT escreve <AsyncImage query="…"/> e o servidor dele busca a foto e a
+// devolve 1–2 s depois nos metadados (model_dil_v2…componentResults), em
+// images.openai.com. Era a foto que aparecia na tela dele e não chegava aqui.
+test("<AsyncImage>: a foto que o servidor do ChatGPT resolveu entra; o link da página não", async () => {
+	const r = await parseChatGPTStream(
+		streamOf(
+			add("a-1", "assistant"),
+			linha({ v: '<AsyncImage query="Ella Langley performing live" aspectRatio="16:9" alt="A cantora"/>\n**Ella Langley surpreende público**' }),
+			linha({
+				p: "/message/metadata",
+				o: "append",
+				v: {
+					model_dil_v2: {
+						appData: {
+							opGenui: {
+								componentResults: {
+									c1: {
+										status: "loaded",
+										images: [{ content_url: "https://images.openai.com/thumbnails/url/ella.jpg", url: "https://parade.com/news/ella-langley" }],
+									},
+								},
+							},
+						},
+					},
+				},
+			}),
+			"data: [DONE]\n\n",
+		),
+	);
+	assert.deepEqual(r.imagens, ["https://images.openai.com/thumbnails/url/ella.jpg"]);
+	assert.equal(r.aguardandoImagem, true, "com <AsyncImage> o client ainda confere a conversa salva");
+});

@@ -573,9 +573,11 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 		const semImagem = !resultado.imagens?.length && Boolean(resultado.aguardandoImagem);
 		let sinalDeImagem = false;
 		if (conversa && (semTexto || semImagem)) {
-			const limite = Date.now() + (semImagem ? 150_000 : 15_000);
+			// <AsyncImage>: a foto aparece em segundos; imagem GERADA leva minutos.
+			const soBusca = /<AsyncImage(?:Group)?\b|\ue200image_group\ue202/.test(resultado.text);
+			const limite = Date.now() + (semImagem ? (soBusca ? 20_000 : 150_000) : 15_000);
 			for (let tentativa = 0; Date.now() < limite; tentativa++) {
-				if (tentativa) await new Promise((r) => setTimeout(r, 5_000));
+				if (tentativa) await new Promise((r) => setTimeout(r, soBusca ? 2_500 : 5_000));
 				const lida = await this.lerConversa(conversa).catch((err) => {
 					console.warn(`[ChatGPT Web] conversa ${conversa} nao lida: ${err instanceof Error ? err.message : err}`);
 					return null;
@@ -615,7 +617,7 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 			// Galeria de fotos do ChatGPT: ele manda só a BUSCA (marca image_group
 			// no texto) e o ViralizeAI busca as fotos com ela. Ler a tela aqui só
 			// atrasaria a resposta.
-			const galeriaPorBusca = /\ue200image_group\ue202/.test(resultado.text);
+			const galeriaPorBusca = /\ue200image_group\ue202|<AsyncImage(?:Group)?\b/.test(resultado.text);
 			if (!resultado.imagens?.length && !galeriaPorBusca && (fio.pediuImagem || sinalDeImagem)) {
 				const daTela = await this.imagensDaTela(conversa, assinaturaDaResposta(resultado.text)).catch((err) => {
 					console.warn(`[viralizeai-imagem] tela da conversa não lida: ${err instanceof Error ? err.message : err}`);

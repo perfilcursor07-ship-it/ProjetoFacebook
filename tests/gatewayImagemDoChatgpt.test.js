@@ -36,9 +36,11 @@ test('o parser varre onde o ChatGPT costuma pôr imagem', () => {
   for (const campo of ['asset_pointer', 'image_url', 'thumbnail_url', 'url', 'src']) {
     assert.ok(STREAM.includes(`"${campo}"`), `campo ${campo} não é varrido`);
   }
-  for (const grupo of ['images', 'image_results', 'content_references', 'parts', 'metadata']) {
-    assert.ok(STREAM.includes(`"${grupo}"`), `grupo ${grupo} não é varrido`);
-  }
+  // Todos os campos são varridos (a foto do <AsyncImage> fica em
+  // model_dil_v2…componentResults, nomes que mudam), e foto de
+  // images.openai.com conta onde quer que esteja.
+  assert.match(STREAM, /for \(const \[chave, valor\] of Object\.entries\(o\)\)/);
+  assert.ok(STREAM.includes('images\\.openai\\.com'), 'foto de images.openai.com não é reconhecida');
 });
 
 test('ponteiro interno é resolvido na página logada', () => {

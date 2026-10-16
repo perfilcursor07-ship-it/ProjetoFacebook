@@ -99,27 +99,45 @@ function inicioDeBlocoAberto(texto) {
   const tag = s.match(/<\/?[A-Za-z][A-Za-z0-9]*(?:\s[^<>]*)?$/);
   if (tag) {
     const nome = (tag[0].match(/^<\/?([A-Za-z][A-Za-z0-9]*)/) || [])[1] || '';
-    // Só segura o que pode virar bloco do Claude: PascalCase ou "ant…".
-    if (/^(?:[A-Z]|ant)/.test(nome)) return s.length - tag[0].length;
+    // Só segura o que pode virar bloco do Claude (PascalCase ou "ant…") ou
+    // componente/cartão do ChatGPT (<AsyncImage, <Cite, <box, <title…).
+    if (/^(?:[A-Z]|ant)/.test(nome) || new RegExp(`^(?:${NOMES_DE_CARTAO})$`).test(nome)) {
+      return s.length - tag[0].length;
+    }
   }
   return -1;
 }
 
 /**
- * Legenda de foto que o ChatGPT desenha na tela dele:
- *   <text color="secondary" size="sm">Foto: … Reprodução: Fuxico Gospel.</text>
- * Chegava como texto no meio da matéria. Sai inteira (a foto não vem junto).
+ * Componentes que o ChatGPT escreve no texto e a tela dele desenha:
+ *   <AsyncImage query="…" aspectRatio="16:9" alt="…"/>   → foto buscada pelo servidor
+ *   <Cite refs={["turn464859search0"]}/>                  → etiqueta da fonte
+ *   <Link href="…">texto</Link>, <text color="secondary">legenda</text>
+ *   e a marcação de cartão: <box>, <row>, <grid>, <title>, <badge>, <divider>…
+ * Chegavam como texto: o <AsyncImage> na 1ª linha virava o TÍTULO da matéria.
+ * Auto-fechados somem; nos demais fica só o conteúdo; a legenda sai inteira.
  */
-function removerLegendasDoChatgpt(texto) {
+const NOMES_DE_CARTAO = 'box|row|col|column|grid|stack|card|title|badge|divider|spacer|text|caption';
+const ATRIBUTOS = '(?:[^<>"\']|"[^"]*"|\'[^\']*\')*';
+const COMPONENTE = `(?:[A-Z][A-Za-z0-9]*|(?:${NOMES_DE_CARTAO})(?![A-Za-z0-9]))`;
+const TEM_COMPONENTE = new RegExp(`<\\/?${COMPONENTE}`);
+const COMPONENTE_FECHADO = new RegExp(`<${COMPONENTE}${ATRIBUTOS}\\/>`, 'g');
+const TAG_DE_COMPONENTE = new RegExp(`<\\/?${COMPONENTE}${ATRIBUTOS}>`, 'g');
+
+function removerComponentesDoChatgpt(texto) {
   const valor = String(texto ?? '');
-  if (!/<\/?text\b/i.test(valor)) return valor;
+  if (!TEM_COMPONENTE.test(valor)) return valor;
   return valor
     .replace(/<text\b[^>]*>[\s\S]*?<\/text>[ \t]*\n?/gi, '')
-    .replace(/<\/?text\b[^>]*>/gi, '');
+    .replace(COMPONENTE_FECHADO, '')
+    .replace(TAG_DE_COMPONENTE, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/^\s*\n/, '');
 }
 
 function limparMarcacaoChatgpt(texto, { corrigirFonte = true } = {}) {
-  const valor = removerLegendasDoChatgpt(removerBlocosDoClaude(String(texto ?? '')));
+  const valor = removerComponentesDoChatgpt(removerBlocosDoClaude(String(texto ?? '')));
   return valor
     .split('\n')
     .map((linha) => {

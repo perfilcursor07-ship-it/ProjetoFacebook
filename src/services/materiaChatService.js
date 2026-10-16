@@ -159,6 +159,9 @@ async function capaDaConversaLivre({ userId, chatId, titulo, registrarPasso = ()
  */
 /** Imagem que o ChatGPT GEROU (arquivo dele), e não foto achada na web. */
 function imagemGeradaPeloChatgpt(url) {
+  // images.openai.com guarda a foto que o ChatGPT ACHOU na web (<AsyncImage>):
+  // é reprodução, não imagem gerada.
+  if (/^https?:\/\/images\.openai\.com\//i.test(String(url || ''))) return false;
   // `data:` vem do gateway, que baixou o arquivo dentro da conta do ChatGPT.
   // Raspada da tela da conversa, ela traz a origem: foto da web não é IA.
   if (/^data:image\//i.test(String(url || ''))) return !/;origem=web[;,]/i.test(String(url));

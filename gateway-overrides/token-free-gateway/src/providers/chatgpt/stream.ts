@@ -44,9 +44,19 @@ export function mensagemVisivel(m: { papel?: string; tipo?: string; destino?: st
 	);
 }
 
+/**
+ * Foto que o ChatGPT achou na web para um `<AsyncImage query="…"/>`: o
+ * servidor dele busca, e devolve em `images.openai.com` (abre sem login).
+ */
+const FOTO_DO_CHATGPT = /^https:\/\/images\.openai\.com\//i;
+
 /** Recolhe ponteiros/URLs de imagem de qualquer objeto da resposta. */
 export function coletarImagens(alvo: unknown, destino: string[], profundidade = 0): void {
-	if (!alvo || profundidade > 6) return;
+	if (!alvo || profundidade > 12) return;
+	if (typeof alvo === "string") {
+		if (FOTO_DO_CHATGPT.test(alvo) && !destino.includes(alvo)) destino.push(alvo);
+		return;
+	}
 	if (Array.isArray(alvo)) {
 		for (const item of alvo) coletarImagens(item, destino, profundidade + 1);
 		return;
@@ -65,8 +75,13 @@ export function coletarImagens(alvo: unknown, destino: string[], profundidade = 
 		if (/^https?:/i.test(v) && !ehImagem && campo === "url") continue;
 		if (!destino.includes(v)) destino.push(v);
 	}
-	for (const campo of ["parts", "images", "image_results", "content_references", "metadata", "content", "items", "assets"]) {
-		if (o[campo]) coletarImagens(o[campo], destino, profundidade + 1);
+	// Todos os campos, não só os conhecidos: a foto do <AsyncImage> fica em
+	// `model_dil_v2.appData.opGenui.componentResults[…].images[]` e em
+	// `genui_components` — nomes que mudam. Lá dentro só entra o que é
+	// claramente imagem (campos acima) ou foto de images.openai.com.
+	for (const [chave, valor] of Object.entries(o)) {
+		if (valor && typeof valor === "object") coletarImagens(valor, destino, profundidade + 1);
+		else if (typeof valor === "string" && chave !== "url") coletarImagens(valor, destino, profundidade + 1);
 	}
 }
 
@@ -280,8 +295,10 @@ export async function parseChatGPTStream(
 			`[ChatGPT Web] a resposta chegou por mais de um caminho — cópias ignoradas: ${ignorados.copias}, versões paralelas ignoradas: ${ignorados.paralelas}, mensagens com o mesmo texto: ${ignorados.donos.size + 1}`,
 		);
 	}
-	const aguardandoImagem = mensagens.some(
-		(m) => m.papel !== "user" && /image|dalle|t2uay3k/i.test(`${m.destino ?? ""} ${m.tipo ?? ""}`),
-	);
+	// Imagem gerada pela ferramenta, ou <AsyncImage>/galeria que o servidor do
+	// ChatGPT resolve 1–2 s depois: vale ler a conversa salva em seguida.
+	const aguardandoImagem =
+		mensagens.some((m) => m.papel !== "user" && /image|dalle|t2uay3k/i.test(`${m.destino ?? ""} ${m.tipo ?? ""}`)) ||
+		/<AsyncImage(?:Group)?\b|\ue200image_group\ue202/.test(texto);
 	return { text: texto.trim(), thinkingText: "", imagens, aguardandoImagem };
 }
