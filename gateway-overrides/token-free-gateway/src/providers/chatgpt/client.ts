@@ -140,7 +140,12 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 	 * - sem `conversation_id` → comportamento original do gateway.
 	 */
 	private fioDaMensagem(params: NormalizedSendParams): Fio {
-		return { ...this.fioDaConversa(params), pediuImagem: PEDE_IMAGEM.test(String(params.message || "")) };
+		const fio = this.fioDaConversa(params);
+		// No "ChatGPT livre" a imagem é parte do combinado da conversa (a 1ª
+		// mensagem pede foto real); "outra" não fala em imagem e a raspagem
+		// nem era tentada. Lá ela é sempre tentada.
+		const chatgptLivre = Boolean(fio.chave) || PONTEIRO_CONVERSA.test(String(params.conversationId || ""));
+		return { ...fio, pediuImagem: chatgptLivre || PEDE_IMAGEM.test(String(params.message || "")) };
 	}
 
 	private fioDaConversa(params: NormalizedSendParams): Fio {
@@ -742,19 +747,31 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 				const imgs = ultimo
 					? Array.from(ultimo.querySelectorAll("img"))
 					: Array.from((document.querySelector("main") || document.body).querySelectorAll("img"));
+				// A maior versão anunciada no srcset (a galeria mostra miniatura).
+				const maiorDoSrcset = (img: HTMLImageElement) => {
+					let melhor = { url: "", w: 0 };
+					for (const item of String(img.srcset || "").split(",")) {
+						const [url, tamanho] = item.trim().split(/\s+/);
+						const w = Number.parseInt(String(tamanho || ""), 10) || 0;
+						if (url && w > melhor.w) melhor = { url, w };
+					}
+					return melhor.url;
+				};
 				const grandes = imgs
 					.map((img, i) => {
 						img.setAttribute("data-viralizeai-img", String(i));
 						const caixa = img.getBoundingClientRect();
 						return {
 							i,
-							src: img.currentSrc || img.src || "",
+							src: maiorDoSrcset(img) || img.currentSrc || img.src || "",
 							largura: img.naturalWidth || 0,
 							altura: img.naturalHeight || 0,
 							naTela: caixa.width,
 						};
 					})
-					.filter((c) => c.src && c.largura >= 300 && c.altura >= 200 && c.naTela >= 120);
+					// Miniatura da galeria de fotos do ChatGPT já passa daqui; ícone de
+					// site, avatar e favicon (até ~64 px) continuam de fora.
+					.filter((c) => c.src && c.largura >= 200 && c.altura >= 140 && c.naTela >= 80);
 				return {
 					candidatas: (ultimo ? grandes : grandes.slice(-3))
 						.sort((a, b) => b.largura * b.altura - a.largura * a.altura)

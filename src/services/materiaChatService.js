@@ -100,6 +100,9 @@ function primeiroLinkDeFonte(texto) {
   return null;
 }
 
+/** "Não gere imagem" (e variações) num pedido do ChatGPT livre. */
+const PROIBE_GERAR_IMAGEM = /\bn[ãa]o\s+(?:\p{L}+\s+){0,4}(?:gere|gera|gerar|crie|cria|criar|fa[çc]a|fazer|invente)\s+(?:uma\s+|a\s+|nenhuma\s+)?(?:imagem|imagens|foto|ilustra[çc][ãa]o)/iu;
+
 /**
  * Capa gerada para a conversa do "ChatGPT livre" quando nenhuma fonte trouxe
  * foto. É o que o modo pelo navegador entregava junto com o texto.
@@ -3388,6 +3391,25 @@ async function responder({
       });
       if (capaDaConversa) fontesFinais.push(capaDaConversa);
     }
+    // "quero a imagem para a matéria": o ChatGPT responde só com a foto e uma
+    // legenda. A foto é da matéria ANTERIOR — ela volta inteira, já com essa
+    // capa, em vez de a foto ficar presa numa resposta que não é matéria.
+    if (capaDaConversa && String(respostaLivreFinal || '').trim().length < 600) {
+      const materiaAnterior = [...anteriores]
+        .reverse()
+        .find((m) => m.role === 'assistant' && String(m.content || '').trim().length >= 800);
+      if (materiaAnterior) {
+        respostaLivreFinal = String(materiaAnterior.content);
+        const fontesDaAnterior = (parseJson(materiaAnterior.fontes, []) || []).filter(
+          (f) => f && /^https?:\/\//i.test(String(f.url || '')) && !f.capaChatgpt && !f.fioChatgpt && !f.ehPauta
+        );
+        fontesFinais = [...fontesDaAnterior, capaDaConversa];
+        registrarPasso({
+          kind: 'fontes',
+          texto: 'Foto anexada à matéria anterior — ela aparece de novo abaixo, já com a capa.',
+        });
+      }
+    }
     const fonteCapa = fontesFinais.find((f) => /^https?:\/\//i.test(String(f.url || '')));
     if (!capaDaConversa && fonteCapa && !fonteCapa.imagem && !classificarUrlFonte(fonteCapa.url)) {
       try {
@@ -3423,7 +3445,19 @@ async function responder({
         }
       }
     }
-    if (chat.modo === 'chatgpt' && !fontesFinais.some((f) => f?.imagem)) {
+    // "não gere imagem" em qualquer pedido da conversa vale para todas as
+    // matérias dela: sem foto real, o editor escolhe — nada de ilustração.
+    const proibiuGerarImagem = chat.modo === 'chatgpt' && [
+      ...anteriores.filter((m) => m.role === 'user').map((m) => m.content),
+      pedido,
+    ].some((t) => PROIBE_GERAR_IMAGEM.test(String(t || '')));
+    if (proibiuGerarImagem && !fontesFinais.some((f) => f?.imagem)) {
+      registrarPasso({
+        kind: 'aviso',
+        texto: 'Sem foto na conversa nem na fonte — como você pediu, não gerei imagem. Escolha uma em “Capa”.',
+      });
+    }
+    if (chat.modo === 'chatgpt' && !proibiuGerarImagem && !fontesFinais.some((f) => f?.imagem)) {
       const gerada = await capaDaConversaLivre({
         userId,
         chatId: chat.id,
@@ -5773,6 +5807,7 @@ module.exports = {
   capaEscolhidaValida,
   // Exposto para teste: a imagem que veio da conversa do ChatGPT vira capa.
   capaGeradaNaConversa,
+  PROIBE_GERAR_IMAGEM,
   limparArtefatosDeTextoLivre,
   primeiroLinkDeFonte,
   respostaAdmitePeriodoNaoAtendido,

@@ -198,7 +198,7 @@ test("pediu imagem e ela só existe na tela: raspa da conversa e entrega com a o
 	assert.deepEqual(r.imagens, ["data:image/jpeg;origem=web;base64,AAAA"], "a imagem raspada não se perde no caminho");
 });
 
-test("sem pedir imagem e sem sinal dela na conversa: não abre a tela", { skip: pular }, async () => {
+test("fora do ChatGPT livre, sem pedir imagem e sem sinal dela: não abre a tela", { skip: pular }, async () => {
 	const conversa = "6710a1b2-0000-4000-8000-00000000c0de";
 	const { page } = paginaFalsa([resposta("Matéria pronta.", "aaaa1111-0000-4000-8000-000000000009")], { pausaMs: 1 });
 	const g = globalThis as Record<string, unknown>;
@@ -213,8 +213,12 @@ test("sem pedir imagem e sem sinal dela na conversa: não abre a tela", { skip: 
 		abriu = true;
 		return [];
 	};
-	await c.parseStream(await c.sendMessage({ message: "faça uma matéria sobre o culto", conversationId: "viralizeai:chatgpt:chat:21" }));
+	await c.parseStream(await c.sendMessage({ message: "faça uma matéria sobre o culto", conversationId: "viralizeai:livre:user:1:chat:3:msg:9" }));
 	assert.equal(abriu, false);
+
+	// No ChatGPT livre a foto é parte do combinado: "outra" também raspa.
+	await c.parseStream(await c.sendMessage({ message: "outra", conversationId: "viralizeai:chatgpt:chat:21" }));
+	assert.equal(abriu, true);
 });
 
 test("foto de site que bloqueia o download na página: baixa o arquivo original por fora (nada de print)", { skip: pular }, async () => {
