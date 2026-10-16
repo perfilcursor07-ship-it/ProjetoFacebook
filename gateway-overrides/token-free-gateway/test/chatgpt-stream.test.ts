@@ -106,3 +106,70 @@ test("link citado não vira imagem", async () => {
 	);
 	assert.deepEqual(r.imagens, []);
 });
+
+// A matéria da Sued Silva saiu com cada trecho duas vezes, intercalado:
+// "Cantora Sued Silva surpreende ao encerrar" / o mesmo de novo / "ciclo na
+// gravadora…" / "A cantora…" / "ciclo na gravadora…" / "A cantora…".
+const TEXTO = "Cantora Sued Silva surpreende ao encerrar ciclo\n\nA cantora gospel anunciou uma mudança.";
+const pedacos = ["Cantora Sued Silva surpreende ao encerrar", " ciclo\n\nA cantora", " gospel anunciou", " uma mudança."];
+
+test("mesma resposta por dois caminhos (pedaços + fotografias com outro id): sai uma vez só", async () => {
+	const deltas: string[] = [];
+	const fotografia = (t: string) =>
+		`data: ${JSON.stringify({ message: { id: "copia", author: { role: "assistant" }, recipient: "all", content: { content_type: "text", parts: [t] } }, conversation_id: CONVERSA })}\n\n`;
+	let acumulado = "";
+	const eventos: string[] = [add("a-1", "assistant")];
+	for (const p of pedacos) {
+		eventos.push(linha({ v: p }));
+		acumulado += p;
+		eventos.push(fotografia(acumulado));
+	}
+	eventos.push("data: [DONE]\n\n");
+	const r = await parseChatGPTStream(streamOf(...eventos), (d) => deltas.push(d));
+	assert.equal(r.text, TEXTO);
+	assert.equal(deltas.join(""), TEXTO, "na tela, também uma vez só");
+});
+
+test("duas versões em paralelo (índice c) com o mesmo texto: sai uma vez só", async () => {
+	const deltas: string[] = [];
+	const eventos: string[] = [
+		linha({ p: "", o: "add", v: { message: { id: "x", author: { role: "assistant" }, recipient: "all", content: { content_type: "text", parts: [""] } } }, c: 1 }),
+		linha({ p: "", o: "add", v: { message: { id: "y", author: { role: "assistant" }, recipient: "all", content: { content_type: "text", parts: [""] } } }, c: 2 }),
+	];
+	for (const p of pedacos) {
+		eventos.push(linha({ c: 1, v: p }));
+		eventos.push(linha({ c: 2, v: p }));
+	}
+	eventos.push("data: [DONE]\n\n");
+	const r = await parseChatGPTStream(streamOf(...eventos), (d) => deltas.push(d));
+	assert.equal(r.text, TEXTO);
+	assert.equal(deltas.join(""), TEXTO);
+});
+
+test("segunda versão DIFERENTE em paralelo: fica de fora (nada de duas matérias misturadas)", async () => {
+	const eventos: string[] = [
+		linha({ p: "", o: "add", v: { message: { id: "x", author: { role: "assistant" }, recipient: "all", content: { content_type: "text", parts: [""] } } }, c: 1 }),
+		linha({ p: "", o: "add", v: { message: { id: "y", author: { role: "assistant" }, recipient: "all", content: { content_type: "text", parts: [""] } } }, c: 2 }),
+		linha({ c: 1, v: "Versão A do título" }),
+		linha({ c: 2, v: "Versão B, outro texto" }),
+		linha({ c: 1, v: " e corpo A." }),
+		"data: [DONE]\n\n",
+	];
+	const r = await parseChatGPTStream(streamOf(...eventos));
+	assert.equal(r.text, "Versão A do título e corpo A.");
+});
+
+test("antes e depois de uma pesquisa: as duas partes entram, separadas por parágrafo", async () => {
+	const r = await parseChatGPTStream(
+		streamOf(
+			add("a-1", "assistant"),
+			linha({ v: "Vou pesquisar." }),
+			add("a-busca", "assistant", { recipient: "web.run", content: { content_type: "code", parts: [""] } }),
+			linha({ v: '{"q":"x"}' }),
+			add("a-2", "assistant"),
+			linha({ v: "Matéria pronta." }),
+			"data: [DONE]\n\n",
+		),
+	);
+	assert.equal(r.text, "Vou pesquisar.\n\nMatéria pronta.");
+});

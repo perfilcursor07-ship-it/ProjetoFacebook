@@ -28,6 +28,10 @@ type Mensagem = {
 	tipo?: string;
 	destino?: string;
 	texto: string;
+	/** status "finished_successfully" (ou end_turn) já chegou. */
+	terminou?: boolean;
+	/** Último caminho de delta desta mensagem (`{"v":…}` sem caminho). */
+	caminho?: string;
 };
 
 const PADRAO_IMAGEM = /^(https?:\/\/|file-service:\/\/|sediment:\/\/)/i;
@@ -79,19 +83,59 @@ export async function parseChatGPTStream(
 	let atual: Mensagem | null = null;
 	let ultimoCaminho = "";
 	let texto = "";
-	let ultimaVisivelComTexto: Mensagem | null = null;
+	// Mensagens por "c" (índice que o formato delta põe nas operações).
+	const porIndice = new Map<number, Mensagem>();
 
-	const emitir = (m: Mensagem, pedaco: string) => {
-		if (!pedaco || !mensagemVisivel(m)) return;
-		// Duas mensagens do assistente na mesma resposta (antes e depois de uma
-		// ferramenta): separa por parágrafo, como a tela do ChatGPT mostra.
-		if (ultimaVisivelComTexto && ultimaVisivelComTexto !== m && texto) {
-			texto += "\n\n";
-			onDelta?.("\n\n");
-		}
-		ultimaVisivelComTexto = m;
+	/**
+	 * Um texto só, mesmo quando a MESMA resposta chega por dois caminhos.
+	 *
+	 * O ChatGPT passou a mandar a resposta em pedaços e, junto, cópias dela
+	 * (outra mensagem, outro id, às vezes uma segunda versão em paralelo). Cada
+	 * caminho era emitido e a matéria saía com cada trecho duas vezes,
+	 * intercalado ("A A B C B C…"). Agora:
+	 * - texto que continua o que já saiu: sai só o pedaço novo;
+	 * - cópia atrasada do que já saiu: ignorada;
+	 * - conteúdo diferente: só vira um novo trecho (separado por parágrafo) se
+	 *   veio DEPOIS de uma pesquisa/ferramenta ou com o anterior terminado — a
+	 *   resposta antes e depois de buscar. Versão paralela fica de fora.
+	 */
+	let bloco: { dono: Mensagem; texto: string } | null = null;
+	let ferramentaDepoisDoBloco = false;
+	// Para o log: quantas vezes a mesma resposta chegou por outro caminho.
+	const ignorados = { copias: 0, paralelas: 0, donos: new Set<Mensagem>() };
+	const sair = (pedaco: string) => {
+		if (!pedaco) return;
 		texto += pedaco;
 		onDelta?.(pedaco);
+	};
+	const sincronizar = (m: Mensagem) => {
+		if (!mensagemVisivel(m) || !m.texto) return;
+		const t = m.texto;
+		if (!bloco) {
+			bloco = { dono: m, texto: t };
+			sair(t);
+			return;
+		}
+		if (t.startsWith(bloco.texto)) {
+			sair(t.slice(bloco.texto.length));
+			bloco.texto = t;
+			if (bloco.dono !== m) ignorados.donos.add(m);
+			bloco.dono = m;
+			return;
+		}
+		if (bloco.texto.startsWith(t)) {
+			if (bloco.dono !== m) ignorados.copias += 1;
+			return;
+		}
+		if (bloco.dono === m) return;
+		if (ferramentaDepoisDoBloco || bloco.dono.terminou) {
+			sair("\n\n");
+			bloco = { dono: m, texto: t };
+			ferramentaDepoisDoBloco = false;
+			sair(t);
+			return;
+		}
+		ignorados.paralelas += 1;
 	};
 
 	const abrirMensagem = (msg: Record<string, unknown>): Mensagem => {
@@ -106,6 +150,8 @@ export async function parseChatGPTStream(
 		m.papel = String(autor.role ?? msg.role ?? m.papel ?? "");
 		m.tipo = String(conteudo.content_type ?? m.tipo ?? "");
 		m.destino = String(msg.recipient ?? m.destino ?? "all");
+		if (msg.status === "finished_successfully" || msg.end_turn === true) m.terminou = true;
+		if (m.papel !== "user" && !mensagemVisivel(m) && bloco) ferramentaDepoisDoBloco = true;
 		if (m.papel !== "user") {
 			coletarImagens(conteudo.parts, imagens);
 			coletarImagens(msg.metadata, imagens);
@@ -126,14 +172,9 @@ export async function parseChatGPTStream(
 				: parte && typeof parte === "object" && typeof (parte as { text?: unknown }).text === "string"
 					? (parte as { text: string }).text
 					: "";
-		if (completo.length > m.texto.length && completo.startsWith(m.texto)) {
-			const novo = completo.slice(m.texto.length);
-			m.texto = completo;
-			emitir(m, novo);
-		} else if (completo && completo !== m.texto && !m.texto) {
-			m.texto = completo;
-			emitir(m, completo);
-		}
+		// Fotografia velha (mais curta) não apaga o que já chegou.
+		if (completo && completo.length >= m.texto.length) m.texto = completo;
+		sincronizar(m);
 	};
 
 	/** Formato delta: uma operação sobre a mensagem atual. */
@@ -158,7 +199,7 @@ export async function parseChatGPTStream(
 					?.parts as unknown[] | undefined;
 				if (typeof parte?.[0] === "string" && parte[0]) {
 					atual.texto = parte[0];
-					emitir(atual, parte[0]);
+					sincronizar(atual);
 				}
 			}
 			return;
@@ -166,16 +207,13 @@ export async function parseChatGPTStream(
 		const m = atual as Mensagem | null;
 		if (!m || m.papel === "user") return;
 		if (/^\/message\/content\/parts\/0$/.test(caminho) && typeof v === "string") {
-			if (o === "append") {
-				m.texto += v;
-				emitir(m, v);
-			} else if (o === "replace") {
-				const novo = v.startsWith(m.texto) ? v.slice(m.texto.length) : "";
-				m.texto = v;
-				emitir(m, novo);
-			}
+			if (o === "append") m.texto += v;
+			else if (o === "replace") m.texto = v;
+			sincronizar(m);
 			return;
 		}
+		if (caminho === "/message/status" && v === "finished_successfully") m.terminou = true;
+		if (caminho === "/message/end_turn" && v === true) m.terminou = true;
 		if (caminho.startsWith("/message/content") || caminho.startsWith("/message/metadata")) {
 			coletarImagens(v, imagens);
 			if (caminho === "/message/content/content_type" && typeof v === "string") m.tipo = v;
@@ -201,7 +239,20 @@ export async function parseChatGPTStream(
 			return;
 		}
 		if ("v" in d || "o" in d || "p" in d) {
+			const indice = typeof d.c === "number" ? d.c : null;
+			const abre = d.p === "" && d.o === "add";
+			// Operação de outra mensagem (índice "c"): troca a mensagem atual.
+			if (indice !== null && !abre && porIndice.has(indice)) {
+				const alvo = porIndice.get(indice) as Mensagem;
+				if (alvo !== atual) {
+					if (atual) (atual as Mensagem).caminho = ultimoCaminho;
+					atual = alvo;
+					ultimoCaminho = alvo.caminho ?? "/message/content/parts/0";
+				}
+			}
 			aplicar(d);
+			if (indice !== null && abre && atual) porIndice.set(indice, atual);
+			if (atual) (atual as Mensagem).caminho = ultimoCaminho;
 			return;
 		}
 		// type: title_generation, message_stream_complete, server_ste_metadata…
@@ -224,6 +275,11 @@ export async function parseChatGPTStream(
 		reader.releaseLock();
 	}
 
+	if (ignorados.copias || ignorados.paralelas || ignorados.donos.size) {
+		console.log(
+			`[ChatGPT Web] a resposta chegou por mais de um caminho — cópias ignoradas: ${ignorados.copias}, versões paralelas ignoradas: ${ignorados.paralelas}, mensagens com o mesmo texto: ${ignorados.donos.size + 1}`,
+		);
+	}
 	const aguardandoImagem = mensagens.some(
 		(m) => m.papel !== "user" && /image|dalle|t2uay3k/i.test(`${m.destino ?? ""} ${m.tipo ?? ""}`),
 	);
