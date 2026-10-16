@@ -71,6 +71,12 @@ export interface ChatCompletionResponse {
 	system_fingerprint?: string;
 	choices: ChatCompletionChoice[];
 	usage: Usage;
+	/**
+	 * viralizeai: campo fora do padrao OpenAI. Sao as imagens que vieram na
+	 * MESMA resposta do provedor (a foto que o ChatGPT mostra junto da
+	 * materia). Cliente que nao conhece o campo simplesmente ignora.
+	 */
+	imagens?: string[];
 }
 
 export interface ChatCompletionChoice {

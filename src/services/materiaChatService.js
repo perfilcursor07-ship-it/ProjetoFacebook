@@ -144,6 +144,52 @@ async function capaDaConversaLivre({ userId, chatId, titulo, registrarPasso = ()
   }
 }
 
+/**
+ * Capa que o PRÓPRIO ChatGPT entregou junto da matéria, na mesma resposta.
+ *
+ * É a primeira opção de capa do modo livre: o editor viu a foto aparecer na
+ * conversa do ChatGPT, então é essa que ele espera em "Imagem destacada" —
+ * melhor que procurar outra no link citado ou gerar uma nova aqui.
+ *
+ * A URL que o gateway devolve é assinada e expira, por isso o arquivo é
+ * baixado e guardado agora. Nunca lança: imagem é acessório.
+ */
+async function capaGeradaNaConversa({ userId, chatId, urls, registrarPasso = () => {} }) {
+  const lista = (Array.isArray(urls) ? urls : [])
+    .map((u) => String(u || '').trim())
+    .filter((u) => /^https?:\/\//i.test(u));
+  if (!lista.length) return null;
+  const axios = require('axios');
+  for (const url of lista) {
+    try {
+      const { data } = await axios.get(url, {
+        responseType: 'arraybuffer',
+        timeout: 30_000,
+        maxContentLength: 20 * 1024 * 1024,
+      });
+      const buffer = Buffer.from(data);
+      if (buffer.length < 1024) throw new Error('arquivo vazio');
+      const capa = await require('./matterArtworkService').storeMatterSourceImage({
+        userId,
+        matterId: 0,
+        buffer,
+        prefixo: `chat_${chatId}`,
+      });
+      registrarPasso({ kind: 'fontes', texto: 'Imagem do ChatGPT salva ✓ — já entra como capa ao salvar o rascunho.' });
+      return {
+        veiculo: 'Imagem do ChatGPT',
+        titulo: 'Capa da matéria',
+        url: null,
+        imagem: capa.publicUrl,
+        creditoImagem: 'Imagem gerada por IA',
+      };
+    } catch (err) {
+      console.warn(`[materia-chat] imagem do ChatGPT (${url.slice(0, 120)}): ${err.message}`);
+    }
+  }
+  return null;
+}
+
 function recortarTranscricao(texto, limite = 16000) {
   const t = String(texto || '');
   if (t.length <= limite) return t;
@@ -3083,6 +3129,9 @@ async function responder({
     const pedidoParaClaudeLivre = artigoNaoExtraidoLivre
       ? `${pedido}\n\nO sistema não conseguiu extrair o texto do link acima. Use obrigatoriamente sua pesquisa na web para abrir essa URL ou localizar reportagens confiáveis sobre o mesmo fato antes de responder. Não diga que você não tem acesso à web.`
       : pedido;
+    // A foto que o ChatGPT mostra na conversa chega junto da resposta, pelo
+    // gateway. Ela é recolhida aqui e virará a "Imagem destacada" mais abaixo.
+    const imagensDaConversa = [];
     const respostaLivre = await deepseekService.conversarLivre({
       pedido: pedidoParaClaudeLivre,
       historico: historicoLivre,
@@ -3112,6 +3161,11 @@ async function responder({
       // nossa busca. Amarrar as duas na mesma variável desligaria as duas e
       // o modo responderia sem internet nenhuma — o contrário do que ele é.
       pesquisarWeb: iaPesquisaSozinha ? true : Boolean(pesquisarLivre),
+      aoReceberImagens: (urls) => {
+        for (const url of urls) {
+          if (!imagensDaConversa.includes(url)) imagensDaConversa.push(url);
+        }
+      },
     });
     let respostaLivreFinal = limparArtefatosDeTextoLivre(respostaLivre);
     if (respostaAdmitePeriodoNaoAtendido(pedido, respostaLivreFinal)) {
@@ -3229,6 +3283,17 @@ async function responder({
     // Como aqui não houve pesquisa nossa, a única pista é o link que a IA
     // citou na linha "Fonte:". A foto real da reportagem é sempre melhor que
     // uma ilustração, então ela vem primeiro; gerar é o último recurso.
+    // Antes de procurar foto no link citado ou gerar uma nova: se o ChatGPT
+    // mandou imagem na própria resposta, é ela que o editor está esperando.
+    if (chat.modo === 'chatgpt' && imagensDaConversa.length && !fontesFinais.some((f) => f?.imagem)) {
+      const doChat = await capaGeradaNaConversa({
+        userId,
+        chatId: chat.id,
+        urls: imagensDaConversa,
+        registrarPasso,
+      });
+      if (doChat) fontesFinais.push(doChat);
+    }
     if (chat.modo === 'chatgpt' && !fontesFinais.some((f) => f?.imagem)) {
       const linkCitado = primeiroLinkDeFonte(respostaLivreFinal);
       if (linkCitado) {

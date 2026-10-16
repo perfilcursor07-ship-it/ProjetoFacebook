@@ -241,6 +241,28 @@ function logar(inicio, tipo, usage = null) {
   console.log(`[token-free] ${modeloAtual()} ${tipo} ${segundos}s tokens=${tokens}`);
 }
 
+/**
+ * Repassa as imagens que vieram NA MESMA resposta do provedor.
+ *
+ * O campo é nosso (o gateway o acrescenta; veja
+ * gateway-overrides/.../openai/chat-completions.ts) e pode não existir — em
+ * provedor sem foto, em versão antiga do gateway ou quando a resposta é só
+ * texto. Então nada aqui pode quebrar por ausência, e um erro do consumidor
+ * não pode derrubar a geração da matéria.
+ */
+function entregarImagens(callback, valor) {
+  if (typeof callback !== 'function') return;
+  const urls = (Array.isArray(valor) ? valor : [])
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+  if (!urls.length) return;
+  try {
+    callback(urls);
+  } catch (err) {
+    console.warn('[token-free] imagens da resposta ignoradas:', err.message);
+  }
+}
+
 async function chatCompletion(
   messages,
   {
@@ -251,6 +273,11 @@ async function chatCompletion(
     conversationId = null,
     conversationName = null,
     webSearch = false,
+    // A resposta do ChatGPT pode trazer foto junto do texto (a imagem que ele
+    // mostra na conversa). Ela chega num campo nosso, fora do padrão OpenAI, e
+    // sai por aqui: o retorno continua sendo só o texto, como todos os
+    // chamadores esperam.
+    aoReceberImagens = null,
   } = {}
 ) {
   assertConfigured(tarefa);
@@ -273,6 +300,7 @@ async function chatCompletion(
       { headers: headers(false), timeout }
     );
     const texto = limparMarcacaoChatgpt(data?.choices?.[0]?.message?.content || '').trim();
+    entregarImagens(aoReceberImagens, data?.imagens);
     if (!texto) throw new Error('resposta vazia');
     logar(inicio, tarefa, data?.usage);
     return json ? limparCercaJson(texto) : texto;
@@ -329,6 +357,7 @@ async function chatCompletionStream(
     conversationId = null,
     conversationName = null,
     webSearch = false,
+    aoReceberImagens = null,
   } = {}
 ) {
   assertConfigured(tarefa);
@@ -373,6 +402,9 @@ async function chatCompletionStream(
             reject(erro);
             return;
           }
+          // Evento sem `choices`: é o nosso, com as imagens da resposta. O
+          // gateway o emite depois do "stop" para não cair no meio do texto.
+          entregarImagens(aoReceberImagens, evento?.imagens);
           const delta = evento?.choices?.[0]?.delta?.content || '';
           if (delta) {
             full += delta;
@@ -423,6 +455,7 @@ async function chatCompletionStream(
       conversationId,
       conversationName,
       webSearch,
+      aoReceberImagens,
     });
     if (typeof onDelta === 'function') onDelta(texto);
     return texto;

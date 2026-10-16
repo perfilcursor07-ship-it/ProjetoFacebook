@@ -6,6 +6,16 @@ export interface ModelInfo {
 export interface StreamResult {
 	text: string;
 	thinkingText: string;
+	/**
+	 * viralizeai: imagens que vieram NA MESMA resposta (a foto que o ChatGPT
+	 * mostra junto da matéria). O parser lia só `parts[0]` e só aproveitava
+	 * se fosse texto, então elas eram descartadas aqui dentro e nunca
+	 * chegavam ao ViralizeAI.
+	 *
+	 * Pode ser URL pública (foto achada na web) ou ponteiro interno do
+	 * ChatGPT (`file-service://…`, imagem gerada). Quem consome decide.
+	 */
+	imagens?: string[];
 }
 
 export class SessionExpiredError extends Error {

@@ -126,6 +126,9 @@ async function handleNonStreaming(
 				completion_tokens: completionTokens,
 				total_tokens: promptTokens + completionTokens,
 			},
+			// viralizeai: a foto que veio junto da resposta. So aparece quando
+			// existe, para nao mudar o formato de quem nao usa.
+			...(result.imagens?.length ? { imagens: result.imagens } : {}),
 		};
 
 		return Response.json(response);
@@ -138,6 +141,8 @@ async function handleNonStreaming(
 
 type SseWriter = {
 	writeChunk(id: string, model: string, choices: Parameters<typeof makeChunk>[2]): void;
+	/** viralizeai: evento solto no mesmo stream (usado para as imagens). */
+	writeExtra(data: Record<string, unknown>): void;
 	done(): void;
 	error(message: string): void;
 	close(): void;
@@ -159,6 +164,10 @@ function createSseWriter(controller: ReadableStreamDefaultController<Uint8Array>
 	return {
 		writeChunk(id, model, choices) {
 			emit(sseEvent(JSON.stringify(makeChunk(id, model, choices))));
+		},
+		// Um evento sem `choices`: cliente que le so o delta de texto ignora.
+		writeExtra(data) {
+			emit(sseEvent(JSON.stringify(data)));
 		},
 		done() {
 			emit(sseDone());
@@ -261,10 +270,13 @@ async function streamWithoutTools(
 	providerStream: ReadableStream<Uint8Array>,
 	client: WebProviderClient,
 ) {
-	await client.parseStream(providerStream, (delta) => {
+	const result = await client.parseStream(providerStream, (delta) => {
 		w.writeChunk(id, model, [{ index: 0, delta: { content: delta }, finish_reason: null }]);
 	});
 	w.writeChunk(id, model, [{ index: 0, delta: {}, finish_reason: "stop" }]);
+	// viralizeai: a foto que veio junto da resposta. Vai depois do "stop" para
+	// nao se misturar ao texto que o cliente esta montando.
+	if (result.imagens?.length) w.writeExtra({ imagens: result.imagens });
 }
 
 async function streamWithTools(
@@ -287,6 +299,7 @@ async function streamWithTools(
 		}
 		w.writeChunk(id, model, [{ index: 0, delta: {}, finish_reason: "stop" }]);
 	}
+	if (result.imagens?.length) w.writeExtra({ imagens: result.imagens }); // viralizeai
 }
 
 function jsonError(message: string, status: number): Response {
