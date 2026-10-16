@@ -61,7 +61,7 @@ test('o que o editor ensinou ao sistema pode sobrepor a pauta', () => {
 test('a pauta é curta o bastante para não afogar o pedido', () => {
   // No provedor web ela vai junto do pedido e fica à vista na conversa.
   assert.ok(
-    CRITERIO_EDITORIAL_GOSPEL.length < 1400,
+    CRITERIO_EDITORIAL_GOSPEL.length < 1500,
     `pauta com ${CRITERIO_EDITORIAL_GOSPEL.length} caracteres`
   );
 });
@@ -72,4 +72,13 @@ test('a capa continua: foto real da reportagem antes de gerar', () => {
   const real = CHAT.indexOf('const linkCitado = primeiroLinkDeFonte(respostaLivreFinal);');
   const gerada = CHAT.indexOf('const gerada = await capaDaConversaLivre(');
   assert.ok(real > 0 && gerada > real, 'tenta a foto citada antes de gerar');
+});
+
+test('pedido sem assunto faz a IA escolher a pauta, não devolver a pergunta', () => {
+  // "Bora fazer matéria" recebia de volta "manda o link, texto ou print".
+  // Com a pauta gravada, ela já tem o que precisa para escolher sozinha.
+  const c = CRITERIO_EDITORIAL_GOSPEL;
+  assert.match(c, /Pedido sem assunto/);
+  assert.match(c, /PESQUISE e escolha você um fato recente/);
+  assert.match(c, /Não devolva a pergunta pedindo link ou tema/);
 });

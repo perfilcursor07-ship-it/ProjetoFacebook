@@ -28,6 +28,7 @@ const CRITERIO_EDITORIAL_GOSPEL = [
   '- Estrutura: título · abertura que fisga · desenvolvimento com subtítulos que puxam a leitura · reflexão com passagem bíblica ligada ao fato · pergunta final que convida ao comentário.',
   '- A informação sai aos poucos, nos subtítulos; não entregue tudo na abertura.',
   'Nada disso autoriza inventar ou exagerar: confira data, declaração e fonte, e separe fato comprovado de testemunho pessoal. Polêmica forçada não é critério — matéria falsa destrói a página.',
+  'Pedido sem assunto ("bora fazer matéria", "me dá uma pauta", "uma notícia para hoje"): PESQUISE e escolha você um fato recente que caiba nesta pauta, e entregue a matéria pronta. Não devolva a pergunta pedindo link ou tema — o editor já disse o que quer nesta pauta.',
   'Se o editor pedir outra coisa nesta conversa, é o pedido dele que vale.',
 ].join('\n');
 
