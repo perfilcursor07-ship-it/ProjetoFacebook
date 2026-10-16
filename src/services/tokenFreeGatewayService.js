@@ -467,6 +467,16 @@ async function chatCompletionStream(
         forceDeepseek: true,
       });
     }
+    // ChatGPT que chegou a responder (stream aberto, só sem texto legível) não
+    // é falha de conexão: repetir mandaria o pedido de novo, abrindo outra
+    // conversa no chatgpt.com e fazendo o editor esperar a pesquisa toda outra vez.
+    if (/^(gpt|o\d|chatgpt)/i.test(modeloAtual()) && /stream vazio/i.test(String(err?.message || ''))) {
+      const erro = new Error(
+        'O ChatGPT respondeu, mas o texto não chegou até aqui. Veja no log do gateway as linhas [ChatGPT Web] desta conversa.'
+      );
+      erro.status = 502;
+      throw erro;
+    }
     console.warn('[token-free-stream] stream indisponivel; tentando modo comum:', mensagemRemota(err));
     const texto = await chatCompletion(messages, {
       temperature,

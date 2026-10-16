@@ -12,6 +12,10 @@ const CLIENTE = fs.readFileSync(
   'gateway-overrides/token-free-gateway/src/providers/chatgpt/client.ts',
   'utf8'
 );
+const STREAM = fs.readFileSync(
+  'gateway-overrides/token-free-gateway/src/providers/chatgpt/stream.ts',
+  'utf8'
+);
 const SERVICO = fs.readFileSync('src/services/tokenFreeGatewayService.js', 'utf8');
 const CHAT = fs.readFileSync('src/services/materiaChatService.js', 'utf8');
 
@@ -19,27 +23,22 @@ const CHAT = fs.readFileSync('src/services/materiaChatService.js', 'utf8');
 // Cada elo abaixo já quebrou sozinho uma vez, e um elo partido não dá erro
 // nenhum — só devolve matéria sem foto.
 
-test('o parser recolhe TODAS as partes, não só a primeira', () => {
+test('o parser recolhe imagens de todas as partes e da mensagem da ferramenta', () => {
   // A causa original: o parser lia `parts[0]` e só aproveitava se fosse texto.
-  // Quando vinha foto, a parte era um objeto sem `.text` e sumia ali dentro.
-  assert.ok(
-    SCRIPT.includes(String.raw`procurar: '\t\t\tconst rawPart = data.message?.content?.parts?.[0];'`),
-    'o trecho procurado precisa casar byte a byte com o arquivo do gateway'
-  );
-  assert.match(SCRIPT, /for \(const parte of data\.message\?\.content\?\.parts \?\? \[\]\) \{/);
-  assert.match(SCRIPT, /if \(typeof p\.text === "string"\) continue;/);
+  // Agora o stream.ts do ChatGPT é override inteiro (entende o SSE em deltas).
+  assert.ok(SCRIPT.includes("'src/providers/chatgpt/stream.ts'"), 'stream do ChatGPT fora da lista de overrides');
+  assert.match(STREAM, /export function coletarImagens\(/);
+  // A imagem GERADA vem na mensagem da ferramenta, não na do assistente.
+  assert.match(STREAM, /if \(m\.papel !== "user"\) \{\s*coletarImagens\(conteudo\.parts, imagens\)/);
 });
 
 test('o parser varre onde o ChatGPT costuma pôr imagem', () => {
-  // Ele muda isso sem avisar; varrer os campos conhecidos custa pouco.
-  for (const campo of ['asset_pointer', 'url', 'image_url', 'src', 'thumbnail_url']) {
-    assert.ok(SCRIPT.includes(`"${campo}"`), `campo ${campo} não é varrido`);
+  for (const campo of ['asset_pointer', 'image_url', 'thumbnail_url', 'url', 'src']) {
+    assert.ok(STREAM.includes(`"${campo}"`), `campo ${campo} não é varrido`);
   }
-  for (const grupo of ['images', 'image_results', 'content_references', 'parts']) {
-    assert.ok(SCRIPT.includes(`"${grupo}"`), `grupo ${grupo} não é varrido`);
+  for (const grupo of ['images', 'image_results', 'content_references', 'parts', 'metadata']) {
+    assert.ok(STREAM.includes(`"${grupo}"`), `grupo ${grupo} não é varrido`);
   }
-  // Formato novo some em silêncio sem isto.
-  assert.match(SCRIPT, /\[viralizeai-imagem\] parte nao-texto:/);
 });
 
 test('ponteiro interno é resolvido na página logada', () => {
@@ -47,7 +46,7 @@ test('ponteiro interno é resolvido na página logada', () => {
   // `file-service://file-…`, que só a sessão autenticada troca por um link.
   // O client.ts do ChatGPT agora é override inteiro (não mais patch).
   assert.ok(SCRIPT.includes("'src/providers/chatgpt/client.ts'"), 'client do ChatGPT fora da lista de overrides');
-  assert.match(CLIENTE, /resultado\.imagens = await this\.resolverImagens\(resultado\.imagens\)/);
+  assert.match(CLIENTE, /resultado\.imagens = await this\.resolverImagens\(resultado\.imagens, conversa\)/);
   assert.ok(CLIENTE.includes('backend-api/files/'), 'falta a chamada que resolve o ponteiro');
   assert.ok(CLIENTE.includes('d.download_url'), 'a URL assinada não é aproveitada');
   // URL pública não precisa passar por lá.
@@ -112,17 +111,11 @@ test('a URL assinada é baixada na hora', () => {
   assert.match(trecho, /maxContentLength/);
 });
 
-test('o patch foi aplicado no gateway, uma vez só', () => {
+test('o gateway instalado está com o leitor novo', () => {
   const alvo = '.tools/token-free-gateway/src/providers/chatgpt/stream.ts';
   if (!fs.existsSync(alvo)) return; // gateway não instalado nesta máquina
-  const codigo = fs.readFileSync(alvo, 'utf8');
-  assert.equal(
-    (codigo.match(/for \(const parte of data\.message\?\.content\?\.parts/g) || []).length,
-    1,
-    'patch ausente ou aplicado mais de uma vez'
-  );
-  assert.ok(codigo.includes('guardarImagem'), 'o coletor não está no arquivo instalado');
-  assert.ok(codigo.includes(', imagens };'), 'o parser não devolve as imagens');
+  const semCr = (texto) => texto.split(String.fromCharCode(13)).join('');
+  assert.equal(semCr(fs.readFileSync(alvo, 'utf8')), semCr(STREAM), 'rode npm run gateway:sync');
 });
 
 test('a versão do gateway continua fixada', () => {

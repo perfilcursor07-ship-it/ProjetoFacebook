@@ -152,6 +152,8 @@ export async function parseChatGPTStream(
 			if (typeof env.conversation_id === "string") onMeta?.({ conversationId: env.conversation_id });
 			if (env.message && typeof env.message === "object") {
 				atual = abrirMensagem(env.message as Record<string, unknown>);
+				// `{"v":"…"}` sem caminho logo depois de abrir é texto da mensagem.
+				ultimoCaminho = "/message/content/parts/0";
 				const parte = ((env.message as Record<string, unknown>).content as Record<string, unknown> | undefined)
 					?.parts as unknown[] | undefined;
 				if (typeof parte?.[0] === "string" && parte[0]) {

@@ -107,3 +107,43 @@ test("erro HTTP do ChatGPT continua virando erro antes do stream", { skip: pular
 	const c = cliente(page);
 	await assert.rejects(c.sendMessage({ message: "oi" }), /429/);
 });
+
+test("stream sem texto reconhecível: o texto e a imagem vêm da conversa salva", { skip: pular }, async () => {
+	const conversa = "6710a1b2-0000-4000-8000-00000000c0de";
+	// Um formato que o leitor não conhece: só o id da conversa é aproveitado.
+	const { page } = paginaFalsa([{ conversation_id: conversa, formato_novo: { texto: "???" } }], { pausaMs: 1 });
+	const g = globalThis as Record<string, unknown>;
+	const anterior = g.fetch as (u: string, i?: RequestInit) => Promise<Response>;
+	const lidas: string[] = [];
+	g.fetch = async (url: string, init?: RequestInit) => {
+		if (String(url).includes(`/backend-api/conversation/${conversa}`)) {
+			lidas.push(url);
+			return new Response(
+				JSON.stringify({
+					current_node: "a-2",
+					mapping: {
+						"u-1": { message: { author: { role: "user" }, content: { content_type: "text", parts: ["pedido"] } } },
+						"a-1": { parent: "u-1", message: { author: { role: "assistant" }, recipient: "all", content: { content_type: "text", parts: ["Título\n\nCorpo."] } } },
+						"t-1": { parent: "a-1", message: { author: { role: "tool" }, content: { content_type: "multimodal_text", parts: [{ content_type: "image_asset_pointer", asset_pointer: "sediment://file_123" }] } } },
+						"a-2": { parent: "t-1", message: { author: { role: "assistant" }, recipient: "all", content: { content_type: "text", parts: [""] } } },
+					},
+				}),
+				{ status: 200 },
+			);
+		}
+		if (String(url).includes("/backend-api/files/download/file_123")) {
+			return new Response(JSON.stringify({ download_url: "https://files.oaiusercontent.com/file_123.png" }), { status: 200 });
+		}
+		return anterior(url, init);
+	};
+	const c = cliente(page);
+	const deltas: string[] = [];
+	const r = await c.parseStream(await c.sendMessage({ message: "oi", conversationId: "viralizeai:chatgpt:chat:9" }), (d) =>
+		deltas.push(d),
+	);
+	assert.equal(r.text, "Título\n\nCorpo.");
+	assert.deepEqual(deltas, ["Título\n\nCorpo."], "o texto recuperado também vai para a tela");
+	assert.deepEqual(r.imagens, ["https://files.oaiusercontent.com/file_123.png"]);
+	assert.equal(r.conversa, `chatgpt:${conversa}:a-2`);
+	assert.equal(lidas.length, 1);
+});

@@ -910,3 +910,6 @@ body.mia-furos-aberto { overflow: hidden; }
   .mia-manual-claude.is-chatgpt .mia-msg-ai .mia-progress.is-live .mia-progress-current,
   .mia-gpt-image img { animation: none; }
 }
+/* Enquanto escreve, uma linha só ("Pesquisando…"), como no ChatGPT: a lista
+   repetia a mesma frase logo abaixo. */
+.mia-manual-claude.is-chatgpt .mia-msg-ai .mia-progress.is-live .mia-progress-list { display: none; }
