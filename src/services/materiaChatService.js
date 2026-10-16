@@ -154,7 +154,12 @@ async function capaDaConversaLivre({ userId, chatId, titulo, registrarPasso = ()
  * A URL que o gateway devolve é assinada e expira, por isso o arquivo é
  * baixado e guardado agora. Nunca lança: imagem é acessório.
  */
-async function capaGeradaNaConversa({ userId, chatId, urls, registrarPasso = () => {} }) {
+/** Imagem que o ChatGPT GEROU (arquivo dele), e não foto achada na web. */
+function imagemGeradaPeloChatgpt(url) {
+  return /oaiusercontent\.com|chatgpt\.com\/backend-api|openai\.com|\/files\/file[-_]|estuary/i.test(String(url || ''));
+}
+
+async function capaGeradaNaConversa({ userId, chatId, urls, registrarPasso = () => {}, aoSalvar = () => {} }) {
   const lista = (Array.isArray(urls) ? urls : [])
     .map((u) => String(u || '').trim())
     .filter((u) => /^https?:\/\//i.test(u));
@@ -175,13 +180,35 @@ async function capaGeradaNaConversa({ userId, chatId, urls, registrarPasso = () 
         buffer,
         prefixo: `chat_${chatId}`,
       });
+      const gerada = imagemGeradaPeloChatgpt(url);
+      const creditoImagem = gerada ? 'Imagem gerada por IA' : 'Reprodução/Internet';
       registrarPasso({ kind: 'fontes', texto: 'Imagem do ChatGPT salva ✓ — já entra como capa ao salvar o rascunho.' });
+      try {
+        aoSalvar({ imagem: capa.publicUrl, credito: creditoImagem, gerada });
+      } catch {
+        /* a tela é só aviso; a capa já está salva */
+      }
+      // Também fica em Minhas imagens, como as capas geradas pelo editor.
+      try {
+        require('./bancoImagensService').registrarEmSegundoPlano({
+          publicUrl: capa.publicUrl,
+          origem: gerada ? 'ia' : 'upload',
+          userId,
+          gerador: 'chatgpt',
+          titulo: 'Imagem do ChatGPT',
+        });
+      } catch {
+        /* banco de imagens é opcional */
+      }
       return {
         veiculo: 'Imagem do ChatGPT',
         titulo: 'Capa da matéria',
         url: null,
         imagem: capa.publicUrl,
-        creditoImagem: 'Imagem gerada por IA',
+        // Marca lida por "Imagem destacada" (imagemDaFonteDaMensagem): é a
+        // foto que o editor viu na conversa, então ela vem antes de qualquer outra.
+        capaChatgpt: gerada ? 'gerada' : 'web',
+        creditoImagem,
       };
     } catch (err) {
       console.warn(`[materia-chat] imagem do ChatGPT (${url.slice(0, 120)}): ${err.message}`);
@@ -1805,11 +1832,15 @@ function serializarMensagem(row) {
   // Trechos completos ficam no banco para dar continuidade factual ao chat,
   // mas o navegador só precisa dos metadados exibidos no painel de fontes.
   const fontesVisiveis = (Array.isArray(guardadas) ? guardadas : [])
-    .filter((f) => f && !f.ehPauta && !f.conversaChatgpt)
+    .filter((f) => f && !f.ehPauta && !f.conversaChatgpt && !f.fioChatgpt)
     .map(({ trecho, ...fonte }) => ({
       ...fonte,
       url: fonte.urlOriginal || fonte.url || null,
     }));
+  // "ChatGPT livre": a imagem que o ChatGPT mostrou vai DENTRO da resposta,
+  // como na conversa original, e o endereço da conversa no chatgpt.com.
+  const daConversaChatgpt = (Array.isArray(guardadas) ? guardadas : []).find((f) => f?.conversaChatgpt);
+  const imagemDoChatgpt = (Array.isArray(guardadas) ? guardadas : []).find((f) => f?.capaChatgpt && f.imagem);
   const multiplas = row.role === 'assistant' ? separarMaterias(conteudo) : [];
   const salvos = parseJson(row.matter_ids, {}) || {};
 
@@ -1822,6 +1853,8 @@ function serializarMensagem(row) {
     passos: parseJson(row.passos, []),
     pautas,
     fontes: pautas.length ? [] : fontesVisiveis,
+    ...(imagemDoChatgpt ? { imagemChatgpt: imagemDoChatgpt.imagem } : {}),
+    ...(daConversaChatgpt?.conversaChatgpt ? { conversaChatgpt: daConversaChatgpt.conversaChatgpt } : {}),
     pesquisouWeb: Boolean(row.pesquisou_web),
     matterId: row.matter_id || null,
     // 3 opções de manchete: o editor escolhe antes de salvar o rascunho.
@@ -2880,6 +2913,7 @@ async function responder({
       ...(fonte.capaChatgpt ? { capaChatgpt: limparParaBanco(fonte.capaChatgpt, 20) } : {}),
       ...(fonte.creditoImagem ? { creditoImagem: limparParaBanco(fonte.creditoImagem, 120) } : {}),
       ...(fonte.conversaChatgpt ? { conversaChatgpt: limparParaBanco(fonte.conversaChatgpt, 300) } : {}),
+      ...(fonte.fioChatgpt ? { fioChatgpt: limparParaBanco(fonte.fioChatgpt, 200) } : {}),
     }));
     const assistantId = await AiChatMessages.create({
       chat_id: chat.id,
@@ -3132,9 +3166,23 @@ async function responder({
     // A foto que o ChatGPT mostra na conversa chega junto da resposta, pelo
     // gateway. Ela é recolhida aqui e virará a "Imagem destacada" mais abaixo.
     const imagensDaConversa = [];
+    // "ChatGPT livre" é UMA conversa no chatgpt.com (a do Chrome do servidor,
+    // visível no VNC) para cada conversa daqui. O gateway devolve onde a
+    // resposta ficou; a próxima mensagem continua ali, e o ChatGPT já lembra
+    // do que foi dito — por isso o histórico não é reenviado.
+    const escreveNoChatgpt = iaPesquisaSozinha &&
+      require('./materiaModelosService').provedorDoModelo(require('./tokenFreeGatewayService').modeloAtual()) === 'chatgpt';
+    const fioAnterior = escreveNoChatgpt
+      ? [...anteriores]
+        .reverse()
+        .filter((m) => m.role === 'assistant')
+        .map((m) => (parseJson(m.fontes, []) || []).find((f) => f?.fioChatgpt)?.fioChatgpt)
+        .find(Boolean) || null
+      : null;
+    let conversaChatgpt = null;
     const respostaLivre = await deepseekService.conversarLivre({
       pedido: pedidoParaClaudeLivre,
-      historico: historicoLivre,
+      historico: fioAnterior ? [] : historicoLivre,
       fontesWeb,
       // A pauta da casa entra ANTES do que o editor já gravou: o que ele
       // ensinou ao sistema é mais específico e precisa poder sobrepor.
@@ -3152,7 +3200,9 @@ async function responder({
       // sessão remota nova para que instruções persistidas acidentalmente no
       // provedor (por exemplo, o briefing do modo JM) não contaminem o Claude
       // Livre nas mensagens seguintes.
-      conversationId: `viralizeai:livre:user:${userId}:chat:${chat.id}:msg:${userMessageId}`,
+      conversationId: escreveNoChatgpt
+        ? fioAnterior || `viralizeai:chatgpt:user:${userId}:chat:${chat.id}`
+        : `viralizeai:livre:user:${userId}:chat:${chat.id}:msg:${userMessageId}`,
       conversationName: chat.titulo || tituloDaConversa(pedido),
       // Preserva a pesquisa nativa para consultas livres, mas não a dispara
       // sobre uma publicação que já foi extraída pelo próprio sistema.
@@ -3166,6 +3216,11 @@ async function responder({
           if (!imagensDaConversa.includes(url)) imagensDaConversa.push(url);
         }
       },
+      aoReceberConversa: escreveNoChatgpt
+        ? (conversa) => {
+          conversaChatgpt = conversa;
+        }
+        : null,
     });
     let respostaLivreFinal = limparArtefatosDeTextoLivre(respostaLivre);
     if (respostaAdmitePeriodoNaoAtendido(pedido, respostaLivreFinal)) {
@@ -3291,6 +3346,8 @@ async function responder({
         chatId: chat.id,
         urls: imagensDaConversa,
         registrarPasso,
+        // Aparece na conversa assim que é salva, como no próprio ChatGPT.
+        aoSalvar: (imagem) => onEvent({ tipo: 'imagem', ...imagem }),
       });
       if (doChat) fontesFinais.push(doChat);
     }
@@ -3321,6 +3378,15 @@ async function responder({
         registrarPasso,
       });
       if (gerada) fontesFinais.push(gerada);
+    }
+    if (conversaChatgpt?.ponteiro) {
+      fontesFinais.push({
+        veiculo: 'ChatGPT',
+        titulo: 'Conversa no ChatGPT',
+        url: null,
+        conversaChatgpt: conversaChatgpt.url,
+        fioChatgpt: conversaChatgpt.ponteiro,
+      });
     }
     return finalizarLivre(respostaLivreFinal, {
       fontesUsadas: fontesFinais,

@@ -56,7 +56,8 @@ function gatewayEscreveAsMaterias() {
 
 async function modelo(req, res, next) {
   try {
-    const opcoes = gatewayEscreveAsMaterias() ? await materiaModelos.listarHabilitados() : [];
+    const gateway = gatewayEscreveAsMaterias();
+    const opcoes = gateway ? await materiaModelos.listarHabilitados() : [];
     return res.json({
       ok: true,
       modelos: {
@@ -64,6 +65,8 @@ async function modelo(req, res, next) {
         livre: montarModeloChat('livre'),
       },
       opcoes,
+      // A aba "ChatGPT livre" escolhe só entre estes (veja resolverModeloChatgpt).
+      opcoesChatgpt: gateway ? await materiaModelos.listarChatgpt() : [],
     });
   } catch (err) {
     return next(err);
@@ -227,10 +230,16 @@ async function enviar(req, res, next) {
   const heartbeat = setInterval(() => enviarEvento({ tipo: 'ping' }), 15_000);
 
   try {
-    // Só aceita modelos liberados pelo administrador em /claude.
-    const modeloEscolhido = gatewayEscreveAsMaterias()
-      ? await materiaModelos.resolverModelo(body.modelo)
-      : null;
+    const tipoConversa = ['livre', 'chatgpt'].includes(body.tipoConversa ?? body.tipo_conversa)
+      ? (body.tipoConversa ?? body.tipo_conversa)
+      : 'materia';
+    // Só aceita modelos liberados pelo administrador em /claude. No "ChatGPT
+    // livre" quem escreve é sempre um modelo do ChatGPT.
+    const modeloEscolhido = !gatewayEscreveAsMaterias()
+      ? null
+      : tipoConversa === 'chatgpt'
+        ? await materiaModelos.resolverModeloChatgpt(body.modelo)
+        : await materiaModelos.resolverModelo(body.modelo);
     const { comModelo } = require('../services/tokenFreeGatewayService');
     await comModelo(modeloEscolhido, () => chatService.responder({
       userId: req.session.userId,
@@ -244,9 +253,7 @@ async function enviar(req, res, next) {
       palavrasChave: body.palavrasChave || null,
       modo: body.modo === 'pautas' ? 'pautas' : 'escrever',
       // 'livre' = Claude livre; 'chatgpt' = ChatGPT livre (chatgpt.com no Chrome do servidor).
-      tipoConversa: ['livre', 'chatgpt'].includes(body.tipoConversa ?? body.tipo_conversa)
-        ? (body.tipoConversa ?? body.tipo_conversa)
-        : 'materia',
+      tipoConversa,
       transcreverVideo:
         body.transcreverVideo == null
           ? true

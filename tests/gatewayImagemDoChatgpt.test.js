@@ -8,6 +8,10 @@ const COMPLETIONS = fs.readFileSync(
   'gateway-overrides/token-free-gateway/src/openai/chat-completions.ts',
   'utf8'
 );
+const CLIENTE = fs.readFileSync(
+  'gateway-overrides/token-free-gateway/src/providers/chatgpt/client.ts',
+  'utf8'
+);
 const SERVICO = fs.readFileSync('src/services/tokenFreeGatewayService.js', 'utf8');
 const CHAT = fs.readFileSync('src/services/materiaChatService.js', 'utf8');
 
@@ -41,11 +45,22 @@ test('o parser varre onde o ChatGPT costuma pôr imagem', () => {
 test('ponteiro interno é resolvido na página logada', () => {
   // A imagem que o ChatGPT GERA não vem como URL: vem como
   // `file-service://file-…`, que só a sessão autenticada troca por um link.
-  assert.match(SCRIPT, /marca: 'resolverImagens'/);
-  assert.ok(SCRIPT.includes('backend-api/files/'), 'falta a chamada que resolve o ponteiro');
-  assert.ok(SCRIPT.includes('d.download_url'), 'a URL assinada não é aproveitada');
+  // O client.ts do ChatGPT agora é override inteiro (não mais patch).
+  assert.ok(SCRIPT.includes("'src/providers/chatgpt/client.ts'"), 'client do ChatGPT fora da lista de overrides');
+  assert.match(CLIENTE, /resultado\.imagens = await this\.resolverImagens\(resultado\.imagens\)/);
+  assert.ok(CLIENTE.includes('backend-api/files/'), 'falta a chamada que resolve o ponteiro');
+  assert.ok(CLIENTE.includes('d.download_url'), 'a URL assinada não é aproveitada');
   // URL pública não precisa passar por lá.
-  assert.ok(SCRIPT.includes('v.startsWith("https://")'));
+  assert.ok(CLIENTE.includes('v.startsWith("https://")'));
+});
+
+test('a conversa do ChatGPT continua na mensagem seguinte', () => {
+  // O gateway devolve onde a resposta ficou; o chat guarda e manda de volta.
+  assert.match(COMPLETIONS, /writeExtra\(\{ conversa: result\.conversa/);
+  assert.match(SERVICO, /entregarConversa\(aoReceberConversa, evento\)/);
+  assert.match(CHAT, /fioAnterior \|\| `viralizeai:chatgpt:user:/);
+  // Continuando a conversa real, o histórico não é reenviado.
+  assert.match(CHAT, /historico: fioAnterior \? \[\] : historicoLivre/);
 });
 
 test('o campo atravessa o gateway até a resposta HTTP', () => {

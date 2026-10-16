@@ -263,6 +263,23 @@ function entregarImagens(callback, valor) {
   }
 }
 
+/**
+ * Repassa em qual conversa do provedor a resposta ficou (hoje só o ChatGPT
+ * informa: `chatgpt:<conversa>:<mensagem>`). Quem guarda esse ponteiro e o
+ * manda de volta como `conversationId` continua a MESMA conversa no
+ * chatgpt.com. Campo nosso, opcional, e nunca derruba a resposta.
+ */
+function entregarConversa(callback, evento) {
+  if (typeof callback !== 'function') return;
+  const ponteiro = String(evento?.conversa || '').trim();
+  if (!ponteiro) return;
+  try {
+    callback({ ponteiro, url: String(evento?.conversa_url || '').trim() || null });
+  } catch (err) {
+    console.warn('[token-free] conversa da resposta ignorada:', err.message);
+  }
+}
+
 async function chatCompletion(
   messages,
   {
@@ -278,6 +295,7 @@ async function chatCompletion(
     // sai por aqui: o retorno continua sendo só o texto, como todos os
     // chamadores esperam.
     aoReceberImagens = null,
+    aoReceberConversa = null,
   } = {}
 ) {
   assertConfigured(tarefa);
@@ -301,6 +319,7 @@ async function chatCompletion(
     );
     const texto = limparMarcacaoChatgpt(data?.choices?.[0]?.message?.content || '').trim();
     entregarImagens(aoReceberImagens, data?.imagens);
+    entregarConversa(aoReceberConversa, data);
     if (!texto) throw new Error('resposta vazia');
     logar(inicio, tarefa, data?.usage);
     return json ? limparCercaJson(texto) : texto;
@@ -358,6 +377,7 @@ async function chatCompletionStream(
     conversationName = null,
     webSearch = false,
     aoReceberImagens = null,
+    aoReceberConversa = null,
   } = {}
 ) {
   assertConfigured(tarefa);
@@ -405,6 +425,7 @@ async function chatCompletionStream(
           // Evento sem `choices`: é o nosso, com as imagens da resposta. O
           // gateway o emite depois do "stop" para não cair no meio do texto.
           entregarImagens(aoReceberImagens, evento?.imagens);
+          entregarConversa(aoReceberConversa, evento);
           const delta = evento?.choices?.[0]?.delta?.content || '';
           if (delta) {
             full += delta;
@@ -456,6 +477,7 @@ async function chatCompletionStream(
       conversationName,
       webSearch,
       aoReceberImagens,
+      aoReceberConversa,
     });
     if (typeof onDelta === 'function') onDelta(texto);
     return texto;

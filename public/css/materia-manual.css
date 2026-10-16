@@ -799,3 +799,114 @@ body.mia-furos-aberto { overflow: hidden; }
 .mia-manual-claude .mia-furos-palavras-acoes { display: inline-flex; align-items: center; gap: .5rem; margin-left: .2rem; font-size: .66rem; color: var(--mia-chat-faint, var(--mia-chat-muted)); }
 .mia-manual-claude .mia-furos-palavras-acoes button { border: 0; background: none; color: var(--mia-chat-muted); font-size: .66rem; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .mia-manual-claude .mia-furos-palavras-acoes button:hover { color: #fda4af; }
+
+/* —— Aba "ChatGPT livre": cara de ChatGPT ——
+   A conversa acontece de verdade no chatgpt.com do servidor (a mesma do VNC),
+   então a aba se parece com ele: fundo cinza neutro, bolha do usuário à
+   direita, resposta sem bolha com o "ChatGPT" em cima, texto que vai surgindo
+   com o cursor de escrita e a imagem dentro da resposta. */
+.mia-manual-claude.is-chatgpt {
+  --mia-chat-bg: #212121;
+  --mia-chat-sidebar: #171717;
+  --mia-chat-surface: #2f2f2f;
+  --mia-chat-surface-hover: #3a3a3a;
+  --mia-chat-border: rgb(255 255 255 / 9%);
+  --mia-chat-border-strong: rgb(255 255 255 / 14%);
+  --mia-chat-text: #ececec;
+  --mia-chat-muted: #b4b4b4;
+  --mia-chat-faint: #8f8f8f;
+  --mia-chat-accent: #ececec;
+  --mia-chat-accent-soft: rgb(255 255 255 / 8%);
+  --mia-chat-user-bg: #303030;
+  --mia-chat-stream: 48rem;
+  --mia-chat-glow: 0 0 0 1px rgb(255 255 255 / 18%);
+  font-family: ui-sans-serif, -apple-system, system-ui, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+.mia-manual-claude.is-chatgpt .mia-chat-header-title > span { color: var(--mia-chat-text); font-weight: 600; letter-spacing: 0; }
+
+/* Tela inicial: só a pergunta do ChatGPT, sem os atalhos de matéria. */
+.mia-manual-claude .mia-gpt-empty { display: none; }
+.mia-manual-claude.is-chatgpt .mia-gpt-empty {
+  display: flex; flex-direction: column; align-items: center; gap: .85rem; text-align: center;
+  padding: 2rem 0 .5rem;
+}
+.mia-manual-claude.is-chatgpt :is(.mia-chat-empty-copy, .mia-start-actions, .mia-chat-radar-start, .mia-chat-title-tone) { display: none; }
+.mia-gpt-empty-logo { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; border-radius: 999px; background: #fff; color: #0d0d0d; }
+.mia-gpt-empty-logo svg { width: 1.7rem; height: 1.7rem; }
+.mia-gpt-empty-title { margin: 0; font-size: 1.75rem; font-weight: 600; letter-spacing: -.01em; color: var(--mia-chat-text); }
+.mia-gpt-empty-sub { margin: 0; max-width: 34rem; color: var(--mia-chat-muted); font-size: .86rem; line-height: 1.55; }
+
+/* Mensagens */
+.mia-manual-claude.is-chatgpt .mia-msg-user-bubble {
+  border: 0; border-radius: 1.5rem; padding: .65rem 1.15rem; max-width: 70%;
+  background: var(--mia-chat-user-bg); color: var(--mia-chat-text);
+  font-family: inherit; font-size: 1rem; line-height: 1.6;
+}
+.mia-manual-claude.is-chatgpt .mia-msg-ai-body .mia-msg-ai-text,
+.mia-manual-claude.is-chatgpt .mia-msg-ai-body .mia-msg-ai-anchor {
+  font-family: inherit; font-size: 1rem; line-height: 1.75; color: var(--mia-chat-text);
+}
+.mia-manual-claude.is-chatgpt .mia-msg-ai-body .mia-msg-ai-title { font-size: 1.25rem; font-weight: 600; color: #fff; }
+.mia-gpt-author { display: flex; align-items: center; gap: .55rem; color: var(--mia-chat-text); font-size: .9rem; }
+.mia-gpt-avatar {
+  display: grid; place-items: center; flex: 0 0 1.75rem; width: 1.75rem; height: 1.75rem;
+  border-radius: 999px; background: #fff; color: #0d0d0d;
+}
+.mia-gpt-avatar svg { width: 1.1rem; height: 1.1rem; }
+
+/* Passos ("pesquisando…") discretos, como o "Pensando" do ChatGPT. */
+.mia-manual-claude.is-chatgpt .mia-msg-ai .mia-progress {
+  border: 0; background: transparent; padding: 0; color: var(--mia-chat-faint); font-size: .85rem;
+}
+.mia-manual-claude.is-chatgpt .mia-msg-ai .mia-progress.is-live .mia-progress-current {
+  background: linear-gradient(90deg, var(--mia-chat-faint) 0%, #fff 50%, var(--mia-chat-faint) 100%);
+  background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: mia-gpt-brilho 2s linear infinite;
+}
+@keyframes mia-gpt-brilho { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+/* Cursor de escrita no fim do texto enquanto a resposta chega. */
+.mia-manual-claude.is-chatgpt .mia-msg-ai.is-escrevendo .mia-msg-ai-body > :last-child::after {
+  content: ""; display: inline-block; width: .7rem; height: .7rem; margin-left: .3rem;
+  border-radius: 999px; background: var(--mia-chat-text); vertical-align: middle;
+  animation: mia-gpt-pulso 1s ease-in-out infinite;
+}
+@keyframes mia-gpt-pulso { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.8); } }
+
+/* Imagem dentro da resposta, como a do ChatGPT. */
+.mia-gpt-image { margin: .25rem 0 0; max-width: min(100%, 32rem); }
+.mia-gpt-image img {
+  display: block; width: 100%; height: auto; border-radius: 1rem;
+  background: var(--mia-chat-surface); animation: mia-gpt-surge .35s ease-out;
+}
+.mia-gpt-image figcaption { margin-top: .4rem; color: var(--mia-chat-faint); font-size: .75rem; }
+@keyframes mia-gpt-surge { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.mia-gpt-conversa {
+  width: fit-content; color: var(--mia-chat-faint); font-size: .75rem; text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+}
+.mia-gpt-conversa:hover { color: var(--mia-chat-text); }
+
+/* Composer arredondado, como o do ChatGPT. */
+.mia-manual-claude.is-chatgpt .mia-chat-composer-wrap {
+  background: linear-gradient(180deg, transparent, rgb(33 33 33 / 92%) 32%, var(--mia-chat-bg));
+}
+.mia-manual-claude.is-chatgpt .mia-chat-composer {
+  border-radius: 1.75rem; border: 1px solid var(--mia-chat-border);
+  background: var(--mia-chat-surface); box-shadow: 0 8px 24px -12px rgb(0 0 0 / 60%);
+}
+.mia-manual-claude.is-chatgpt .mia-chat-composer:focus-within { border-color: var(--mia-chat-border-strong); box-shadow: 0 8px 24px -12px rgb(0 0 0 / 60%); }
+.mia-manual-claude.is-chatgpt .mia-chat-input { color: var(--mia-chat-text); }
+.mia-manual-claude.is-chatgpt .mia-chat-input::placeholder { color: var(--mia-chat-faint); }
+.mia-manual-claude.is-chatgpt .chat-tipo-btn[data-chat-tipo="chatgpt"].is-active { background: #fff; color: #0d0d0d; }
+
+@media (max-width: 639px) {
+  .mia-manual-claude.is-chatgpt .mia-msg-user-bubble { max-width: 85%; }
+  .mia-gpt-empty-title { font-size: 1.4rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mia-manual-claude.is-chatgpt .mia-msg-ai.is-escrevendo .mia-msg-ai-body > :last-child::after,
+  .mia-manual-claude.is-chatgpt .mia-msg-ai .mia-progress.is-live .mia-progress-current,
+  .mia-gpt-image img { animation: none; }
+}

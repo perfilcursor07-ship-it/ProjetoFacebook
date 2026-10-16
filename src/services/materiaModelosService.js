@@ -95,6 +95,29 @@ async function resolverModelo(pedido, { estrito = false } = {}) {
 }
 
 /**
+ * Modelos do "ChatGPT livre". A aba promete a conversa NO ChatGPT, então só
+ * entram modelos do ChatGPT — os liberados em /claude e, sem nenhum
+ * liberado, o modelo de sempre do ChatGPT (o mesmo da geração de imagem).
+ */
+async function listarChatgpt() {
+  const liberados = (await listarHabilitados()).filter((item) => item.provedor === 'chatgpt');
+  if (!liberados.length) return [descrever(MODELO_CHATGPT, { padrao: true })];
+  const lista = liberados.map((item, indice) => ({ ...item, padrao: indice === 0 }));
+  return lista;
+}
+
+/**
+ * Modelo que escreve no "ChatGPT livre": o pedido, se for um ChatGPT
+ * oferecido; senão o primeiro ChatGPT da lista. Nunca cai em Claude — antes a
+ * aba mandava o modelo do seletor geral e quem respondia era o Claude.
+ */
+async function resolverModeloChatgpt(pedido) {
+  const lista = await listarChatgpt();
+  const id = String(pedido || '').trim();
+  return (lista.find((item) => item.id === id) || lista[0]).id;
+}
+
+/**
  * Tudo que o administrador pode marcar: modelos anunciados pelo gateway agora,
  * os conhecidos (Claude do .env e ChatGPT) e os já salvos antes.
  */
@@ -165,6 +188,8 @@ module.exports = {
   listarHabilitados,
   listarCatalogo,
   resolverModelo,
+  listarChatgpt,
+  resolverModeloChatgpt,
   salvar,
   nomeModeloHumano,
   provedorDoModelo,

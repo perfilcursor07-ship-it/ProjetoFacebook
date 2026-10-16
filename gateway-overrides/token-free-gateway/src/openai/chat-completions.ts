@@ -129,6 +129,7 @@ async function handleNonStreaming(
 			// viralizeai: a foto que veio junto da resposta. So aparece quando
 			// existe, para nao mudar o formato de quem nao usa.
 			...(result.imagens?.length ? { imagens: result.imagens } : {}),
+			...(result.conversa ? { conversa: result.conversa, conversa_url: result.conversaUrl } : {}),
 		};
 
 		return Response.json(response);
@@ -277,6 +278,7 @@ async function streamWithoutTools(
 	// viralizeai: a foto que veio junto da resposta. Vai depois do "stop" para
 	// nao se misturar ao texto que o cliente esta montando.
 	if (result.imagens?.length) w.writeExtra({ imagens: result.imagens });
+	writeConversa(w, result);
 }
 
 async function streamWithTools(
@@ -300,6 +302,15 @@ async function streamWithTools(
 		w.writeChunk(id, model, [{ index: 0, delta: {}, finish_reason: "stop" }]);
 	}
 	if (result.imagens?.length) w.writeExtra({ imagens: result.imagens }); // viralizeai
+	writeConversa(w, result);
+}
+
+/**
+ * viralizeai: em qual conversa do provedor esta resposta ficou. O cliente
+ * devolve `conversa` como `conversation_id` para continuar nela.
+ */
+function writeConversa(w: SseWriter, result: { conversa?: string; conversaUrl?: string }) {
+	if (result.conversa) w.writeExtra({ conversa: result.conversa, conversa_url: result.conversaUrl });
 }
 
 function jsonError(message: string, status: number): Response {

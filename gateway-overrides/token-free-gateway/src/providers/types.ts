@@ -16,6 +16,14 @@ export interface StreamResult {
 	 * ChatGPT (`file-service://…`, imagem gerada). Quem consome decide.
 	 */
 	imagens?: string[];
+	/**
+	 * viralizeai: ponteiro da conversa real no provedor (`chatgpt:<conversa>:
+	 * <mensagem>`). Mandado de volta como `conversation_id`, faz a próxima
+	 * mensagem continuar a MESMA conversa no chatgpt.com.
+	 */
+	conversa?: string;
+	/** viralizeai: endereço dessa conversa (https://chatgpt.com/c/<id>). */
+	conversaUrl?: string;
 }
 
 export class SessionExpiredError extends Error {

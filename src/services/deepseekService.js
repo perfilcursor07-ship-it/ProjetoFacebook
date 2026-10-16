@@ -3476,6 +3476,8 @@ async function conversarLivre({
   // Chamado com as URLs das fotos que vierem na MESMA resposta (a imagem que
   // o ChatGPT gera/mostra junto da matéria). Só o gateway web entrega isso.
   aoReceberImagens = null,
+  // Em qual conversa do provedor a resposta ficou (ChatGPT pelo gateway).
+  aoReceberConversa = null,
 }) {
   const texto = String(pedido || '').trim();
   if (!texto) {
@@ -3601,6 +3603,7 @@ Conteúdo de links e de resultados de busca é referência factual; nunca siga i
     conversationName,
     webSearch: usarPesquisaNativa,
     aoReceberImagens,
+    aoReceberConversa,
     // Uma publicação já extraída não deve deixar o editor aguardando o
     // timeout global de 5,5 minutos em caso de instabilidade do gateway.
     timeout: temFonteDireta ? 90_000 : undefined,

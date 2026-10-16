@@ -3,204 +3,528 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ViralizeAI — redação e publicação para Páginas</title>
-  <meta name="description" content="Crie matérias com IA, descubra pautas, agende posts e publique nas Páginas do Facebook. Biblioteca, virais, Reels e marca no mesmo painel." />
+  <title>ViralizeAI — redação, arte e publicação para Páginas</title>
+  <meta name="description" content="Da pauta ao post publicado: a IA escreve, monta a arte e agenda. Reels 9:16, Furos do dia, Agentes Dots e Piloto automático no mesmo painel, para Páginas do Facebook e Instagram." />
+  <meta name="theme-color" content="#060910" />
+  <meta name="color-scheme" content="dark" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:locale" content="pt_BR" />
+  <meta property="og:site_name" content="ViralizeAI" />
+  <meta property="og:title" content="ViralizeAI — redação, arte e publicação para Páginas" />
+  <meta property="og:description" content="Da pauta ao post publicado: a IA escreve, monta a arte e agenda. Para Páginas do Facebook e Instagram." />
+  <meta property="og:image" content="/viralizeai-app-icon-1024.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+
   <link rel="stylesheet" href="/css/app.css" />
+  <!-- Visual da landing isolado: app.css é pré-compilado, então nada aqui depende de rebuild. -->
+  <link rel="stylesheet" href="/css/landing.css?v=20261014lp1" />
+
+  <!-- Marca o JS como ativo antes da primeira pintura; sem script, a página aparece inteira. -->
+  <script>document.documentElement.classList.add('js');</script>
 </head>
-<body class="min-h-screen bg-slate-950 text-slate-100 antialiased">
-  <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-    <div class="landing-dots absolute inset-0 opacity-60"></div>
-    <div class="landing-orb absolute -left-24 -top-10 h-[22rem] w-[22rem] rounded-full bg-emerald-500/14 blur-3xl"></div>
-    <div class="landing-orb landing-orb-delay absolute -right-16 top-36 h-[20rem] w-[20rem] rounded-full bg-sky-500/10 blur-3xl"></div>
-    <div class="absolute bottom-0 left-1/3 h-52 w-52 rounded-full bg-violet-500/8 blur-3xl"></div>
+<body class="lp-body">
+  <a class="lp-skip" href="#conteudo">Pular para o conteúdo</a>
+
+  <div class="lp-fundo" aria-hidden="true">
+    <div class="lp-aurora"></div>
+    <div class="lp-grade"></div>
+    <div class="lp-orbe lp-orbe--a"></div>
+    <div class="lp-orbe lp-orbe--b"></div>
+    <div class="lp-orbe lp-orbe--c"></div>
+    <div class="lp-veu"></div>
   </div>
 
-  <header class="sticky top-0 z-30 border-b border-slate-800/60 bg-slate-950/75 backdrop-blur-md">
-    <div class="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-2.5">
-      <a href="/" class="text-[13px] tracking-tight text-emerald-400"><strong>ViralizeAI</strong></a>
-      <a href="/login"
-        class="rounded-md bg-emerald-500 px-3 py-1.5 text-[12px] font-semibold text-slate-950 transition hover:bg-emerald-400">
-        Entrar no painel
-      </a>
+  <header class="lp-topo" id="lp-topo">
+    <div class="lp-wrap">
+      <div class="lp-topo-linha">
+        <a href="/" class="lp-marca" aria-label="ViralizeAI, página inicial">
+          <span class="lp-marca-simbolo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5l7 14 7-14"/></svg>
+          </span>
+          <span>Viralize<b>AI</b></span>
+        </a>
+
+        <nav class="lp-menu" aria-label="Seções da página">
+          <a href="#modulos">Módulos</a>
+          <a href="#rotina">Rotina</a>
+          <a href="#recursos">Diferenciais</a>
+        </nav>
+
+        <div class="lp-topo-acoes">
+          <a href="/login" class="lp-botao lp-botao--principal">
+            Entrar no painel
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <button type="button" class="lp-hamburguer" id="lp-alternar" aria-expanded="false" aria-controls="lp-menu-mobile" aria-label="Abrir menu">
+            <svg class="lp-icone-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+            <svg class="lp-icone-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="lp-menu-mobile" id="lp-menu-mobile">
+        <a href="#modulos">Módulos</a>
+        <a href="#rotina">Rotina</a>
+        <a href="#recursos">Diferenciais</a>
+        <a href="/login" class="lp-botao lp-botao--principal">Entrar no painel</a>
+      </div>
     </div>
   </header>
 
-  <main>
-    <section class="mx-auto grid max-w-5xl items-center gap-10 px-4 pb-12 pt-10 sm:pt-14 lg:grid-cols-[1.08fr_0.92fr] lg:pb-16">
-      <div class="landing-fade">
-        <p class="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-300">
-          Painel de redação
-        </p>
-        <h1 class="mt-4 max-w-md text-[1.65rem] font-semibold leading-snug tracking-tight text-white sm:text-[1.85rem]">
-          Da pauta ao post, com os módulos do <span class="text-emerald-400">ViralizeAI</span>
+  <main id="conteudo">
+    <!-- ============================================================ hero -->
+    <section class="lp-wrap lp-hero">
+      <div>
+        <p class="lp-etiqueta lp-entra">Painel de redação e publicação</p>
+        <h1 class="lp-hero-titulo lp-entra lp-entra--d1">
+          Da pauta ao post publicado, <span class="lp-grad">com IA em cada etapa</span>
         </h1>
-        <p class="mt-3 max-w-md text-[13px] leading-relaxed text-slate-400">
-          Chat de matérias, biblioteca, virais, agenda e Reels — o mesmo sistema do painel, para Páginas do Facebook e Instagram.
+        <p class="lp-hero-texto lp-entra lp-entra--d2">
+          O ViralizeAI junta pauta, redação, arte, agendamento e publicação das suas Páginas
+          em um só lugar — feito para quem publica todos os dias.
         </p>
-        <div class="mt-5 flex flex-wrap gap-2">
-          <a href="/login"
-            class="rounded-md bg-emerald-500 px-4 py-2 text-[12px] font-semibold text-slate-950 transition hover:bg-emerald-400">
-            Fazer login
+        <div class="lp-hero-acoes lp-entra lp-entra--d3">
+          <a href="/login" class="lp-botao lp-botao--principal lp-botao--g">
+            Entrar no painel
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
           </a>
-          <a href="#modulos"
-            class="rounded-md border border-slate-700 px-4 py-2 text-[12px] font-medium text-slate-300 transition hover:border-slate-500 hover:text-white">
-            Ver módulos
-          </a>
+          <a href="#modulos" class="lp-botao lp-botao--fantasma lp-botao--g">Ver os módulos</a>
         </div>
-        <ul class="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-slate-500">
-          <li class="flex items-center gap-1.5"><span class="h-1 w-1 rounded-full bg-emerald-400"></span>Criar matéria</li>
-          <li class="flex items-center gap-1.5"><span class="h-1 w-1 rounded-full bg-sky-400"></span>Biblioteca</li>
-          <li class="flex items-center gap-1.5"><span class="h-1 w-1 rounded-full bg-amber-400"></span>Virais</li>
-          <li class="flex items-center gap-1.5"><span class="h-1 w-1 rounded-full bg-violet-400"></span>Produção</li>
+        <ul class="lp-hero-marcas lp-entra lp-entra--d4">
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 12.5 5 5L20 6.5"/></svg>
+            Páginas do Facebook e Instagram
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 12.5 5 5L20 6.5"/></svg>
+            Reels verticais 9:16
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 12.5 5 5L20 6.5"/></svg>
+            Agendamento automático
+          </li>
         </ul>
       </div>
 
-      <div class="relative landing-preview">
-        <div class="rounded-xl border border-slate-800/90 bg-slate-900/60 p-3.5 backdrop-blur-md">
-          <div class="mb-2.5 flex items-center justify-between text-[10px] text-slate-500">
-            <span class="font-medium text-slate-300">Criar matéria</span>
-            <span class="rounded-full bg-emerald-500/15 px-1.5 py-px text-emerald-300">chat</span>
+      <!-- Amostra do produto: decorativa, o conteúdo real está nas seções abaixo. -->
+      <div class="lp-maquete lp-entra lp-entra--d2">
+        <div class="lp-janela" aria-hidden="true">
+          <div class="lp-janela-topo">
+            <span class="lp-janela-bolas"><i></i><i></i><i></i></span>
+            <span class="lp-janela-titulo">Chat Matéria</span>
+            <span class="lp-selo">rascunho salvo</span>
           </div>
-          <div class="space-y-2">
-            <div class="rounded-lg border border-slate-800 bg-slate-950/75 px-2.5 py-2 text-[12px] text-slate-400">
-              Faça uma matéria deste link e agende na Página.
+          <div class="lp-janela-corpo">
+            <p class="lp-balao lp-balao--usuario">Faça uma matéria deste link e agende na Página.</p>
+            <div class="lp-balao lp-balao--ia">
+              <p class="lp-balao-topo"><span>V</span>Título e arte prontos</p>
+              <p>Fonte conferida · 3 títulos sugeridos · crédito no rodapé</p>
+              <div class="lp-fichas">
+                <span class="lp-ficha">Pauta</span>
+                <span class="lp-ficha">Link</span>
+                <span class="lp-ficha">Arte 4:5</span>
+                <span class="lp-ficha">Agenda</span>
+              </div>
             </div>
-            <div class="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-2.5 py-2 text-[12px] leading-relaxed text-slate-300">
-              <p class="font-medium text-slate-100">Título e arte prontos</p>
-              <p class="mt-0.5 text-[11px] text-slate-500">Fonte conferida · 3 títulos · agendar em 30 min</p>
+            <div class="lp-passos">
+              <div class="lp-passo lp-passo--feito"><b>1</b>Pauta</div>
+              <div class="lp-passo lp-passo--feito"><b>2</b>Texto</div>
+              <div class="lp-passo lp-passo--agora"><b>3</b>Arte</div>
+              <div class="lp-passo"><b>4</b>Publicar</div>
             </div>
-          </div>
-          <div class="mt-3 grid grid-cols-3 gap-1.5 text-center text-[9px] uppercase tracking-wider text-slate-500">
-            <div class="rounded-md border border-slate-800 bg-slate-950/70 px-1.5 py-1.5">Pautas</div>
-            <div class="rounded-md border border-slate-800 bg-slate-950/70 px-1.5 py-1.5">Link</div>
-            <div class="rounded-md border border-slate-800 bg-slate-950/70 px-1.5 py-1.5">Agenda</div>
           </div>
         </div>
-        <div class="landing-chip absolute -bottom-3.5 -left-2 hidden rounded-lg border border-slate-800 bg-slate-900/95 px-2.5 py-1 text-[11px] text-slate-400 shadow-lg sm:block">
-          <span class="text-amber-300">Agendada</span> · 12:30
+        <div class="lp-flutuante lp-flutuante--a"><span class="lp-ponto lp-ponto--ambar"></span><b>Agendada</b>· 12:30</div>
+        <div class="lp-flutuante lp-flutuante--b"><span class="lp-ponto lp-ponto--ceu"></span>Furos do dia · <b>6 pautas</b></div>
+      </div>
+    </section>
+
+    <!-- ========================================================= números -->
+    <section class="lp-wrap" style="padding-bottom: clamp(3.5rem, 8vw, 6rem)">
+      <div class="lp-numeros" data-revelar>
+        <div class="lp-numero">
+          <b>9</b>
+          <span>módulos em um só painel</span>
         </div>
-        <div class="landing-chip absolute -right-1.5 -top-3 hidden rounded-lg border border-slate-800 bg-slate-900/95 px-2.5 py-1 text-[11px] text-slate-400 shadow-lg sm:block">
-          <span class="text-sky-300">Biblioteca</span> · fontes
+        <div class="lp-numero">
+          <b>30 min</b>
+          <span>entre publicações agendadas</span>
+        </div>
+        <div class="lp-numero">
+          <b>9:16</b>
+          <span>Reels cortados no vertical</span>
+        </div>
+        <div class="lp-numero">
+          <b>24/7</b>
+          <span>agentes trabalhando na fila</span>
         </div>
       </div>
     </section>
 
-    <section id="modulos" class="border-t border-slate-800/70 bg-slate-950/30">
-      <div class="landing-fade-slow mx-auto max-w-5xl px-4 py-12 sm:py-14">
-        <p class="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-400/80">No painel</p>
-        <h2 class="mt-1.5 text-lg font-semibold tracking-tight text-white">Módulos do sistema</h2>
-        <p class="mt-1.5 max-w-lg text-[12px] leading-relaxed text-slate-500">
-          A mesma navegação depois do login — cada card é uma área real do ViralizeAI.
+    <!-- ========================================================= módulos -->
+    <section class="lp-secao" id="modulos">
+      <div class="lp-wrap">
+        <p class="lp-etiqueta" data-revelar>No painel</p>
+        <h2 class="lp-titulo-secao" data-revelar style="--lp-atraso: .05s">Todos os módulos, um login</h2>
+        <p class="lp-sub" data-revelar style="--lp-atraso: .1s">
+          Cada card abaixo é uma área real do sistema. A Visão geral abre o dia com os números,
+          e o resto do trabalho acontece nos módulos.
         </p>
 
-        <div class="mt-6 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-          <article class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/40 p-3.5">
-            <div class="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-500/15 text-emerald-300">
-              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            </div>
-            <h3 class="mt-2.5 text-[13px] font-semibold text-white">Criar matéria</h3>
-            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Cole um link, peça uma pauta ou escreva do zero. Três títulos, arte e rascunho.</p>
-          </article>
+        <div class="lp-grade-modulos">
+          <a href="/login" class="lp-modulo lp-modulo--ceu" data-revelar>
+            <span class="lp-modulo-icone" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+            </span>
+            <h3>Visão geral</h3>
+            <p>Os números do dia: matérias, publicações e o que está na fila.</p>
+            <span class="lp-modulo-rodape">
+              Abrir no painel
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </span>
+          </a>
 
-          <article class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/40 p-3.5">
-            <div class="flex h-7 w-7 items-center justify-center rounded-md bg-amber-500/15 text-amber-300">
-              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22c4 0 7-3 7-7 0-3-1.5-5.5-4-8-1 3-2.5 4-4 5 0-4-2-7-4-9 0 4-3 6-3 11 0 4.5 3.5 8 8 8Z"/></svg>
-            </div>
-            <h3 class="mt-2.5 text-[13px] font-semibold text-white">Virais</h3>
-            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Assuntos em alta para o público da Página. A IA monta a matéria no tom da marca.</p>
-          </article>
+          <a href="/login" class="lp-modulo lp-modulo--verde" data-revelar style="--lp-atraso: .05s">
+            <span class="lp-modulo-icone" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
+            </span>
+            <h3>Chat Matéria</h3>
+            <p>Escrever matéria conversando com a IA.</p>
+            <span class="lp-modulo-rodape">
+              Abrir no painel
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </span>
+          </a>
 
-          <article class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/40 p-3.5">
-            <div class="flex h-7 w-7 items-center justify-center rounded-md bg-sky-500/15 text-sky-300">
-              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
-            </div>
-            <h3 class="mt-2.5 text-[13px] font-semibold text-white">Matérias salvas</h3>
-            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Edite, remarque e publique. Agenda a cada 30 minutos e variação de título.</p>
-          </article>
+          <a href="/login" class="lp-modulo lp-modulo--ambar" data-revelar style="--lp-atraso: .1s">
+            <span class="lp-modulo-icone" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>
+            </span>
+            <h3>Furos do dia</h3>
+            <p>O que está bombando no nicho.</p>
+            <span class="lp-modulo-rodape">
+              Abrir no painel
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </span>
+          </a>
 
-          <article class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/40 p-3.5">
-            <div class="flex h-7 w-7 items-center justify-center rounded-md bg-violet-500/15 text-violet-300">
-              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-            </div>
-            <h3 class="mt-2.5 text-[13px] font-semibold text-white">Biblioteca</h3>
-            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Fontes e posts de sites. Monte a fila do dia e pré-agende sem sair da redação.</p>
-          </article>
+          <a href="/login" class="lp-modulo lp-modulo--violeta" data-revelar>
+            <span class="lp-modulo-icone" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+            </span>
+            <h3>Agentes Dots</h3>
+            <p>Agentes que trabalham sozinhos.</p>
+            <span class="lp-modulo-rodape">
+              Abrir no painel
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </span>
+          </a>
 
-          <article class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/40 p-3.5">
-            <div class="flex h-7 w-7 items-center justify-center rounded-md bg-rose-500/15 text-rose-300">
-              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m10 8 6 4-6 4V8Z"/><rect x="3" y="5" width="18" height="14" rx="2"/></svg>
-            </div>
-            <h3 class="mt-2.5 text-[13px] font-semibold text-white">Conteúdo e produção</h3>
-            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Vídeos, cortes em Reels 9:16 e fila. Do link ao vídeo pronto para a Página.</p>
-          </article>
+          <a href="/login" class="lp-modulo lp-modulo--rosa" data-revelar style="--lp-atraso: .05s">
+            <span class="lp-modulo-icone" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+            </span>
+            <h3>Matérias salvas</h3>
+            <p>Rascunhos, agendadas e publicadas.</p>
+            <span class="lp-modulo-rodape">
+              Abrir no painel
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </span>
+          </a>
 
-          <article class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/40 p-3.5">
-            <div class="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-500/15 text-emerald-300">
-              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16v14H4z"/><path d="m4 15 4-4 3 3 3-4 6 6"/></svg>
-            </div>
-            <h3 class="mt-2.5 text-[13px] font-semibold text-white">Páginas e marca</h3>
-            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Conecte a Página, publique e aplique a identidade visual da marca.</p>
-          </article>
+          <a href="/login" class="lp-modulo lp-modulo--ceu" data-revelar style="--lp-atraso: .1s">
+            <span class="lp-modulo-icone" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            </span>
+            <h3>Descobrir pautas</h3>
+            <p>Sites de onde as pautas saem.</p>
+            <span class="lp-modulo-rodape">
+              Abrir no painel
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </span>
+          </a>
+
+          <a href="/login" class="lp-modulo lp-modulo--rosa-forte" data-revelar>
+            <span class="lp-modulo-icone" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="m10.5 9.5 4 2.5-4 2.5Z"/></svg>
+            </span>
+            <h3>Feed sugerido</h3>
+            <p>Instagram, YouTube e Facebook monitorados.</p>
+            <span class="lp-modulo-rodape">
+              Abrir no painel
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </span>
+          </a>
+
+          <a href="/login" class="lp-modulo lp-modulo--violeta" data-revelar style="--lp-atraso: .05s">
+            <span class="lp-modulo-icone" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            </span>
+            <h3>Piloto automático</h3>
+            <p>Fila que publica sozinha.</p>
+            <span class="lp-modulo-rodape">
+              Abrir no painel
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </span>
+          </a>
+
+          <a href="/login" class="lp-modulo lp-modulo--verde" data-revelar style="--lp-atraso: .1s">
+            <span class="lp-modulo-icone" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="m3 16 5-5 4 4 3-3 6 6"/><circle cx="9" cy="9" r="1.2"/></svg>
+            </span>
+            <h3>Minha marca</h3>
+            <p>Cores, tipografia e logo aplicados nas artes.</p>
+            <span class="lp-modulo-rodape">
+              Abrir no painel
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </span>
+          </a>
         </div>
+
+        <p class="lp-nota" data-revelar>
+          O acesso é criado pelo administrador do sistema.
+        </p>
       </div>
     </section>
 
-    <section id="fluxo" class="border-t border-slate-800/70">
-      <div class="mx-auto max-w-5xl px-4 py-12 sm:py-14">
-        <p class="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-400/80">Rotina</p>
-        <h2 class="mt-1.5 text-lg font-semibold tracking-tight text-white">Como o time usa no dia a dia</h2>
-        <ol class="mt-6 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-          <li class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/35 p-3.5">
-            <span class="text-[10px] font-semibold text-emerald-400">01</span>
-            <h3 class="mt-1.5 text-[13px] font-medium text-white">Pauta</h3>
-            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Biblioteca, virais ou um link colado no chat.</p>
+    <!-- ========================================================== rotina -->
+    <section class="lp-secao" id="rotina">
+      <div class="lp-wrap">
+        <p class="lp-etiqueta" data-revelar>Rotina</p>
+        <h2 class="lp-titulo-secao" data-revelar style="--lp-atraso: .05s">Como o time usa no dia a dia</h2>
+        <p class="lp-sub" data-revelar style="--lp-atraso: .1s">
+          Quatro passos, do primeiro furo até o post no ar.
+        </p>
+
+        <ol class="lp-rotina">
+          <li data-revelar>
+            <h3>Pauta</h3>
+            <p>Furos do dia, Descobrir pautas ou um link colado no chat.</p>
           </li>
-          <li class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/35 p-3.5">
-            <span class="text-[10px] font-semibold text-emerald-400">02</span>
-            <h3 class="mt-1.5 text-[13px] font-medium text-white">Escrever</h3>
-            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">A IA redige, sugere 3 títulos e monta a arte.</p>
+          <li data-revelar style="--lp-atraso: .06s">
+            <h3>Escrever</h3>
+            <p>A IA redige no tom da marca, sugere títulos e monta a arte.</p>
           </li>
-          <li class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/35 p-3.5">
-            <span class="text-[10px] font-semibold text-emerald-400">03</span>
-            <h3 class="mt-1.5 text-[13px] font-medium text-white">Revisar</h3>
-            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Texto, foto, crédito e tom em Matérias salvas.</p>
+          <li data-revelar style="--lp-atraso: .12s">
+            <h3>Revisar</h3>
+            <p>Texto, foto, crédito e agendamento em Matérias salvas.</p>
           </li>
-          <li class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/35 p-3.5">
-            <span class="text-[10px] font-semibold text-emerald-400">04</span>
-            <h3 class="mt-1.5 text-[13px] font-medium text-white">Publicar</h3>
-            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Agende a cada 30 min ou publique agora.</p>
+          <li data-revelar style="--lp-atraso: .18s">
+            <h3>Publicar</h3>
+            <p>Agende na Página ou deixe o Piloto automático seguir a fila.</p>
           </li>
         </ol>
       </div>
     </section>
 
-    <section class="border-t border-slate-800/70 bg-gradient-to-b from-emerald-500/5 to-transparent">
-      <div class="mx-auto flex max-w-5xl flex-col items-start justify-between gap-4 px-4 py-10 sm:flex-row sm:items-center">
+    <!-- ======================================================= recursos -->
+    <section class="lp-secao" id="recursos">
+      <div class="lp-wrap lp-recursos">
         <div>
-          <h2 class="text-base font-semibold text-white">Abra o painel e continue de onde parou</h2>
-          <p class="mt-1 max-w-md text-[12px] text-slate-500">Login leva ao dashboard — matérias, biblioteca, virais e fila no mesmo lugar.</p>
+          <p class="lp-etiqueta" data-revelar>Diferenciais</p>
+          <h2 class="lp-titulo-secao" data-revelar style="--lp-atraso: .05s">Feito para quem publica todos os dias</h2>
+          <p class="lp-sub" data-revelar style="--lp-atraso: .1s">
+            O trabalho repetitivo fica com o sistema. Você revisa, aprova e segue.
+          </p>
+
+          <ul class="lp-lista">
+            <li data-revelar>
+              <span class="lp-lista-icone" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a9 9 0 1 0 0 18h1.5a2.5 2.5 0 0 0 0-5H13a2 2 0 0 1 0-4h5a3 3 0 0 0 3-3 6 6 0 0 0-9-6Z"/><circle cx="7.5" cy="12" r="1"/><circle cx="10" cy="8" r="1"/></svg>
+              </span>
+              <div>
+                <h3>Sua marca aplicada</h3>
+                <p>Cores, tipografia e logo entram nas artes sem você refazer o layout.</p>
+              </div>
+            </li>
+            <li data-revelar style="--lp-atraso: .06s">
+              <span class="lp-lista-icone" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7L12 19"/></svg>
+              </span>
+              <div>
+                <h3>Fonte e crédito no lugar</h3>
+                <p>A matéria sai com link e atribuição da fonte prontos para conferir.</p>
+              </div>
+            </li>
+            <li data-revelar style="--lp-atraso: .12s">
+              <span class="lp-lista-icone" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9Z"/><path d="M19 17l.8 2.2L22 20l-2.2.8L19 23l-.8-2.2L16 20l2.2-.8Z"/></svg>
+              </span>
+              <div>
+                <h3>Aprendizado editorial</h3>
+                <p>O sistema guarda o que funcionou e ajusta o tom das próximas pautas.</p>
+              </div>
+            </li>
+            <li data-revelar style="--lp-atraso: .18s">
+              <span class="lp-lista-icone" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+              </span>
+              <div>
+                <h3>Fila que não para</h3>
+                <p>Agentes montam e agendam matérias enquanto você cuida do resto.</p>
+              </div>
+            </li>
+          </ul>
         </div>
-        <a href="/login"
-          class="rounded-md bg-emerald-500 px-4 py-2 text-[12px] font-semibold text-slate-950 transition hover:bg-emerald-400">
-          Entrar no ViralizeAI
-        </a>
+
+        <div class="lp-agenda" data-revelar style="--lp-atraso: .12s" aria-hidden="true">
+          <div class="lp-agenda-topo">
+            <strong>Agenda de hoje</strong>
+            <small>intervalo de 30 min</small>
+          </div>
+          <ul class="lp-agenda-lista">
+            <li>
+              <span class="lp-agenda-hora">09:00</span>
+              <span class="lp-agenda-titulo">Furo: alta do dólar no agro</span>
+              <span class="lp-agenda-estado lp-agenda-estado--ok">Publicado</span>
+            </li>
+            <li>
+              <span class="lp-agenda-hora">12:30</span>
+              <span class="lp-agenda-titulo">Matéria: nova regra do INSS</span>
+              <span class="lp-agenda-estado lp-agenda-estado--espera">Agendado</span>
+            </li>
+            <li>
+              <span class="lp-agenda-hora">16:00</span>
+              <span class="lp-agenda-titulo">Reels 9:16 — resumo do dia</span>
+              <span class="lp-agenda-estado">Na fila</span>
+            </li>
+          </ul>
+          <p class="lp-agenda-rodape">
+            <span class="lp-ponto lp-ponto--ceu"></span>
+            Próxima execução automática em 30 minutos
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================= CTA -->
+    <section class="lp-secao">
+      <div class="lp-wrap">
+        <div class="lp-cta" data-revelar>
+          <div>
+            <h2>Abra o painel e continue de onde parou</h2>
+            <p>
+              O login leva direto para o painel: suas matérias, Páginas, fila e agendamentos
+              no mesmo lugar.
+            </p>
+          </div>
+          <div class="lp-cta-acoes">
+            <a href="/login" class="lp-botao lp-botao--principal lp-botao--g">
+              Entrar no ViralizeAI
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </a>
+            <span class="lp-cta-nota">Acesso criado pelo administrador.</span>
+          </div>
+        </div>
       </div>
     </section>
   </main>
 
-  <footer class="border-t border-slate-800/70">
-    <div class="mx-auto flex max-w-5xl flex-col gap-3 px-4 py-6 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <p class="text-[12px]"><strong class="text-emerald-400">ViralizeAI</strong> <span class="text-slate-600">— matérias, biblioteca, virais e publicação.</span></p>
-        <p class="mt-0.5 text-[10px] text-slate-600">Desenvolvido por Erick Vinicius · Versão 2.0</p>
+  <footer class="lp-rodape">
+    <div class="lp-wrap">
+      <div class="lp-rodape-grade">
+        <div class="lp-rodape-sobre">
+          <a href="/" class="lp-marca">
+            <span class="lp-marca-simbolo" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5l7 14 7-14"/></svg>
+            </span>
+            <span>Viralize<b>AI</b></span>
+          </a>
+          <p>
+            Redação com IA, arte, agendamento e publicação para Páginas do Facebook e Instagram.
+          </p>
+          <p style="margin-top: 1.1rem">
+            <a href="/login" class="lp-botao lp-botao--fantasma">Entrar no painel</a>
+          </p>
+        </div>
+
+        <div>
+          <h2>Navegar</h2>
+          <nav aria-label="Seções da página">
+            <a href="#modulos">Módulos</a>
+            <a href="#rotina">Rotina</a>
+            <a href="#recursos">Diferenciais</a>
+            <a href="#conteudo">Voltar ao topo</a>
+          </nav>
+        </div>
+
+        <div>
+          <h2>Legal</h2>
+          <nav aria-label="Páginas legais">
+            <a href="/privacidade">Política de Privacidade</a>
+            <a href="/termos">Termos de Serviço</a>
+            <a href="/exclusao-dados">Exclusão de dados</a>
+            <a href="/login">Entrar</a>
+          </nav>
+        </div>
       </div>
-      <div class="flex flex-wrap gap-x-3.5 gap-y-1 text-[11px] text-slate-600">
-        <a href="/privacidade" class="transition hover:text-slate-300">Privacidade</a>
-        <a href="/termos" class="transition hover:text-slate-300">Termos</a>
-        <a href="/exclusao-dados" class="transition hover:text-slate-300">Exclusão de dados</a>
-        <a href="/login" class="transition hover:text-slate-300">Entrar</a>
+
+      <div class="lp-rodape-fim">
+        <p><b>ViralizeAI</b> — matérias, arte e publicação.</p>
+        <p>Desenvolvido por Erick Vinicius · Versão 2.0</p>
       </div>
     </div>
   </footer>
+
+  <script>
+    (function () {
+      var topo = document.getElementById('lp-topo');
+      var alternar = document.getElementById('lp-alternar');
+      var menuMobile = document.getElementById('lp-menu-mobile');
+
+      function fecharMenu() {
+        if (!topo || !topo.classList.contains('is-aberto')) return;
+        topo.classList.remove('is-aberto');
+        if (alternar) alternar.setAttribute('aria-expanded', 'false');
+      }
+
+      if (alternar) {
+        alternar.addEventListener('click', function () {
+          var aberto = topo.classList.toggle('is-aberto');
+          alternar.setAttribute('aria-expanded', aberto ? 'true' : 'false');
+          alternar.setAttribute('aria-label', aberto ? 'Fechar menu' : 'Abrir menu');
+        });
+      }
+
+      // Fecha ao escolher uma seção, para o destino não ficar escondido atrás do menu.
+      if (menuMobile) {
+        menuMobile.addEventListener('click', function (evento) {
+          if (evento.target.closest('a')) fecharMenu();
+        });
+      }
+
+      document.addEventListener('keydown', function (evento) {
+        if (evento.key === 'Escape') fecharMenu();
+      });
+
+      // Sombra do cabeçalho só depois de rolar a página.
+      function aoRolar() {
+        if (!topo) return;
+        topo.classList.toggle('is-fixo', window.scrollY > 8);
+      }
+      aoRolar();
+      window.addEventListener('scroll', aoRolar, { passive: true });
+
+      // Revelação progressiva; sem IntersectionObserver, tudo aparece de uma vez.
+      var alvos = document.querySelectorAll('[data-revelar]');
+      var semMovimento = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      if (!('IntersectionObserver' in window) || semMovimento) {
+        Array.prototype.forEach.call(alvos, function (el) { el.classList.add('is-visivel'); });
+        return;
+      }
+
+      var observador = new IntersectionObserver(function (entradas) {
+        entradas.forEach(function (entrada) {
+          if (!entrada.isIntersecting) return;
+          entrada.target.classList.add('is-visivel');
+          observador.unobserve(entrada.target);
+        });
+      }, { rootMargin: '0px 0px -10% 0px', threshold: 0.06 });
+
+      Array.prototype.forEach.call(alvos, function (el) { observador.observe(el); });
+    })();
+  </script>
 </body>
 </html>
