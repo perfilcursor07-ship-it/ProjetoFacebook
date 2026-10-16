@@ -50,15 +50,57 @@ export function mensagemVisivel(m: { papel?: string; tipo?: string; destino?: st
  */
 const FOTO_DO_CHATGPT = /^https:\/\/images\.openai\.com\//i;
 
+/**
+ * Lista de imagens com ordem de preferência.
+ *
+ * As fotos que a tela do ChatGPT MOSTRA (resultado do <AsyncImage>, em
+ * `…opGenui.componentResults` / `genui_components`) vêm primeiro; o resto —
+ * miniaturas das páginas citadas, que também ficam em images.openai.com —
+ * só no fim. Antes valia a ordem de chegada, e a miniatura do link citado
+ * (o banner da SOLA Network) ganhava da foto do pastor que aparecia na tela.
+ *
+ * `paginas`: de qual site veio cada foto (o selo "lagunabaptist.org" da tela),
+ * para o crédito.
+ */
+export type ListaDeImagens = string[] & { prioritarias?: number; paginas?: Record<string, string> };
+
+const DO_COMPONENTE = /genui|componentresults|opgenui|asyncimage/i;
+
+function adicionarImagem(destino: ListaDeImagens, v: string, prioridade: boolean, pagina?: string) {
+	const prio = destino.prioritarias ?? 0;
+	const i = destino.indexOf(v);
+	if (i >= 0) {
+		if (!prioridade || i < prio) return;
+		destino.splice(i, 1);
+	}
+	if (prioridade) {
+		destino.splice(prio, 0, v);
+		destino.prioritarias = prio + 1;
+	} else if (i < 0) {
+		destino.push(v);
+	}
+	if (pagina && /^https?:\/\//i.test(pagina) && !FOTO_DO_CHATGPT.test(pagina)) {
+		destino.paginas = destino.paginas ?? {};
+		destino.paginas[v] = destino.paginas[v] ?? pagina;
+	}
+}
+
+/** Junta `nova` em `base` mantendo as fotos da tela na frente. */
+export function juntarImagens(base: ListaDeImagens, nova: ListaDeImagens): ListaDeImagens {
+	const prio = nova.prioritarias ?? 0;
+	nova.forEach((v, i) => adicionarImagem(base, v, i < prio, nova.paginas?.[v]));
+	return base;
+}
+
 /** Recolhe ponteiros/URLs de imagem de qualquer objeto da resposta. */
-export function coletarImagens(alvo: unknown, destino: string[], profundidade = 0): void {
+export function coletarImagens(alvo: unknown, destino: ListaDeImagens, profundidade = 0, doComponente = false): void {
 	if (!alvo || profundidade > 12) return;
 	if (typeof alvo === "string") {
-		if (FOTO_DO_CHATGPT.test(alvo) && !destino.includes(alvo)) destino.push(alvo);
+		if (FOTO_DO_CHATGPT.test(alvo)) adicionarImagem(destino, alvo, doComponente);
 		return;
 	}
 	if (Array.isArray(alvo)) {
-		for (const item of alvo) coletarImagens(item, destino, profundidade + 1);
+		for (const item of alvo) coletarImagens(item, destino, profundidade + 1, doComponente);
 		return;
 	}
 	if (typeof alvo !== "object") return;
@@ -67,21 +109,24 @@ export function coletarImagens(alvo: unknown, destino: string[], profundidade = 
 		o.content_type === "image_asset_pointer" ||
 		typeof o.asset_pointer === "string" ||
 		/image/i.test(String(o.content_type ?? o.type ?? ""));
+	// No resultado do componente, `url` é a página de onde a foto veio.
+	const paginaDaFoto = typeof o.url === "string" && typeof o.content_url === "string" ? o.url : undefined;
 	for (const campo of ["asset_pointer", "image_url", "thumbnail_url", "url", "src", "content_url"]) {
 		const v = o[campo];
 		if (typeof v !== "string" || !PADRAO_IMAGEM.test(v)) continue;
 		// URL comum só conta quando o objeto é claramente uma imagem (senão
 		// todo link citado viraria "imagem").
 		if (/^https?:/i.test(v) && !ehImagem && campo === "url") continue;
-		if (!destino.includes(v)) destino.push(v);
+		adicionarImagem(destino, v, doComponente, campo === "url" ? undefined : paginaDaFoto);
 	}
 	// Todos os campos, não só os conhecidos: a foto do <AsyncImage> fica em
 	// `model_dil_v2.appData.opGenui.componentResults[…].images[]` e em
 	// `genui_components` — nomes que mudam. Lá dentro só entra o que é
 	// claramente imagem (campos acima) ou foto de images.openai.com.
 	for (const [chave, valor] of Object.entries(o)) {
-		if (valor && typeof valor === "object") coletarImagens(valor, destino, profundidade + 1);
-		else if (typeof valor === "string" && chave !== "url") coletarImagens(valor, destino, profundidade + 1);
+		const filho = doComponente || DO_COMPONENTE.test(chave);
+		if (valor && typeof valor === "object") coletarImagens(valor, destino, profundidade + 1, filho);
+		else if (typeof valor === "string" && chave !== "url") coletarImagens(valor, destino, profundidade + 1, filho);
 	}
 }
 
@@ -93,7 +138,7 @@ export async function parseChatGPTStream(
 	const reader = body.getReader();
 	const decoder = new TextDecoder();
 	let buffer = "";
-	const imagens: string[] = [];
+	const imagens: ListaDeImagens = [];
 	const mensagens: Mensagem[] = [];
 	let atual: Mensagem | null = null;
 	let ultimoCaminho = "";
@@ -300,5 +345,12 @@ export async function parseChatGPTStream(
 	const aguardandoImagem =
 		mensagens.some((m) => m.papel !== "user" && /image|dalle|t2uay3k/i.test(`${m.destino ?? ""} ${m.tipo ?? ""}`)) ||
 		/<AsyncImage(?:Group)?\b|\ue200image_group\ue202/.test(texto);
-	return { text: texto.trim(), thinkingText: "", imagens, aguardandoImagem };
+	return {
+		text: texto.trim(),
+		thinkingText: "",
+		imagens: [...imagens],
+		aguardandoImagem,
+		fotosDaTela: imagens.prioritarias ?? 0,
+		paginasDasImagens: imagens.paginas,
+	};
 }

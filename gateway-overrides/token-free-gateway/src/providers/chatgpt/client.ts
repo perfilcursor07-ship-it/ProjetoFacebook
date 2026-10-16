@@ -10,7 +10,13 @@ import type { EvalResult } from "../shared/eval-helpers.ts";
 import { textToStream } from "../shared/stream-helpers.ts";
 import type { StreamResult } from "../types.ts";
 import type { ChatGPTWebAuth } from "./auth.ts";
-import { coletarImagens, mensagemVisivel, parseChatGPTStream } from "./stream.ts";
+import {
+	coletarImagens,
+	juntarImagens,
+	type ListaDeImagens,
+	mensagemVisivel,
+	parseChatGPTStream,
+} from "./stream.ts";
 
 /** Até o ChatGPT começar a responder (sentinela + primeiro byte). */
 const SEND_TIMEOUT_MS = 120_000;
@@ -570,11 +576,14 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 		// Texto que o leitor do stream não entendeu (o ChatGPT muda o formato)
 		// e imagem que ainda estava sendo gerada quando o stream fechou.
 		const semTexto = !resultado.text;
-		const semImagem = !resultado.imagens?.length && Boolean(resultado.aguardandoImagem);
+		// <AsyncImage>/galeria: a foto que a TELA mostra é resolvida 1–2 s depois.
+		// Miniatura de página citada que já chegou não serve — é outra foto.
+		const soBusca = /<AsyncImage(?:Group)?\b|\ue200image_group\ue202/.test(resultado.text);
+		const faltaFotoDaTela = () => soBusca && !(resultado.fotosDaTela ?? 0);
+		const semImagem = (!resultado.imagens?.length && Boolean(resultado.aguardandoImagem)) || faltaFotoDaTela();
 		let sinalDeImagem = false;
 		if (conversa && (semTexto || semImagem)) {
 			// <AsyncImage>: a foto aparece em segundos; imagem GERADA leva minutos.
-			const soBusca = /<AsyncImage(?:Group)?\b|\ue200image_group\ue202/.test(resultado.text);
 			const limite = Date.now() + (semImagem ? (soBusca ? 20_000 : 150_000) : 15_000);
 			for (let tentativa = 0; Date.now() < limite; tentativa++) {
 				if (tentativa) await new Promise((r) => setTimeout(r, soBusca ? 2_500 : 5_000));
@@ -590,14 +599,26 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 					resultado.text = lida.texto;
 					onDelta?.(lida.texto);
 				}
-				for (const img of lida.imagens) {
-					resultado.imagens = resultado.imagens ?? [];
-					if (!resultado.imagens.includes(img)) resultado.imagens.push(img);
-				}
+				const juntas = juntarImagens(
+					Object.assign([...(resultado.imagens ?? [])], {
+						prioritarias: resultado.fotosDaTela ?? 0,
+						paginas: { ...(resultado.paginasDasImagens ?? {}) },
+					}) as ListaDeImagens,
+					lida.imagens,
+				);
+				resultado.imagens = [...juntas];
+				resultado.fotosDaTela = juntas.prioritarias ?? 0;
+				resultado.paginasDasImagens = juntas.paginas;
 				const faltaTexto = !resultado.text;
-				const faltaImagem = semImagem && !resultado.imagens?.length;
+				const faltaImagem = semImagem && (soBusca ? faltaFotoDaTela() : !resultado.imagens?.length);
 				if (!faltaTexto && !faltaImagem) break;
-				if (faltaImagem) console.log("[ChatGPT Web] imagem ainda sendo gerada; aguardando…");
+				if (faltaImagem) {
+					console.log(
+						soBusca
+							? "[ChatGPT Web] esperando a foto que a tela do ChatGPT mostra…"
+							: "[ChatGPT Web] imagem ainda sendo gerada; aguardando…",
+					);
+				}
 			}
 		}
 
@@ -642,7 +663,7 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 			resultado.conversaUrl = `https://chatgpt.com/c/${conversa}`;
 		}
 		console.log(
-			`[ChatGPT Web] resposta: ${resultado.text.length} chars, ${resultado.imagens?.length ?? 0} imagem(ns), conversa ${conversa ?? "-"}`,
+			`[ChatGPT Web] resposta: ${resultado.text.length} chars, ${resultado.imagens?.length ?? 0} imagem(ns) (${resultado.fotosDaTela ?? 0} da tela), conversa ${conversa ?? "-"}`,
 		);
 		// viralizeai: ponteiro interno -> URL baixável.
 		resultado.imagens = await this.resolverImagens(resultado.imagens, conversa);
@@ -656,7 +677,7 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 	 */
 	private async lerConversa(
 		conversationId: string,
-	): Promise<{ texto: string; imagens: string[]; ultimoId?: string; sinalDeImagem: boolean }> {
+	): Promise<{ texto: string; imagens: ListaDeImagens; ultimoId?: string; sinalDeImagem: boolean }> {
 		const page = await this.getPage();
 		const dados = (await page.evaluate(async (id: string) => {
 			let token: string | undefined;
@@ -688,7 +709,7 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 			no = mapa[no]?.parent;
 		}
 		const textos: string[] = [];
-		const imagens: string[] = [];
+		const imagens: ListaDeImagens = [];
 		for (const msg of turno) {
 			const conteudo = (msg.content ?? {}) as { content_type?: string; parts?: unknown[] };
 			coletarImagens(conteudo.parts, imagens);

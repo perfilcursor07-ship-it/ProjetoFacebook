@@ -29,6 +29,13 @@ export interface StreamResult {
 	 * antes de a imagem ficar pronta, o client lê a conversa até ela aparecer.
 	 */
 	aguardandoImagem?: boolean;
+	/**
+	 * viralizeai: quantas das `imagens` (as primeiras) são fotos que a tela do
+	 * ChatGPT mostrou (<AsyncImage>), e não miniaturas de páginas citadas.
+	 */
+	fotosDaTela?: number;
+	/** viralizeai: imagem → página de onde ela veio (para o crédito). */
+	paginasDasImagens?: Record<string, string>;
 }
 
 export class SessionExpiredError extends Error {
