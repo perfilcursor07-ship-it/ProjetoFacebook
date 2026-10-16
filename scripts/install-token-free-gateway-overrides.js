@@ -24,6 +24,9 @@ const files = [
   // Inteiro (não patch): streaming de verdade e uma conversa do chatgpt.com
   // por conversa do ViralizeAI. Já inclui o antigo patch `resolverImagens`.
   'src/providers/chatgpt/client.ts',
+  // Inteiro também: entende o SSE novo do ChatGPT (deltas). Substitui os
+  // antigos patches `viralizeai-imagem` deste arquivo.
+  'src/providers/chatgpt/stream.ts',
   'src/providers/deepseek/stream.ts',
   'src/providers/factory/base-api-client.ts',
   'src/providers/factory/types.ts',
@@ -72,74 +75,6 @@ const patches = [
       '\t// viralizeai: cancela a geração no Chrome quando o cliente desconecta.',
       '\treturn handleChatCompletions(body, provider, req.signal);',
     ].join('\n'),
-  },
-  // A imagem da resposta do ChatGPT chega no stream e era descartada: o
-  // parser lê só `parts[0]` e só aproveita se for texto. Quando vem foto, a
-  // parte é um objeto sem `.text` e sumia ali dentro — nunca chegava a nós.
-  //
-  // Agora ela é recolhida. O ChatGPT põe imagem em mais de um lugar e muda
-  // isso sem avisar, então varremos os três conhecidos: as `parts` da
-  // mensagem, as `content_references` (foto da reportagem que ele navegou) e
-  // `image_results`. O que não casar com nenhum formato conhecido ainda
-  // aparece no log, para o próximo conserto não ser palpite.
-  {
-    file: 'src/providers/chatgpt/stream.ts',
-    marca: 'viralizeai-imagem',
-    procurar: '\t\t\tconst rawPart = data.message?.content?.parts?.[0];',
-    trocar: [
-      '\t\t\t// viralizeai-imagem: recolhe as imagens desta resposta.',
-      '\t\t\tconst guardarImagem = (v: unknown) => {',
-      '\t\t\t\tif (typeof v !== "string" || !v) return;',
-      '\t\t\t\tif (!/^(https?:\\/\\/|file-service:\\/\\/|sediment:\\/\\/)/i.test(v)) return;',
-      '\t\t\t\tif (!imagens.includes(v)) imagens.push(v);',
-      '\t\t\t};',
-      '\t\t\tconst varrer = (alvo: unknown, profundidade = 0) => {',
-      '\t\t\t\tif (!alvo || profundidade > 3) return;',
-      '\t\t\t\tif (Array.isArray(alvo)) {',
-      '\t\t\t\t\tfor (const item of alvo) varrer(item, profundidade + 1);',
-      '\t\t\t\t\treturn;',
-      '\t\t\t\t}',
-      '\t\t\t\tif (typeof alvo !== "object") return;',
-      '\t\t\t\tconst o = alvo as Record<string, unknown>;',
-      '\t\t\t\tfor (const campo of ["asset_pointer", "url", "image_url", "src", "thumbnail_url"]) {',
-      '\t\t\t\t\tguardarImagem(o[campo]);',
-      '\t\t\t\t}',
-      '\t\t\t\tfor (const campo of ["images", "image_results", "content_references", "parts"]) {',
-      '\t\t\t\t\tif (o[campo]) varrer(o[campo], profundidade + 1);',
-      '\t\t\t\t}',
-      '\t\t\t};',
-      '\t\t\tfor (const parte of data.message?.content?.parts ?? []) {',
-      '\t\t\t\tif (!parte || typeof parte !== "object") continue;',
-      '\t\t\t\tconst p = parte as Record<string, unknown>;',
-      '\t\t\t\tif (typeof p.text === "string") continue;',
-      '\t\t\t\tvarrer(p);',
-      '\t\t\t\t// Formato desconhecido some em silêncio sem isto.',
-      '\t\t\t\tconsole.log(',
-      '\t\t\t\t\t"[viralizeai-imagem] parte nao-texto:",',
-      '\t\t\t\t\tJSON.stringify({ tipo: p.content_type, campos: Object.keys(p) }).slice(0, 300),',
-      '\t\t\t\t);',
-      '\t\t\t}',
-      '\t\t\tvarrer((data.message as Record<string, unknown> | undefined)?.metadata);',
-      '',
-      '\t\t\tconst rawPart = data.message?.content?.parts?.[0];',
-    ].join('\n'),
-  },
-  {
-    file: 'src/providers/chatgpt/stream.ts',
-    marca: 'viralizeai: imagens desta resposta',
-    procurar: '\tlet text = "";',
-    trocar: [
-      '\tlet text = "";',
-      '\t// viralizeai: imagens desta resposta (veja o patch de `parts` abaixo).',
-      '\tconst imagens: string[] = [];',
-    ].join('\n'),
-  },
-  {
-    file: 'src/providers/chatgpt/stream.ts',
-    marca: 'imagens }; // viralizeai',
-    procurar: '\treturn { text: text.trim(), thinkingText: thinkingText.trim() };',
-    trocar:
-      '\treturn { text: text.trim(), thinkingText: thinkingText.trim(), imagens }; // viralizeai: a foto vai junto',
   },
 ];
 

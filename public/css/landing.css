@@ -511,7 +511,8 @@ body.lp-body svg {
 /* ------------------------------------------------------- maquete do app --- */
 .lp-maquete {
   position: relative;
-  padding: 1.1rem 0.75rem;
+  /* Folga em cima e embaixo para os chips flutuantes não caírem sobre o conteúdo. */
+  padding: 2.4rem 0.75rem 1.55rem;
   perspective: 1400px;
 }
 
@@ -738,15 +739,16 @@ body.lp-body svg {
   font-weight: 650;
 }
 
+/* Os chips ficam acima/abaixo da janela, encostando só na borda dela. */
 .lp-flutuante--a {
   left: -0.35rem;
-  bottom: 1.6rem;
+  bottom: 0.15rem;
   animation-delay: -3s;
 }
 
 .lp-flutuante--b {
   right: -0.35rem;
-  top: 1.4rem;
+  top: 0.15rem;
 }
 
 .lp-ponto {
@@ -1355,12 +1357,12 @@ body.lp-body svg {
 
   .lp-flutuante--a {
     left: 0;
-    bottom: 0.4rem;
+    bottom: 0.15rem;
   }
 
   .lp-flutuante--b {
     right: 0;
-    top: 0.2rem;
+    top: 0.15rem;
   }
 }
 

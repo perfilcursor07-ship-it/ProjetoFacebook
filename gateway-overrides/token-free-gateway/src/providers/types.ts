@@ -24,6 +24,11 @@ export interface StreamResult {
 	conversa?: string;
 	/** viralizeai: endereço dessa conversa (https://chatgpt.com/c/<id>). */
 	conversaUrl?: string;
+	/**
+	 * viralizeai: a resposta chamou o gerador de imagem. Quando o stream fecha
+	 * antes de a imagem ficar pronta, o client lê a conversa até ela aparecer.
+	 */
+	aguardandoImagem?: boolean;
 }
 
 export class SessionExpiredError extends Error {

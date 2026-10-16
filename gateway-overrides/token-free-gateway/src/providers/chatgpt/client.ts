@@ -10,7 +10,7 @@ import type { EvalResult } from "../shared/eval-helpers.ts";
 import { textToStream } from "../shared/stream-helpers.ts";
 import type { StreamResult } from "../types.ts";
 import type { ChatGPTWebAuth } from "./auth.ts";
-import { parseChatGPTStream } from "./stream.ts";
+import { coletarImagens, mensagemVisivel, parseChatGPTStream } from "./stream.ts";
 
 /** Até o ChatGPT começar a responder (sentinela + primeiro byte). */
 const SEND_TIMEOUT_MS = 120_000;
@@ -504,14 +504,108 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 			if (atual.parentMessageId) this.parentMessageId = atual.parentMessageId;
 		}
 		const conversa = atual.conversationId ?? fio.conversationId;
+
+		// viralizeai: plano B — a conversa pronta, lida direto do ChatGPT.
+		// Texto que o leitor do stream não entendeu (o ChatGPT muda o formato)
+		// e imagem que ainda estava sendo gerada quando o stream fechou.
+		const semTexto = !resultado.text;
+		const semImagem = !resultado.imagens?.length && Boolean(resultado.aguardandoImagem);
+		if (conversa && (semTexto || semImagem)) {
+			const limite = Date.now() + (semImagem ? 150_000 : 15_000);
+			for (let tentativa = 0; Date.now() < limite; tentativa++) {
+				if (tentativa) await new Promise((r) => setTimeout(r, 5_000));
+				const lida = await this.lerConversa(conversa).catch((err) => {
+					console.warn(`[ChatGPT Web] conversa ${conversa} nao lida: ${err instanceof Error ? err.message : err}`);
+					return null;
+				});
+				if (!lida) continue;
+				if (lida.ultimoId) atual.parentMessageId = lida.ultimoId;
+				if (!resultado.text && lida.texto) {
+					console.log(`[ChatGPT Web] texto recuperado da conversa (${lida.texto.length} chars)`);
+					resultado.text = lida.texto;
+					onDelta?.(lida.texto);
+				}
+				for (const img of lida.imagens) {
+					resultado.imagens = resultado.imagens ?? [];
+					if (!resultado.imagens.includes(img)) resultado.imagens.push(img);
+				}
+				const faltaTexto = !resultado.text;
+				const faltaImagem = semImagem && !resultado.imagens?.length;
+				if (!faltaTexto && !faltaImagem) break;
+				if (faltaImagem) console.log("[ChatGPT Web] imagem ainda sendo gerada; aguardando…");
+			}
+		}
+
+		// Sem conversation_id do cliente: guarda na instância, como antes.
+		if (!fio.externo && atual.parentMessageId) this.parentMessageId = atual.parentMessageId;
 		// viralizeai: ponteiro para a próxima mensagem continuar ESTA conversa.
 		if (conversa && atual.parentMessageId) {
 			resultado.conversa = `chatgpt:${conversa}:${atual.parentMessageId}`;
 			resultado.conversaUrl = `https://chatgpt.com/c/${conversa}`;
 		}
+		console.log(
+			`[ChatGPT Web] resposta: ${resultado.text.length} chars, ${resultado.imagens?.length ?? 0} imagem(ns), conversa ${conversa ?? "-"}`,
+		);
 		// viralizeai: ponteiro interno -> URL baixável.
-		resultado.imagens = await this.resolverImagens(resultado.imagens);
+		resultado.imagens = await this.resolverImagens(resultado.imagens, conversa);
 		return resultado;
+	}
+
+	/**
+	 * viralizeai: a resposta como ficou salva no chatgpt.com — o texto do
+	 * assistente e as imagens desde a última mensagem do usuário (o turno
+	 * atual), e o id da última mensagem para continuar a conversa.
+	 */
+	private async lerConversa(
+		conversationId: string,
+	): Promise<{ texto: string; imagens: string[]; ultimoId?: string }> {
+		const page = await this.getPage();
+		const dados = (await page.evaluate(async (id: string) => {
+			let token: string | undefined;
+			try {
+				const s = await fetch("https://chatgpt.com/api/auth/session", { credentials: "include" });
+				if (s.ok) token = ((await s.json()) as { accessToken?: string }).accessToken;
+			} catch {
+				/* o cookie basta na maioria das vezes */
+			}
+			const r = await fetch(`https://chatgpt.com/backend-api/conversation/${encodeURIComponent(id)}`, {
+				credentials: "include",
+				headers: token ? { Authorization: `Bearer ${token}` } : {},
+			});
+			if (!r.ok) throw new Error(`HTTP ${r.status}`);
+			return r.json();
+		}, conversationId)) as {
+			current_node?: string;
+			mapping?: Record<string, { parent?: string; message?: Record<string, unknown> | null }>;
+		};
+		const mapa = dados.mapping ?? {};
+		const turno: Record<string, unknown>[] = [];
+		let no = dados.current_node;
+		for (let passos = 0; no && passos < 200; passos++) {
+			const msg = mapa[no]?.message;
+			if (msg) {
+				if ((msg.author as { role?: string } | undefined)?.role === "user") break;
+				turno.unshift(msg);
+			}
+			no = mapa[no]?.parent;
+		}
+		const textos: string[] = [];
+		const imagens: string[] = [];
+		for (const msg of turno) {
+			const conteudo = (msg.content ?? {}) as { content_type?: string; parts?: unknown[] };
+			coletarImagens(conteudo.parts, imagens);
+			coletarImagens(msg.metadata, imagens);
+			const visivel = mensagemVisivel({
+				papel: (msg.author as { role?: string } | undefined)?.role,
+				tipo: conteudo.content_type,
+				destino: typeof msg.recipient === "string" ? msg.recipient : undefined,
+			});
+			if (!visivel) continue;
+			const parte = conteudo.parts?.[0];
+			const t = typeof parte === "string" ? parte : "";
+			if (t.trim()) textos.push(t.trim());
+		}
+		return { texto: textos.join("\n\n"), imagens, ultimoId: dados.current_node };
 	}
 
 	/**
@@ -526,7 +620,7 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 	 * Nunca lança: imagem é acessório, e o texto da matéria não pode se
 	 * perder porque um ponteiro não resolveu.
 	 */
-	private async resolverImagens(valores?: string[]): Promise<string[]> {
+	private async resolverImagens(valores?: string[], conversationId?: string): Promise<string[]> {
 		const entrada = (valores ?? []).filter(Boolean);
 		if (!entrada.length) return [];
 		const prontas: string[] = [];
@@ -547,7 +641,7 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 		if (!ids.length) return prontas;
 		try {
 			const page = await this.getPage();
-			const urls = await page.evaluate(async (lista: string[]) => {
+			const urls = await page.evaluate(async ({ lista, conversa }: { lista: string[]; conversa?: string }) => {
 				let token: string | undefined;
 				try {
 					const s = await fetch("https://chatgpt.com/api/auth/session", {
@@ -559,23 +653,33 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 				}
 				const saida: string[] = [];
 				for (const id of lista) {
-					try {
-						const r = await fetch(
-							`https://chatgpt.com/backend-api/files/${encodeURIComponent(id)}/download`,
-							{
+					// `file-service://` usa o primeiro endereço; a imagem gerada nova
+					// (`sediment://file_…`) só sai pelo segundo, com a conversa.
+					const enderecos = [
+						`https://chatgpt.com/backend-api/files/${encodeURIComponent(id)}/download`,
+						`https://chatgpt.com/backend-api/files/download/${encodeURIComponent(id)}?${
+							conversa ? `conversation_id=${encodeURIComponent(conversa)}&` : ""
+						}inline=false`,
+					];
+					for (const endereco of enderecos) {
+						try {
+							const r = await fetch(endereco, {
 								credentials: "include",
 								headers: token ? { Authorization: `Bearer ${token}` } : {},
-							},
-						);
-						if (!r.ok) continue;
-						const d = (await r.json()) as { download_url?: string };
-						if (d.download_url) saida.push(d.download_url);
-					} catch {
-						/* este arquivo não resolveu; os outros seguem */
+							});
+							if (!r.ok) continue;
+							const d = (await r.json()) as { download_url?: string };
+							if (d.download_url) {
+								saida.push(d.download_url);
+								break;
+							}
+						} catch {
+							/* tenta o próximo endereço */
+						}
 					}
 				}
 				return saida;
-			}, ids);
+			}, { lista: ids, conversa: conversationId });
 			for (const u of urls) if (!prontas.includes(u)) prontas.push(u);
 			if (!urls.length) {
 				console.warn(`[viralizeai-imagem] ponteiro nao resolvido: ${ids.join(", ")}`);
