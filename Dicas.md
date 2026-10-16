@@ -13,6 +13,8 @@ git pull --ff-only origin main
 RAPIDO
 su - viralizeai -c 'set -e; export PATH=/home/viralizeai/.nvm/versions/node/v22.23.1/bin:/usr/bin:/bin; cd /home/viralizeai/htdocs/www.viralizeai.online; git checkout -- public/css/app.css; ANTES=$(git rev-parse HEAD); git pull --ff-only origin main; if git diff --name-only "$ANTES" HEAD | grep -q "^package-lock.json$"; then npm ci --omit=dev; fi; npm run migrate; npm run build:css; npm run gateway:sync; pm2 startOrReload ecosystem.config.cjs --only viralizeai --update-env; pm2 save; for i in $(seq 1 15); do curl -fsS http://127.0.0.1:3010/health && break; sleep 2; done; pm2 status viralizeai'
 
+CAMINHO
+cd /home/viralizeai/htdocs/www.viralizeai.online
 
 SUBIR GIT
 git add .
@@ -36,4 +38,3 @@ limpar servidor
 cd /home/viralizeai/htdocs/www.viralizeai.online
 node scripts/fechar-abas-chrome.js --listar
 node scripts/fechar-abas-chrome.js
-node scripts/fechar-abas-chrome.js --todas
