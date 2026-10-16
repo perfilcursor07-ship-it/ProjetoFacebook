@@ -105,8 +105,21 @@ function inicioDeBlocoAberto(texto) {
   return -1;
 }
 
+/**
+ * Legenda de foto que o ChatGPT desenha na tela dele:
+ *   <text color="secondary" size="sm">Foto: … Reprodução: Fuxico Gospel.</text>
+ * Chegava como texto no meio da matéria. Sai inteira (a foto não vem junto).
+ */
+function removerLegendasDoChatgpt(texto) {
+  const valor = String(texto ?? '');
+  if (!/<\/?text\b/i.test(valor)) return valor;
+  return valor
+    .replace(/<text\b[^>]*>[\s\S]*?<\/text>[ \t]*\n?/gi, '')
+    .replace(/<\/?text\b[^>]*>/gi, '');
+}
+
 function limparMarcacaoChatgpt(texto, { corrigirFonte = true } = {}) {
-  const valor = removerBlocosDoClaude(String(texto ?? ''));
+  const valor = removerLegendasDoChatgpt(removerBlocosDoClaude(String(texto ?? '')));
   return valor
     .split('\n')
     .map((linha) => {
@@ -134,6 +147,10 @@ function criarLimpadorDeStream() {
       let fim = aberta >= 0 && bruto.indexOf('', aberta) < 0 ? aberta : bruto.length;
       const blocoAberto = inicioDeBlocoAberto(bruto.slice(0, fim));
       if (blocoAberto >= 0) fim = blocoAberto;
+      // Legenda <text …> ainda sem o </text>: segura até fechar, senão a
+      // legenda aparecia na tela enquanto o ChatGPT escrevia.
+      const legenda = bruto.lastIndexOf('<text');
+      if (legenda >= 0 && legenda < fim && bruto.indexOf('</text>', legenda) < 0) fim = legenda;
       // Sem a correção da Fonte: ela reescreve texto já entregue. O texto
       // final devolvido pelo gateway passa pela limpeza completa.
       const limpo = limparMarcacaoChatgpt(bruto.slice(0, fim), { corrigirFonte: false });
