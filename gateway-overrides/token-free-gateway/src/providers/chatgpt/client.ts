@@ -31,7 +31,22 @@ const POLL_MS = 120;
  */
 const PONTEIRO_CONVERSA = /^chatgpt:([0-9a-z-]{8,80}):([0-9a-z-]{8,80})/i;
 
-type Fio = { conversationId?: string; parentMessageId?: string; externo: boolean; chave?: string };
+type Fio = {
+	conversationId?: string;
+	parentMessageId?: string;
+	externo: boolean;
+	chave?: string;
+	/** O pedido fala em imagem/foto: vale raspar a tela se nada vier pelos dados. */
+	pediuImagem?: boolean;
+};
+
+const PEDE_IMAGEM = /\b(imagem|imagens|foto|fotos|capa|ilustra[çc][ãa]o|image|photo)\b/i;
+
+/**
+ * Sinais, na conversa salva, de que a resposta MOSTROU imagem na tela
+ * (galeria de busca, citação de imagem, imagem gerada).
+ */
+const SINAL_DE_IMAGEM = /image_group|image_v2|image_results|image_asset_pointer|turn\d+image\d+|"image_query"/i;
 
 /**
  * viralizeai: conversa do ChatGPT de cada conversa do "ChatGPT livre"
@@ -125,6 +140,10 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 	 * - sem `conversation_id` → comportamento original do gateway.
 	 */
 	private fioDaMensagem(params: NormalizedSendParams): Fio {
+		return { ...this.fioDaConversa(params), pediuImagem: PEDE_IMAGEM.test(String(params.message || "")) };
+	}
+
+	private fioDaConversa(params: NormalizedSendParams): Fio {
 		const externo = String(params.conversationId || "").trim();
 		if (!externo) {
 			return {
@@ -524,6 +543,7 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 		// e imagem que ainda estava sendo gerada quando o stream fechou.
 		const semTexto = !resultado.text;
 		const semImagem = !resultado.imagens?.length && Boolean(resultado.aguardandoImagem);
+		let sinalDeImagem = false;
 		if (conversa && (semTexto || semImagem)) {
 			const limite = Date.now() + (semImagem ? 150_000 : 15_000);
 			for (let tentativa = 0; Date.now() < limite; tentativa++) {
@@ -534,6 +554,7 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 				});
 				if (!lida) continue;
 				if (lida.ultimoId) atual.parentMessageId = lida.ultimoId;
+				sinalDeImagem = sinalDeImagem || lida.sinalDeImagem;
 				if (!resultado.text && lida.texto) {
 					console.log(`[ChatGPT Web] texto recuperado da conversa (${lida.texto.length} chars)`);
 					resultado.text = lida.texto;
@@ -547,6 +568,31 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 				const faltaImagem = semImagem && !resultado.imagens?.length;
 				if (!faltaTexto && !faltaImagem) break;
 				if (faltaImagem) console.log("[ChatGPT Web] imagem ainda sendo gerada; aguardando…");
+			}
+		}
+
+		// viralizeai: plano C — a imagem que aparece NA TELA da conversa.
+		//
+		// A foto que o ChatGPT acha pesquisando na web e mostra na resposta não
+		// vem no stream (o log dizia "0 imagem(ns)" com a foto ali na conversa),
+		// e o ViralizeAI saía procurando outra. Quando o pedido falou em imagem
+		// e nada veio pelos dados, abre a conversa e pega as imagens grandes da
+		// última resposta, como alguém olhando a tela.
+		if (conversa && !resultado.imagens?.length) {
+			if (!sinalDeImagem && !fio.pediuImagem) {
+				const lida = await this.lerConversa(conversa).catch(() => null);
+				if (lida?.imagens.length) resultado.imagens = lida.imagens;
+				sinalDeImagem = Boolean(lida?.sinalDeImagem);
+			}
+			if (!resultado.imagens?.length && (fio.pediuImagem || sinalDeImagem)) {
+				const daTela = await this.imagensDaTela(conversa).catch((err) => {
+					console.warn(`[viralizeai-imagem] tela da conversa não lida: ${err instanceof Error ? err.message : err}`);
+					return [] as string[];
+				});
+				if (daTela.length) {
+					console.log(`[viralizeai-imagem] ${daTela.length} imagem(ns) raspada(s) da tela da conversa`);
+					resultado.imagens = daTela;
+				}
 			}
 		}
 
@@ -576,7 +622,7 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 	 */
 	private async lerConversa(
 		conversationId: string,
-	): Promise<{ texto: string; imagens: string[]; ultimoId?: string }> {
+	): Promise<{ texto: string; imagens: string[]; ultimoId?: string; sinalDeImagem: boolean }> {
 		const page = await this.getPage();
 		const dados = (await page.evaluate(async (id: string) => {
 			let token: string | undefined;
@@ -623,7 +669,117 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 			const t = typeof parte === "string" ? parte : "";
 			if (t.trim()) textos.push(t.trim());
 		}
-		return { texto: textos.join("\n\n"), imagens, ultimoId: dados.current_node };
+		return {
+			texto: textos.join("\n\n"),
+			imagens,
+			ultimoId: dados.current_node,
+			sinalDeImagem: SINAL_DE_IMAGEM.test(JSON.stringify(turno)),
+		};
+	}
+
+	/**
+	 * viralizeai: imagens da ÚLTIMA resposta, lidas da tela da conversa.
+	 *
+	 * Abre `chatgpt.com/c/<id>` numa aba própria (a do gateway segue livre),
+	 * marca as imagens grandes do último turno do assistente — ícone de site,
+	 * avatar e favicon ficam de fora pelo tamanho — e baixa cada uma dentro da
+	 * sessão logada. Site que não deixa baixar (CORS) vira print só da imagem.
+	 * Sai como `data:` com a origem (`web` ou `chatgpt`), para o crédito.
+	 */
+	private async imagensDaTela(conversationId: string): Promise<string[]> {
+		const ctx = await BrowserManager.getInstance().getContext();
+		const aba = await ctx.newPage();
+		try {
+			// Sem tamanho de tela o ChatGPT pode não desenhar a lista de
+			// mensagens numa aba de fundo (o antigo leitor via DOM via 0 turnos).
+			await aba.setViewportSize({ width: 1366, height: 1000 }).catch(() => {});
+			await aba.goto(`https://chatgpt.com/c/${encodeURIComponent(conversationId)}`, {
+				waitUntil: "domcontentloaded",
+				timeout: 45_000,
+			});
+			await aba
+				.waitForSelector('[data-message-author-role="assistant"], [data-turn="assistant"]', { timeout: 30_000 })
+				.catch(() => {});
+			// Leva o último turno para a tela: imagem com loading=lazy só carrega visível.
+			await aba
+				.evaluate(() => {
+					const turnos = Array.from(document.querySelectorAll('article, [data-testid^="conversation-turn"]'));
+					turnos[turnos.length - 1]?.scrollIntoView({ block: "start" });
+				})
+				.catch(() => {});
+			await aba.waitForTimeout(3_500);
+
+			const { candidatas, diagnostico } = await aba.evaluate(() => {
+				const doAssistente = (el: Element) =>
+					el.matches('[data-turn="assistant"]') ||
+					Boolean(el.querySelector('[data-message-author-role="assistant"]'));
+				const turnos = Array.from(document.querySelectorAll('article, [data-testid^="conversation-turn"]'));
+				const ultimo = [...turnos].reverse().find(doAssistente);
+				// Turnos não achados (o ChatGPT mudou o DOM): as últimas imagens
+				// grandes da página são as da resposta mais recente.
+				const imgs = ultimo
+					? Array.from(ultimo.querySelectorAll("img"))
+					: Array.from((document.querySelector("main") || document.body).querySelectorAll("img"));
+				const grandes = imgs
+					.map((img, i) => {
+						img.setAttribute("data-viralizeai-img", String(i));
+						const caixa = img.getBoundingClientRect();
+						return {
+							i,
+							src: img.currentSrc || img.src || "",
+							largura: img.naturalWidth || 0,
+							altura: img.naturalHeight || 0,
+							naTela: caixa.width,
+						};
+					})
+					.filter((c) => c.src && c.largura >= 300 && c.altura >= 200 && c.naTela >= 120);
+				return {
+					candidatas: (ultimo ? grandes : grandes.slice(-3))
+						.sort((a, b) => b.largura * b.altura - a.largura * a.altura)
+						.slice(0, 3),
+					diagnostico: { turnos: turnos.length, achouTurno: Boolean(ultimo), imagens: imgs.length, grandes: grandes.length },
+				};
+			});
+			if (!candidatas.length) {
+				console.log(`[viralizeai-imagem] nenhuma imagem grande na tela da conversa: ${JSON.stringify(diagnostico)}`);
+			}
+
+			const saida: string[] = [];
+			for (const c of candidatas) {
+				const origem = /^(blob:|data:)|chatgpt\.com|oaiusercontent\.com/i.test(c.src) ? "chatgpt" : "web";
+				const baixada = await aba
+					.evaluate(async (src: string) => {
+						try {
+							const r = await fetch(src, { credentials: "include" });
+							const blob = r.ok ? await r.blob() : null;
+							if (!blob || !blob.type.startsWith("image/") || blob.size < 5_000 || blob.size > 15 * 1024 * 1024) {
+								return null;
+							}
+							return await new Promise<string>((resolve, reject) => {
+								const leitor = new FileReader();
+								leitor.onload = () => resolve(String(leitor.result));
+								leitor.onerror = () => reject(leitor.error);
+								leitor.readAsDataURL(blob);
+							});
+						} catch {
+							return null; // CORS: cai no print abaixo
+						}
+					}, c.src)
+					.catch(() => null);
+				let dado = baixada;
+				if (!dado) {
+					const print = await aba
+						.locator(`img[data-viralizeai-img="${c.i}"]`)
+						.screenshot({ type: "jpeg", quality: 92, timeout: 15_000 })
+						.catch(() => null);
+					if (print && print.length > 5_000) dado = `data:image/jpeg;base64,${print.toString("base64")}`;
+				}
+				if (dado) saida.push(dado.replace(/^data:(image\/[a-z0-9.+-]+)(;[^,]*)?;base64,/i, `data:$1;origem=${origem};base64,`));
+			}
+			return saida;
+		} finally {
+			await aba.close().catch(() => {});
+		}
 	}
 
 	/**
@@ -709,7 +865,8 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 		const prontas: string[] = [];
 		const ponteiros: string[] = [];
 		for (const v of entrada) {
-			if (v.startsWith("http://") || v.startsWith("https://")) prontas.push(v);
+			// `data:` já é a imagem baixada (raspada da tela).
+			if (v.startsWith("http://") || v.startsWith("https://") || v.startsWith("data:")) prontas.push(v);
 			else ponteiros.push(v);
 		}
 		if (!ponteiros.length) return prontas;

@@ -93,7 +93,10 @@ test('a imagem da conversa é a PRIMEIRA opção de capa', () => {
   // "Imagem destacada" — não uma do link citado nem uma gerada aqui.
   assert.match(CHAT, /async function capaGeradaNaConversa\(/);
   assert.match(CHAT, /aoReceberImagens: \(urls\) => \{/);
-  const daConversa = CHAT.indexOf('const doChat = await capaGeradaNaConversa(');
+  const daConversa = CHAT.indexOf('capaDaConversa = await capaGeradaNaConversa(');
+  // E antes até da foto do site citado na resposta (fonteCapa).
+  assert.ok(daConversa > 0 && daConversa < CHAT.indexOf('const fonteCapa = fontesFinais.find('),
+    'a imagem da conversa vem antes da foto da fonte');
   const doLink = CHAT.indexOf('const linkCitado = primeiroLinkDeFonte(');
   const gerada = CHAT.indexOf('const gerada = await capaDaConversaLivre(');
   assert.ok(daConversa > 0 && doLink > 0 && gerada > 0, 'algum caminho de capa desapareceu');

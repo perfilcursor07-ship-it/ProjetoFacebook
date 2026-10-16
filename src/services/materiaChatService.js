@@ -157,14 +157,15 @@ async function capaDaConversaLivre({ userId, chatId, titulo, registrarPasso = ()
 /** Imagem que o ChatGPT GEROU (arquivo dele), e não foto achada na web. */
 function imagemGeradaPeloChatgpt(url) {
   // `data:` vem do gateway, que baixou o arquivo dentro da conta do ChatGPT.
-  if (/^data:image\//i.test(String(url || ''))) return true;
+  // Raspada da tela da conversa, ela traz a origem: foto da web não é IA.
+  if (/^data:image\//i.test(String(url || ''))) return !/;origem=web[;,]/i.test(String(url));
   return /oaiusercontent\.com|chatgpt\.com\/backend-api|openai\.com|\/files\/file[-_]|estuary/i.test(String(url || ''));
 }
 
 async function capaGeradaNaConversa({ userId, chatId, urls, registrarPasso = () => {}, aoSalvar = () => {} }) {
   const lista = (Array.isArray(urls) ? urls : [])
     .map((u) => String(u || '').trim())
-    .filter((u) => /^https?:\/\//i.test(u) || /^data:image\/[a-z0-9.+-]+;base64,/i.test(u));
+    .filter((u) => /^https?:\/\//i.test(u) || /^data:image\/[a-z0-9.+-]+(;[^;,]+)*;base64,/i.test(u));
   if (!lista.length) return null;
   const axios = require('axios');
   for (const url of lista) {
@@ -3344,8 +3345,24 @@ async function responder({
           : 'Não encontrei links correspondentes; mantive os nomes das fontes sem apontar páginas erradas.',
       });
     }
+    // "ChatGPT livre": a imagem que o ChatGPT MOSTROU na conversa é a capa —
+    // é ela que o editor pediu e viu. Vem antes de qualquer outra: antes ela
+    // só valia se nenhuma fonte tivesse foto, e a foto do site citado (buscada
+    // logo abaixo) ganhava sempre.
+    let capaDaConversa = null;
+    if (chat.modo === 'chatgpt' && imagensDaConversa.length) {
+      capaDaConversa = await capaGeradaNaConversa({
+        userId,
+        chatId: chat.id,
+        urls: imagensDaConversa,
+        registrarPasso,
+        // Aparece na conversa assim que é salva, como no próprio ChatGPT.
+        aoSalvar: (imagem) => onEvent({ tipo: 'imagem', ...imagem }),
+      });
+      if (capaDaConversa) fontesFinais.push(capaDaConversa);
+    }
     const fonteCapa = fontesFinais.find((f) => /^https?:\/\//i.test(String(f.url || '')));
-    if (fonteCapa && !fonteCapa.imagem && !classificarUrlFonte(fonteCapa.url)) {
+    if (!capaDaConversa && fonteCapa && !fonteCapa.imagem && !classificarUrlFonte(fonteCapa.url)) {
       try {
         const meta = await require('./articleSource').extrairMetadadosImagemArtigo(fonteCapa.url);
         if (meta?.imagem) fonteCapa.imagem = meta.imagem;
@@ -3359,19 +3376,7 @@ async function responder({
     // Como aqui não houve pesquisa nossa, a única pista é o link que a IA
     // citou na linha "Fonte:". A foto real da reportagem é sempre melhor que
     // uma ilustração, então ela vem primeiro; gerar é o último recurso.
-    // Antes de procurar foto no link citado ou gerar uma nova: se o ChatGPT
-    // mandou imagem na própria resposta, é ela que o editor está esperando.
-    if (chat.modo === 'chatgpt' && imagensDaConversa.length && !fontesFinais.some((f) => f?.imagem)) {
-      const doChat = await capaGeradaNaConversa({
-        userId,
-        chatId: chat.id,
-        urls: imagensDaConversa,
-        registrarPasso,
-        // Aparece na conversa assim que é salva, como no próprio ChatGPT.
-        aoSalvar: (imagem) => onEvent({ tipo: 'imagem', ...imagem }),
-      });
-      if (doChat) fontesFinais.push(doChat);
-    }
+    // (A imagem que o ChatGPT mandou na própria resposta já foi usada acima.)
     if (chat.modo === 'chatgpt' && !fontesFinais.some((f) => f?.imagem)) {
       const linkCitado = primeiroLinkDeFonte(respostaLivreFinal);
       if (linkCitado) {
@@ -5739,6 +5744,8 @@ async function editarConteudoDaMensagem({ userId, messageId, conteudo } = {}) {
 module.exports = {
   limparCorpoDoRascunho,
   capaEscolhidaValida,
+  // Exposto para teste: a imagem que veio da conversa do ChatGPT vira capa.
+  capaGeradaNaConversa,
   limparArtefatosDeTextoLivre,
   primeiroLinkDeFonte,
   respostaAdmitePeriodoNaoAtendido,

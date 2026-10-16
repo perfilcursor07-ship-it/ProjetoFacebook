@@ -174,3 +174,45 @@ test("stream sem texto reconhecível: o texto e a imagem vêm da conversa salva"
 	assert.equal(r.conversa, `chatgpt:${conversa}:a-2`);
 	assert.equal(lidas.length, 1);
 });
+
+test("pediu imagem e ela só existe na tela: raspa da conversa e entrega com a origem", { skip: pular }, async () => {
+	const conversa = "6710a1b2-0000-4000-8000-00000000c0de";
+	const { page } = paginaFalsa([resposta("Matéria pronta.", "aaaa1111-0000-4000-8000-000000000009")], { pausaMs: 1 });
+	const g = globalThis as Record<string, unknown>;
+	const anterior = g.fetch as (u: string, i?: RequestInit) => Promise<Response>;
+	// A conversa salva não traz a foto (é o caso real: "0 imagem(ns)").
+	g.fetch = async (url: string, init?: RequestInit) =>
+		String(url).includes(`/backend-api/conversation/${conversa}`)
+			? new Response(JSON.stringify({ current_node: "a", mapping: {} }), { status: 200 })
+			: anterior(url, init);
+	const c = cliente(page);
+	const raspadas: string[] = [];
+	(c as unknown as { imagensDaTela: (id: string) => Promise<string[]> }).imagensDaTela = async (id) => {
+		raspadas.push(id);
+		return ["data:image/jpeg;origem=web;base64,AAAA"];
+	};
+	const r = await c.parseStream(
+		await c.sendMessage({ message: "faça a matéria e pegue uma imagem para ela", conversationId: "viralizeai:chatgpt:chat:20" }),
+	);
+	assert.deepEqual(raspadas, [conversa]);
+	assert.deepEqual(r.imagens, ["data:image/jpeg;origem=web;base64,AAAA"], "a imagem raspada não se perde no caminho");
+});
+
+test("sem pedir imagem e sem sinal dela na conversa: não abre a tela", { skip: pular }, async () => {
+	const conversa = "6710a1b2-0000-4000-8000-00000000c0de";
+	const { page } = paginaFalsa([resposta("Matéria pronta.", "aaaa1111-0000-4000-8000-000000000009")], { pausaMs: 1 });
+	const g = globalThis as Record<string, unknown>;
+	const anterior = g.fetch as (u: string, i?: RequestInit) => Promise<Response>;
+	g.fetch = async (url: string, init?: RequestInit) =>
+		String(url).includes(`/backend-api/conversation/${conversa}`)
+			? new Response(JSON.stringify({ current_node: "a", mapping: {} }), { status: 200 })
+			: anterior(url, init);
+	const c = cliente(page);
+	let abriu = false;
+	(c as unknown as { imagensDaTela: () => Promise<string[]> }).imagensDaTela = async () => {
+		abriu = true;
+		return [];
+	};
+	await c.parseStream(await c.sendMessage({ message: "faça uma matéria sobre o culto", conversationId: "viralizeai:chatgpt:chat:21" }));
+	assert.equal(abriu, false);
+});
