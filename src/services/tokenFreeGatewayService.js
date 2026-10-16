@@ -280,6 +280,43 @@ function entregarConversa(callback, evento) {
   }
 }
 
+/**
+ * Buscas de imagem que o ChatGPT embute na resposta.
+ *
+ * Ele não manda a foto: escreve uma marca invisível
+ * `\ue200image_group\ue202{"layout":"carousel","query":["…"]}\ue201` e a
+ * tela dele é que busca as fotos com essa consulta. A marca é apagada do
+ * texto (chatgptMarkup); antes disso, a consulta é aproveitada para o
+ * ViralizeAI buscar as mesmas fotos reais.
+ */
+function buscasDeImagemNoTexto(texto) {
+  const buscas = [];
+  for (const marca of String(texto || '').matchAll(/\ue200image_group\ue202([^\ue201]*)\ue201/g)) {
+    try {
+      const dados = JSON.parse(marca[1]);
+      const consultas = Array.isArray(dados?.query) ? dados.query : [dados?.query];
+      for (const c of consultas) {
+        const q = String(c || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+        if (q.length >= 3 && !buscas.includes(q)) buscas.push(q);
+      }
+    } catch {
+      // marca truncada: segue
+    }
+  }
+  return buscas;
+}
+
+function entregarBuscasDeImagem(callback, textoBruto) {
+  if (typeof callback !== 'function') return;
+  const buscas = buscasDeImagemNoTexto(textoBruto);
+  if (!buscas.length) return;
+  try {
+    callback(buscas);
+  } catch (err) {
+    console.warn('[token-free] buscas de imagem ignoradas:', err.message);
+  }
+}
+
 async function chatCompletion(
   messages,
   {
@@ -296,6 +333,7 @@ async function chatCompletion(
     // chamadores esperam.
     aoReceberImagens = null,
     aoReceberConversa = null,
+    aoReceberBuscasDeImagem = null,
   } = {}
 ) {
   assertConfigured(tarefa);
@@ -317,6 +355,7 @@ async function chatCompletion(
       }),
       { headers: headers(false), timeout }
     );
+    entregarBuscasDeImagem(aoReceberBuscasDeImagem, data?.choices?.[0]?.message?.content);
     const texto = limparMarcacaoChatgpt(data?.choices?.[0]?.message?.content || '').trim();
     entregarImagens(aoReceberImagens, data?.imagens);
     entregarConversa(aoReceberConversa, data);
@@ -378,6 +417,7 @@ async function chatCompletionStream(
     webSearch = false,
     aoReceberImagens = null,
     aoReceberConversa = null,
+    aoReceberBuscasDeImagem = null,
   } = {}
 ) {
   assertConfigured(tarefa);
@@ -453,6 +493,7 @@ async function chatCompletionStream(
 
     if (!full.trim()) throw new Error('stream vazio');
     logar(inicio, `${tarefa}/stream`);
+    entregarBuscasDeImagem(aoReceberBuscasDeImagem, full);
     return limparMarcacaoChatgpt(full).trim();
   } catch (err) {
     if (full.trim()) throw normalizarErro(err);
@@ -488,6 +529,7 @@ async function chatCompletionStream(
       webSearch,
       aoReceberImagens,
       aoReceberConversa,
+      aoReceberBuscasDeImagem,
     });
     if (typeof onDelta === 'function') onDelta(texto);
     return texto;
@@ -543,6 +585,7 @@ module.exports = {
   chatCompletion: contandoPedido(chatCompletion),
   chatCompletionStream: contandoPedido(chatCompletionStream),
   pedidosEmAndamento,
+  buscasDeImagemNoTexto,
   verificarSaude,
   listarModelos,
   bodyDaChamada,

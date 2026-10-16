@@ -3219,6 +3219,9 @@ async function responder({
     // A foto que o ChatGPT mostra na conversa chega junto da resposta, pelo
     // gateway. Ela é recolhida aqui e virará a "Imagem destacada" mais abaixo.
     const imagensDaConversa = [];
+    // Consultas da galeria de fotos que o ChatGPT mostrou (ele manda a busca,
+    // não a foto) — usadas abaixo para buscar as mesmas fotos reais.
+    const buscasDeImagem = [];
     const fioAnterior = escreveNoChatgpt
       ? [...anteriores]
         .reverse()
@@ -3268,6 +3271,11 @@ async function responder({
           if (!imagensDaConversa.includes(url)) imagensDaConversa.push(url);
         }
       },
+      aoReceberBuscasDeImagem: escreveNoChatgpt
+        ? (buscas) => {
+          for (const b of buscas) if (!buscasDeImagem.includes(b)) buscasDeImagem.push(b);
+        }
+        : null,
       aoReceberConversa: escreveNoChatgpt
         ? (conversa) => {
           conversaChatgpt = conversa;
@@ -3396,6 +3404,26 @@ async function responder({
           kind: 'aviso',
           texto: 'O ChatGPT gerou uma imagem com IA — descartei, como você pediu (só foto real).',
         });
+      }
+    }
+    // A galeria de fotos que o ChatGPT mostrou vem como BUSCA, não como foto
+    // (a tela dele busca as imagens com a consulta). Sem foto pelos dados, a
+    // mesma consulta vai ao buscador de imagens do ViralizeAI: são as fotos
+    // reais que o editor viu, não uma pesquisa nossa com outro critério.
+    if (chat.modo === 'chatgpt' && !imagensDaConversa.length && buscasDeImagem.length) {
+      registrarPasso({ kind: 'pesquisa', texto: `Buscando a foto que o ChatGPT mostrou: “${buscasDeImagem[0]}”…` });
+      try {
+        const { buscarImagensPorPalavra } = require('./imageSuggestService');
+        for (const consulta of buscasDeImagem.slice(0, 2)) {
+          const achadas = await buscarImagensPorPalavra(consulta, { limite: 6 });
+          for (const img of (achadas?.imagens || achadas || [])) {
+            const url = String(img?.url || '').trim();
+            if (/^https?:\/\//i.test(url) && !imagensDaConversa.includes(url)) imagensDaConversa.push(url);
+          }
+          if (imagensDaConversa.length) break;
+        }
+      } catch (err) {
+        console.warn('[materia-chat] busca da foto do ChatGPT:', err.message);
       }
     }
     if (chat.modo === 'chatgpt' && imagensDaConversa.length) {

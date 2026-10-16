@@ -62,6 +62,9 @@ const SINAL_DE_IMAGEM = /image_group|image_v2|image_results|image_asset_pointer|
  */
 export function assinaturaDaResposta(texto: string): string {
 	const primeira = String(texto || "")
+		// Marcas invisíveis do ChatGPT (galeria de imagens, citações) não são
+		// texto da tela: a galeria virava a "assinatura" e nada era achado.
+		.replace(/\ue200[^\ue201]*\ue201/g, " ")
 		.split("\n")
 		.map((l) => l.replace(/[#*_>`\[\]]/g, "").trim())
 		.find((l) => l.length >= 12) || "";
@@ -609,7 +612,11 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 				if (lida?.imagens.length) resultado.imagens = lida.imagens;
 				sinalDeImagem = Boolean(lida?.sinalDeImagem);
 			}
-			if (!resultado.imagens?.length && (fio.pediuImagem || sinalDeImagem)) {
+			// Galeria de fotos do ChatGPT: ele manda só a BUSCA (marca image_group
+			// no texto) e o ViralizeAI busca as fotos com ela. Ler a tela aqui só
+			// atrasaria a resposta.
+			const galeriaPorBusca = /\ue200image_group\ue202/.test(resultado.text);
+			if (!resultado.imagens?.length && !galeriaPorBusca && (fio.pediuImagem || sinalDeImagem)) {
 				const daTela = await this.imagensDaTela(conversa, assinaturaDaResposta(resultado.text)).catch((err) => {
 					console.warn(`[viralizeai-imagem] tela da conversa não lida: ${err instanceof Error ? err.message : err}`);
 					return [] as string[];
@@ -760,9 +767,16 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 					const doAssistente = (el: Element) =>
 						el.matches('[data-turn="assistant"]') ||
 						Boolean(el.querySelector('[data-message-author-role="assistant"]'));
-					const turnos = Array.from(document.querySelectorAll('article, [data-testid^="conversation-turn"]'))
+					let turnos = Array.from(document.querySelectorAll('article, [data-testid^="conversation-turn"]'))
 						.filter(doAssistente)
 						.reverse();
+					// Sem <article>/conversation-turn (o ChatGPT muda o DOM): a própria
+					// mensagem do assistente, subindo dois níveis para pegar a galeria.
+					if (!turnos.length) {
+						turnos = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'))
+							.map((m) => m.parentElement?.parentElement || m)
+							.reverse();
+					}
 					const procurado = normalizar(alvo);
 					const achado = procurado
 						? turnos.find((t) => normalizar((t as HTMLElement).innerText || "").includes(procurado))

@@ -262,3 +262,20 @@ test("acha o turno desta resposta pelo começo do texto (não o de uma matéria 
 	assert.equal(assinaturaDaResposta("Claro!\n\n# MC Guimê e esposa descem às águas"), "mc guime e esposa descem as aguas");
 	assert.equal(assinaturaDaResposta(""), "");
 });
+
+test("galeria de fotos do ChatGPT (só a busca): não abre a tela e a assinatura ignora a marca", { skip: pular }, async () => {
+	const { assinaturaDaResposta } = await import(INSTALADO.href);
+	const marca = `${String.fromCharCode(0xe200)}image_group${String.fromCharCode(0xe202)}{"layout":"carousel","aspect_ratio":"4:5","query":["Fellowship Church Ed Young"]}${String.fromCharCode(0xe201)}`;
+	assert.equal(assinaturaDaResposta(`${marca}\n**Pastor Ed Young surpreende igreja com anúncio**`), "pastor ed young surpreende igreja com anuncio");
+
+	const { page } = paginaFalsa([resposta(`${marca}\nPastor Ed Young surpreende igreja com anúncio`, "aaaa1111-0000-4000-8000-000000000009")], { pausaMs: 1 });
+	const c = cliente(page);
+	let abriu = false;
+	(c as unknown as { imagensDaTela: () => Promise<string[]> }).imagensDaTela = async () => {
+		abriu = true;
+		return [];
+	};
+	const r = await c.parseStream(await c.sendMessage({ message: "outra com imagem", conversationId: "viralizeai:chatgpt:chat:30" }));
+	assert.equal(abriu, false, "quem busca as fotos da galeria é o ViralizeAI");
+	assert.ok(r.text.includes("image_group"), "a marca segue no texto para o ViralizeAI ler a busca");
+});
