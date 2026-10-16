@@ -4,6 +4,7 @@ const AiChatMessages = require('../models/AiChatMessages');
 const AiMatters = require('../models/AiMatters');
 const db = require('../config/db');
 const facebookPageMatterService = require('./facebookPageMatterService');
+const { CRITERIO_EDITORIAL_GOSPEL } = require('./criterioEditorialGospel');
 
 const PERIODOS = ['24h', '3d', '7d', '15d', '30d', '60d', '90d', '180d'];
 // Um pedido de tema (sem link) precisa de contexto suficiente para virar matéria
@@ -3074,7 +3075,11 @@ async function responder({
       pedido: pedidoParaClaudeLivre,
       historico: historicoLivre,
       fontesWeb,
-      memoriaEditorial: memoriaEditorialLivre,
+      // A pauta da casa entra ANTES do que o editor já gravou: o que ele
+      // ensinou ao sistema é mais específico e precisa poder sobrepor.
+      memoriaEditorial: iaPesquisaSozinha
+        ? [CRITERIO_EDITORIAL_GOSPEL, memoriaEditorialLivre].filter(Boolean).join('\n\n')
+        : memoriaEditorialLivre,
       memoriaAcabouDeGravar: Boolean(memoriaLivreGravada?.registered),
       // Quando uma preferência acabou de ser gravada, espera a resposta
       // completa para impedir que uma eventual negativa incorreta apareça no
