@@ -518,9 +518,31 @@ async function listarModelos({ timeout = 8_000 } = {}) {
   }
 }
 
+/**
+ * Pedidos ao gateway em andamento agora. O vigia (tokenFreeAdminService) só
+ * reinicia o gateway com zero: reiniciar no meio derrubava a resposta com
+ * "Target page, context or browser has been closed".
+ */
+let pedidosAtivos = 0;
+function contandoPedido(fn) {
+  return async (...args) => {
+    pedidosAtivos += 1;
+    try {
+      return await fn(...args);
+    } finally {
+      pedidosAtivos -= 1;
+    }
+  };
+}
+
+function pedidosEmAndamento() {
+  return pedidosAtivos;
+}
+
 module.exports = {
-  chatCompletion,
-  chatCompletionStream,
+  chatCompletion: contandoPedido(chatCompletion),
+  chatCompletionStream: contandoPedido(chatCompletionStream),
+  pedidosEmAndamento,
   verificarSaude,
   listarModelos,
   bodyDaChamada,

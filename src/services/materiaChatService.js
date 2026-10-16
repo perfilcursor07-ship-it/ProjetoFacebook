@@ -2265,12 +2265,18 @@ function extrairFontesDeclaradasRespostaLivre(conteudo) {
       /\s*[—–-]\s*(?:\[[^\]]*\]\(https?:\/\/[^)]+\)|https?:\/\/\S+).*$/i,
       ''
     )
+    // "Fonte: R7 https://noticias.r7.com/…" (sem travessão, como o ChatGPT
+    // escreve): o link era partido nas barras e cada pedaço virava um
+    // "veículo" sem link — e o sistema saía pesquisando a reportagem.
+    .replace(/\[([^\]]*)\]\(https?:\/\/[^)]+\)/gi, '$1')
+    // O link vira separador: "UOL https://…; Metrópoles https://…" são dois.
+    .replace(/https?:\/\/[^\s;]+/gi, ' ; ')
     .replace(/\s+e\s+(?=[^,;/]+$)/i, ', ')
     .trim();
   const vistos = new Set();
   return valor
     .split(/\s*[,;/]\s*/)
-    .map((nome) => nome.replace(/\s*[—–-]\s*https?:\/\/\S+.*$/i, '').trim())
+    .map((nome) => nome.replace(/\s*[—–-]\s*https?:\/\/\S+.*$/i, '').replace(/^e\s+/i, '').trim())
     .filter((nome) => nome.length >= 2 && nome.length <= 100)
     .filter((nome) => {
       const chave = normalizarNomeFonteLivre(nome);
@@ -2366,11 +2372,29 @@ function relevanciaFonteNaRespostaLivre(fonte, conteudo) {
  * Fontes do rascunho livre seguem o que o Claude efetivamente citou, não a
  * lista bruta de resultados que foi oferecida antes da resposta.
  */
+/** Links escritos na própria linha "Fonte:" da resposta. */
+function linksDaLinhaDeFonte(conteudo) {
+  const texto = String(conteudo || '').replace(/\r\n/g, '\n');
+  const linha = texto.match(/^\s*\*{0,2}Fonte(?:s)?\s*:\*{0,2}\s*(.+?)\s*$/im)?.[1] || '';
+  return [...linha.matchAll(/https?:\/\/[^\s<>"')\]]+/gi)]
+    .map((m) => m[0].replace(/[.,;:!?]+$/, ''))
+    .filter((url) => {
+      try {
+        return !HOST_QUE_NAO_E_FONTE.test(new URL(url).hostname);
+      } catch {
+        return false;
+      }
+    });
+}
+
 function selecionarFontesRespostaLivre(
   conteudo,
   { fontesClaude = [], fontesWeb = [], fontesSalvas = [] } = {}
 ) {
   const declaradas = extrairFontesDeclaradasRespostaLivre(conteudo);
+  // O link que a própria IA escreveu na linha Fonte é a reportagem certa:
+  // não há o que "localizar" quando ele já está ali.
+  const linksDeclarados = linksDaLinhaDeFonte(conteudo);
   const candidatos = [
     ...(fontesClaude || []).map((fonte) => ({ ...fonte, _origemClaude: true })),
     ...(fontesSalvas || []),
@@ -2399,8 +2423,11 @@ function selecionarFontesRespostaLivre(
             (item.relevancia >= 2 || item.fonte.fonteColada || item.fonte.ehRedeSocial)
         )
         .sort((a, b) => b.pontos - a.pontos);
+      const declarado =
+        linksDeclarados.find((link) => fonteCombinaComNomeLivre({ url: link }, nome) > 0) ||
+        (declaradas.length === 1 && linksDeclarados.length === 1 ? linksDeclarados[0] : null);
       const encontrada = correspondentes[0]?.fonte || {};
-      const url = String(encontrada.url || encontrada.urlOriginal || '').trim();
+      const url = String(declarado || encontrada.url || encontrada.urlOriginal || '').trim();
       return {
         ...encontrada,
         veiculo: nome,

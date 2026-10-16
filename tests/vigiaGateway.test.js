@@ -102,3 +102,32 @@ test('depois do deploy: percebe que o gateway rodando é mais velho que o códig
   assert.equal(admin.gatewayDesatualizado(opcoes), false);
   fs.rmSync(raiz, { recursive: true, force: true });
 });
+
+test('código novo do gateway: só reinicia quando não há resposta em andamento', async () => {
+  const chamadas = cenario({ gatewayOk: () => true, chromeOk: () => true });
+  const desatualizado = () => true;
+  const original = gateway.pedidosEmAndamento;
+  try {
+    // Uma resposta rodando: era aqui que o reinício derrubava o pedido do editor.
+    gateway.pedidosEmAndamento = () => 1;
+    assert.equal(await admin.atualizarGatewayAposDeploy({ forcarVigia: true, desatualizado }), false);
+    assert.equal(chamadas.reiniciar, 0);
+    // Sem nada rodando: reinicia uma vez.
+    gateway.pedidosEmAndamento = () => 0;
+    assert.equal(await admin.atualizarGatewayAposDeploy({ forcarVigia: true, desatualizado }), true);
+    assert.equal(chamadas.reiniciar, 1);
+  } finally {
+    gateway.pedidosEmAndamento = original;
+  }
+});
+
+test('o contador sobe durante a chamada ao gateway e volta a zero no fim, mesmo com erro', async () => {
+  delete require.cache[require.resolve('../src/services/tokenFreeGatewayService')];
+  const servico = require('../src/services/tokenFreeGatewayService');
+  assert.equal(servico.pedidosEmAndamento(), 0);
+  // Sem gateway configurado nesta máquina a chamada falha — o contador não pode ficar preso.
+  const chamada = servico.chatCompletion([{ role: 'user', content: 'oi' }]);
+  assert.equal(servico.pedidosEmAndamento(), 1);
+  await chamada.catch(() => {});
+  assert.equal(servico.pedidosEmAndamento(), 0);
+});

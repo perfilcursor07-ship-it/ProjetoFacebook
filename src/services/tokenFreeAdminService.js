@@ -946,9 +946,11 @@ function gatewayDesatualizado({
 }
 
 /** Logo depois do deploy: reinicia o gateway uma vez se o código dele mudou. */
-async function atualizarGatewayAposDeploy() {
-  if (!vigiaLigado() || vigia.religando || autorizacaoEmAndamento()) return false;
-  if (!gatewayDesatualizado()) return false;
+async function atualizarGatewayAposDeploy({ forcarVigia = false, desatualizado = gatewayDesatualizado } = {}) {
+  if ((!forcarVigia && !vigiaLigado()) || vigia.religando || autorizacaoEmAndamento()) return false;
+  if (!desatualizado()) return false;
+  // Nunca no meio de uma resposta: espera a próxima volta do vigia (1 min).
+  if (require('./tokenFreeGatewayService').pedidosEmAndamento() > 0) return false;
   // Gateway fora do ar fica com o vigia normal, que sobe já a versão nova.
   if (!(await gatewayNoAr())) return false;
   console.info('[vigia-gateway] o código do gateway mudou desde que ele subiu — reiniciando para usar a versão nova');
@@ -970,7 +972,11 @@ async function atualizarGatewayAposDeploy() {
 function iniciarVigia() {
   if (vigia.timer || !vigiaLigado()) return false;
   vigia.timer = setInterval(() => {
-    vigiarGateway().catch((err) => console.warn('[vigia-gateway]', err.message));
+    vigiarGateway()
+      // Gateway com código velho (deploy recente) é reiniciado na primeira
+      // volta sem pedido em andamento.
+      .then(() => atualizarGatewayAposDeploy())
+      .catch((err) => console.warn('[vigia-gateway]', err.message));
   }, VIGIA_INTERVALO_MS);
   vigia.timer.unref?.();
   // Dá tempo do site subir antes de mexer no gateway.
@@ -994,6 +1000,7 @@ module.exports = {
   religarSeCaiu,
   vigiarGateway,
   gatewayDesatualizado,
+  atualizarGatewayAposDeploy,
   // Só para teste.
   _vigia: vigia,
   iniciarAutorizacao,
