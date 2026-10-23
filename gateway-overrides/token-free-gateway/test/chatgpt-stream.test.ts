@@ -233,3 +233,40 @@ test("foto da tela ganha da miniatura do link citado, mesmo chegando depois", as
 	assert.equal(r.fotosDaTela, 1);
 	assert.equal(r.paginasDasImagens?.["https://images.openai.com/thumbnails/jon-szeto.jpg"], "https://lagunabaptist.org/staff/jon");
 });
+
+// Caso Tyler Perry: a matéria saiu inteira e, logo depois, inteira de novo —
+// a segunda em markdown simples (*The Gospel of Christmas*), a versão
+// "fallbackMarkdown" que o ChatGPT gera junto da versão com componentes.
+const COM_COMPONENTES =
+	'Filme de Tyler Perry reúne estrelas da música gospel\n\nO cineasta divulgou o trailer de The Gospel of Christmas. <Cite refs={["turn1search0"]}/>\n\nFonte: People — https://people.com/x';
+const EM_MARKDOWN =
+	'**Filme de Tyler Perry reúne estrelas da música gospel**\n\nO cineasta divulgou o trailer de *The Gospel of Christmas*.\n\nFonte: People — https://people.com/x';
+
+test("versão em markdown da mesma resposta, depois da original terminar: não entra de novo", async () => {
+	const r = await parseChatGPTStream(
+		streamOf(
+			add("a-1", "assistant"),
+			linha({ v: COM_COMPONENTES }),
+			linha({ p: "/message/status", o: "replace", v: "finished_successfully" }),
+			add("a-md", "assistant"),
+			linha({ v: EM_MARKDOWN }),
+			"data: [DONE]\n\n",
+		),
+	);
+	assert.equal(r.text, COM_COMPONENTES);
+});
+
+test("mesmo com uma ferramenta entre as duas versões, a cópia não entra", async () => {
+	const r = await parseChatGPTStream(
+		streamOf(
+			add("a-1", "assistant"),
+			linha({ v: COM_COMPONENTES }),
+			add("t-img", "tool", { content: { content_type: "text", parts: ["busca de imagem"] } }),
+			add("a-md", "assistant"),
+			linha({ v: EM_MARKDOWN.slice(0, 40) }),
+			linha({ v: EM_MARKDOWN.slice(40) }),
+			"data: [DONE]\n\n",
+		),
+	);
+	assert.equal(r.text, COM_COMPONENTES);
+});

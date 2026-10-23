@@ -130,6 +130,24 @@ export function coletarImagens(alvo: unknown, destino: ListaDeImagens, profundid
 	}
 }
 
+/**
+ * Só as palavras, para comparar duas versões da mesma resposta: sem marcas
+ * invisíveis, componentes (<AsyncImage/>, <Cite/>), markdown, pontuação e
+ * acento. A versão "markdown simples" (fallbackMarkdown) e a com componentes
+ * ficam iguais aqui.
+ */
+export function soPalavras(texto: string): string {
+	return String(texto || "")
+		.replace(/\ue200[^\ue201]*\ue201/g, " ")
+		.replace(/<\/?[A-Za-z][^<>]*>/g, " ")
+		.replace(/https?:\/\/\S+/g, " ")
+		.toLowerCase()
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.replace(/[^a-z0-9]+/g, " ")
+		.trim();
+}
+
 export async function parseChatGPTStream(
 	body: ReadableStream<Uint8Array>,
 	onDelta?: (delta: string) => void,
@@ -188,7 +206,18 @@ export async function parseChatGPTStream(
 			return;
 		}
 		if (bloco.dono === m) return;
-		if (ferramentaDepoisDoBloco || bloco.dono.terminou) {
+		// A mesma resposta escrita de outro jeito (a versão em markdown simples
+		// que o ChatGPT gera junto, outra formatação): o conteúdo já saiu.
+		const palavras = soPalavras(t);
+		if (palavras && soPalavras(texto).includes(palavras.slice(0, 400))) {
+			ignorados.copias += 1;
+			return;
+		}
+		// Novo trecho só depois de uma pesquisa/ferramenta ("vou pesquisar" →
+		// matéria). Antes bastava a mensagem anterior ter terminado — e a versão
+		// em markdown, que chega depois dela, entrava inteira: a matéria saía
+		// duas vezes, uma em seguida da outra.
+		if (ferramentaDepoisDoBloco) {
 			sair("\n\n");
 			bloco = { dono: m, texto: t };
 			ferramentaDepoisDoBloco = false;

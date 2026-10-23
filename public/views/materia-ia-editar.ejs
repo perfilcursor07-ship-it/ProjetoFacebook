@@ -527,15 +527,26 @@
                   />
                 </label>
                 <% if (ult && ult.label) { %>
-                  <button
-                    type="button"
-                    id="btn-agendar-mais-30"
-                    class="w-full rounded border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[11px] font-semibold text-amber-100 hover:bg-amber-500/20"
-                    data-slot="<%= proxLocal || '' %>"
-                    title="Preenche o horário com 30 minutos após o último agendamento das Matérias"
-                  >
-                    +30 min após o último<%= proxLabel ? ' → ' + proxLabel : '' %>
-                  </button>
+                  <%
+                    const slots = typeof proximosSlots !== 'undefined' && Array.isArray(proximosSlots) && proximosSlots.length
+                      ? proximosSlots
+                      : [{ minutos: 30, local: proxLocal, label: proxLabel }];
+                  %>
+                  <div class="flex items-center gap-1" role="group" aria-label="Horário após o último agendamento">
+                    <span class="shrink-0 text-[10px] text-slate-500">Após o último:</span>
+                    <% slots.forEach(function (slot) { %>
+                      <button
+                        type="button"
+                        <% if (slot.minutos === 30) { %>id="btn-agendar-mais-30"<% } %>
+                        class="btn-agendar-mais flex-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] font-semibold text-amber-100 hover:bg-amber-500/20"
+                        data-slot="<%= slot.local || '' %>"
+                        data-minutos="<%= slot.minutos %>"
+                        title="Preenche o horário com <%= slot.minutos %> minutos após o último agendamento<%= slot.label ? ' → ' + slot.label : '' %>"
+                      >
+                        +<%= slot.minutos %> min
+                      </button>
+                    <% }) %>
+                  </div>
                   <p id="matter-ultimo-agendamento" class="text-[10px] leading-snug text-slate-500">
                     Última matéria agendada:
                     <span class="font-medium text-slate-300"><%= ult.label %></span>

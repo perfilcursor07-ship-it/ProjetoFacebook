@@ -1724,16 +1724,19 @@
     }
   }
 
-  document.getElementById('btn-agendar-mais-30')?.addEventListener('click', () => {
-    const btn = document.getElementById('btn-agendar-mais-30');
-    const slot = btn?.dataset?.slot || cfg.proximoSlotLocal;
-    if (!slot || !scheduleInput) {
-      setStatus('Não há matéria agendada para calcular +30 min.', true);
-      return;
-    }
-    scheduleInput.value = slot;
-    setStatus('Horário preenchido: 30 min após a última matéria agendada');
-    scheduleInput.focus();
+  // +10 / +15 / +30 min após o último agendamento (30 é o padrão).
+  document.querySelectorAll('.btn-agendar-mais').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const minutos = Number(btn.dataset.minutos) || 30;
+      const slot = btn.dataset.slot || (minutos === 30 ? cfg.proximoSlotLocal : '');
+      if (!slot || !scheduleInput) {
+        setStatus(`Não há matéria agendada para calcular +${minutos} min.`, true);
+        return;
+      }
+      scheduleInput.value = slot;
+      setStatus(`Horário preenchido: ${minutos} min após a última matéria agendada`);
+      scheduleInput.focus();
+    });
   });
 
   document.getElementById('btn-agendar')?.addEventListener('click', async () => {

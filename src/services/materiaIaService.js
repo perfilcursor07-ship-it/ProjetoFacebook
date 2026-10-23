@@ -20,6 +20,8 @@ const { applyBrandArtworkToResult } = require('./matterArtworkService');
 /** Espaço mínimo entre matérias agendadas (Matérias IA e Minhas matérias). */
 const INTERVALO_AGENDAMENTO_MINUTOS = 30;
 const INTERVALO_AGENDAMENTO_MS = INTERVALO_AGENDAMENTO_MINUTOS * 60 * 1000;
+/** Opções de "+N min após o último" no editor (30 é o padrão). */
+const INTERVALOS_SUGERIDOS_MINUTOS = [10, 15, 30];
 
 async function resolvePage(userId, facebookPageId) {
   const { resolvePageForUser, defaultPageForUser } = require('./facebookPageResolver');
@@ -1547,12 +1549,16 @@ async function agendarMateria({ userId, matterId, runAt }) {
     }`
   );
 
+  // Horário escolhido pelo editor no Agendar/Remarcar ("manual"): como o lote
+  // e os Dots, o reparo de sobreposição não o empurra para a grade de 30 min.
+  // Antes, remarcar para 22:10 voltava para 22:30 ao abrir a aba Agendadas.
+  const payloadManual = JSON.stringify({ action: 'publish', matterId: matter.id, origem: 'manual' });
   const existing = await db('ai_fila_jobs')
     .where({ matter_id: matter.id, status: 'pendente' })
     .orderBy('id', 'desc')
     .first();
   if (existing) {
-    await AiFilaJobs.update(existing.id, { run_at: slotLivre });
+    await AiFilaJobs.update(existing.id, { run_at: slotLivre, payload: payloadManual });
     return { jobId: existing.id, matterId: matter.id, runAt: slotLivre };
   }
 
@@ -1561,7 +1567,7 @@ async function agendarMateria({ userId, matterId, runAt }) {
     matter_id: matter.id,
     run_at: slotLivre,
     status: 'pendente',
-    payload: JSON.stringify({ action: 'publish', matterId: matter.id }),
+    payload: payloadManual,
   });
   return { jobId, matterId: matter.id, runAt: slotLivre };
 }
@@ -1769,16 +1775,17 @@ async function repararAgendamentosSobrepostos(userId, { intervaloMinutos = INTER
     // tabela ainda não existe
   }
 
-  // Agendadas em lote ("uma a cada 15 min") e pelos Dots têm o espaço que o
-  // editor escolheu: não são sobreposição. Antes eram empurradas para 30 em
-  // 30 min toda vez que a aba Agendadas abria.
+  // Agendadas em lote ("uma a cada 15 min"), pelos Dots e à mão no
+  // Agendar/Remarcar ("manual") têm o horário que o editor escolheu: não são
+  // sobreposição. Antes eram empurradas para 30 em 30 min toda vez que a aba
+  // Agendadas abria (22:10 virava 22:30).
   let comEspacoEscolhido = new Set();
   try {
     comEspacoEscolhido = new Set(
       (await db('ai_fila_jobs')
         .where({ user_id: userId, status: 'pendente' })
         .whereNotNull('matter_id')
-        .whereRaw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.origem')) IN ('lote', 'dots')")
+        .whereRaw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.origem')) IN ('lote', 'dots', 'manual')")
         .select('matter_id')).map((r) => Number(r.matter_id))
     );
   } catch (err) {
@@ -1875,13 +1882,19 @@ async function obterUltimoAgendamento(userId, { excludeMatterId = null } = {}) {
     .first();
 
   if (!matterRow?.scheduled_at) {
-    return { ultimo: null, proximoSlotLocal: null, proximoSlotLabel: null };
+    return { ultimo: null, proximoSlotLocal: null, proximoSlotLabel: null, proximosSlots: [] };
   }
 
   const at = new Date(matterRow.scheduled_at);
   let proximo = new Date(at.getTime() + INTERVALO_AGENDAMENTO_MS);
   const minFuture = new Date(Date.now() + INTERVALO_AGENDAMENTO_MS);
   if (proximo.getTime() < minFuture.getTime()) proximo = minFuture;
+  // O padrão é 30 min, mas o editor pode espaçar de 10 ou 15 min.
+  const proximosSlots = INTERVALOS_SUGERIDOS_MINUTOS.map((minutos) => {
+    const passo = minutos * 60 * 1000;
+    const quando = new Date(Math.max(at.getTime() + passo, Date.now() + passo));
+    return { minutos, local: toDatetimeLocalAraguaina(quando), label: formatLabelAraguaina(quando) };
+  });
 
   return {
     ultimo: {
@@ -1894,6 +1907,7 @@ async function obterUltimoAgendamento(userId, { excludeMatterId = null } = {}) {
     },
     proximoSlotLocal: toDatetimeLocalAraguaina(proximo),
     proximoSlotLabel: formatLabelAraguaina(proximo),
+    proximosSlots,
   };
 }
 

@@ -1,7 +1,7 @@
 const { AsyncLocalStorage } = require('node:async_hooks');
 const axios = require('axios');
 const { env } = require('../config/env');
-const { limparMarcacaoChatgpt, criarLimpadorDeStream } = require('./chatgptMarkup');
+const { limparMarcacaoChatgpt, criarLimpadorDeStream, removerRespostaRepetida } = require('./chatgptMarkup');
 
 /**
  * Cliente OpenAI-compatible do token-free-gateway.
@@ -374,7 +374,7 @@ async function chatCompletion(
       { headers: headers(false), timeout }
     );
     entregarBuscasDeImagem(aoReceberBuscasDeImagem, data?.choices?.[0]?.message?.content);
-    const texto = limparMarcacaoChatgpt(data?.choices?.[0]?.message?.content || '').trim();
+    const texto = removerRespostaRepetida(limparMarcacaoChatgpt(data?.choices?.[0]?.message?.content || '')).trim();
     entregarImagens(aoReceberImagens, data?.imagens, data);
     entregarConversa(aoReceberConversa, data);
     if (!texto) throw new Error('resposta vazia');
@@ -512,7 +512,7 @@ async function chatCompletionStream(
     if (!full.trim()) throw new Error('stream vazio');
     logar(inicio, `${tarefa}/stream`);
     entregarBuscasDeImagem(aoReceberBuscasDeImagem, full);
-    return limparMarcacaoChatgpt(full).trim();
+    return removerRespostaRepetida(limparMarcacaoChatgpt(full)).trim();
   } catch (err) {
     if (full.trim()) throw normalizarErro(err);
     // DeepSeek web fora: em vez de tentar o gateway de novo (falha igual),

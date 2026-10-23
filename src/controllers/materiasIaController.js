@@ -441,6 +441,7 @@ async function proximoSlotAgenda(req, res, next) {
       ultimo: info.ultimo || null,
       proximoSlotLocal: info.proximoSlotLocal || null,
       proximoSlotLabel: info.proximoSlotLabel || null,
+      proximosSlots: info.proximosSlots || [],
     });
   } catch (err) {
     next(err);
@@ -773,6 +774,7 @@ async function showMatter(req, res, next) {
     let ultimoAgendamento = null;
     let proximoSlotLocal = null;
     let proximoSlotLabel = null;
+    let proximosSlots = [];
     let horarioAtualAgendado = null;
     let agendaBiblioteca = null;
     try {
@@ -793,6 +795,7 @@ async function showMatter(req, res, next) {
       ultimoAgendamento = info.ultimo || null;
       proximoSlotLocal = info.proximoSlotLocal || null;
       proximoSlotLabel = info.proximoSlotLabel || null;
+      proximosSlots = info.proximosSlots || [];
     } catch (err) {
       console.warn('[showMatter] ultimo agendamento:', err.message);
     }
@@ -902,6 +905,7 @@ async function showMatter(req, res, next) {
       ultimoAgendamento,
       proximoSlotLocal,
       proximoSlotLabel,
+      proximosSlots,
       horarioAtualAgendado,
       agendaBiblioteca,
       marcaModeloArte,

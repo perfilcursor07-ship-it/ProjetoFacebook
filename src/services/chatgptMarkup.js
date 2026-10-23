@@ -183,4 +183,41 @@ function criarLimpadorDeStream() {
   };
 }
 
-module.exports = { limparMarcacaoChatgpt, criarLimpadorDeStream, removerBlocosDoClaude };
+function soPalavras(texto) {
+  return String(texto ?? '')
+    .replace(/<\/?[A-Za-z][^<>]*>/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/**
+ * A matéria inteira repetida em seguida (o ChatGPT manda a resposta com
+ * componentes e, junto, uma versão em markdown simples; caso Tyler Perry).
+ * O gateway já descarta a cópia; esta é a segunda proteção: se o título
+ * reaparece começando um parágrafo e o que vem dali em diante tem as mesmas
+ * palavras do que veio antes, fica só a primeira versão.
+ */
+function removerRespostaRepetida(texto) {
+  const valor = String(texto ?? '');
+  const linhas = valor.split('\n');
+  const inicio = linhas.findIndex((l) => soPalavras(l).length >= 15);
+  if (inicio < 0) return valor;
+  const chave = soPalavras(linhas[inicio]);
+  for (let i = inicio + 1; i < linhas.length; i += 1) {
+    if (soPalavras(linhas[i]) !== chave) continue;
+    const antes = linhas.slice(0, i).join('\n');
+    const a = soPalavras(antes);
+    const d = soPalavras(linhas.slice(i).join('\n'));
+    const parecidas = a.startsWith(d.slice(0, 300)) || d.startsWith(a.slice(0, 300));
+    if (parecidas && Math.min(a.length, d.length) / Math.max(a.length, d.length) > 0.7) {
+      return antes.replace(/\s+$/, '');
+    }
+  }
+  return valor;
+}
+
+module.exports = { limparMarcacaoChatgpt, criarLimpadorDeStream, removerBlocosDoClaude, removerRespostaRepetida };
