@@ -117,7 +117,8 @@
   }
   function artThumbUrl(item) {
     if (item && item.imagem_path) {
-      return '/media/' + String(item.imagem_path).replace(/^\/+/, '').replace(/\\/g, '/');
+      // Miniatura (~10 KB) no lugar da capa inteira (vários MB cada).
+      return '/miniatura/' + String(item.imagem_path).replace(/^\/+/, '').replace(/\\/g, '/');
     }
     const img = String(item?.imagem_url || '').trim();
     if (/^https?:\/\//i.test(img) || img.startsWith('/')) return img;
@@ -618,5 +619,5 @@
     </style>
   <% } %>
 
-  <script src="/js/minhas-materias.js?v=20261006lote3"></script>
+  <script src="/js/minhas-materias.js?v=20261024rapida"></script>
 <%- include('partials/app-end') %>

@@ -982,7 +982,9 @@ async function listMinhasMaterias(req, res, next) {
     // com o que já está no banco e o sync corre por fora, no máximo a cada
     // 10 min por conta; a próxima abertura já mostra os números novos.
     const engajamentoSync = null;
-    if (statusFilter === 'viralizou') sincronizarEngajamentoPorFora(req.session.userId);
+    // Vale para qualquer aba: alimenta a Viralizou (antes era o navegador que
+    // disparava um lote de 20 posts a cada abertura).
+    sincronizarEngajamentoPorFora(req.session.userId);
 
     if (statusFilter === 'agendado') {
       try {

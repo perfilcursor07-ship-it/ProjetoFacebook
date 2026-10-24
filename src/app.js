@@ -17,6 +17,8 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(express.static(path.join(__dirname, '../public')));
 app.use('/media', express.static(path.resolve(env.storagePath)));
+// Capa reduzida para as listas: a original tem vários MB (miniaturaService).
+app.use('/miniatura', require('./services/miniaturaService').servirMiniatura);
 
 const isProd = env.nodeEnv === 'production';
 const { createSessionStore } = require('./config/sessionStore');

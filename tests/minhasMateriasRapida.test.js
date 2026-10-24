@@ -35,3 +35,15 @@ test('vigia de lentidão anota página lenta', async () => {
   assert.equal(avisos.length, 1);
   assert.match(avisos[0], /^\[lento\] GET \/minhas-materias \d+ms \(status 200\)$/);
 });
+
+test('a lista usa miniatura, não a capa inteira', () => {
+  const view = fs.readFileSync('public/views/minhas-materias.ejs', 'utf8');
+  assert.match(view, /return '\/miniatura\/' \+ String\(item\.imagem_path\)/);
+  const app = fs.readFileSync('src/app.js', 'utf8');
+  assert.match(app, /app\.use\('\/miniatura', require\('\.\/services\/miniaturaService'\)\.servirMiniatura\)/);
+});
+
+test('o navegador não dispara mais o lote de sync a cada abertura', () => {
+  const js = fs.readFileSync('public/js/minhas-materias.js', 'utf8');
+  assert.doesNotMatch(js, /sincronizar-engajamento/);
+});

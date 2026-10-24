@@ -332,21 +332,11 @@
     }
   });
 
-  // Dispara após o paint — não bloqueia a lista. Ao terminar a página visível,
-  // o lote continua por publicações ainda não verificadas para alimentar Viralizou.
-  function sincronizarProximoLote() {
-    if (st === 'viralizou') return;
-    fetch('/api/materias-ia/matters/sincronizar-engajamento', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ limit: 20 }),
-    }).catch(() => {});
-  }
-
+  // Dispara após o paint — não bloqueia a lista. O lote de 20 publicações
+  // (sync na Ayrshare, ~5 s) que vinha logo depois, a cada abertura de
+  // qualquer aba, saiu: o servidor já faz esse sync por fora a cada 10 min.
   function iniciarAtualizacao() {
-    autoAtualizarEngajamento().finally(() => {
-      setTimeout(sincronizarProximoLote, 500);
-    });
+    autoAtualizarEngajamento().catch(() => {});
   }
 
   if (typeof requestAnimationFrame === 'function') {
