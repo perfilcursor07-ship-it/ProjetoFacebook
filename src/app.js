@@ -11,6 +11,8 @@ app.set('views', path.join(__dirname, '../public/views'));
 // CloudPanel/nginx — cookies e IP corretos atrás do proxy
 app.set('trust proxy', 1);
 
+// Anota no log do PM2 toda página que demorou (ver vigiaLentidao).
+app.use(require('./services/vigiaLentidao').medirRequisicao);
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(express.static(path.join(__dirname, '../public')));

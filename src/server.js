@@ -129,6 +129,8 @@ app.listen(env.port, async () => {
     // Agora: publicar e escrever (rápido) andam em paralelo com varrer
     // (lento), e etapa que ainda está rodando não é começada de novo.
     const rodando = new Set();
+    // Quando o Node trava, o log diz qual destas etapas estava rodando.
+    require('./services/vigiaLentidao').iniciar(() => rodando);
     const correr = async (nome, executar) => {
       if (rodando.has(nome)) {
         console.warn(`[tick ${nome}] ainda rodando desde o tick anterior — pulei esta volta`);

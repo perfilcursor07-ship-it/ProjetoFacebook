@@ -942,6 +942,19 @@ async function showLotePage(req, res, next) {
   }
 }
 
+const SYNC_ENGAJAMENTO_INTERVALO_MS = 10 * 60 * 1000;
+const ultimoSyncEngajamento = new Map();
+
+function sincronizarEngajamentoPorFora(userId) {
+  const chave = Number(userId);
+  const agora = Date.now();
+  if (agora - (ultimoSyncEngajamento.get(chave) || 0) < SYNC_ENGAJAMENTO_INTERVALO_MS) return;
+  ultimoSyncEngajamento.set(chave, agora);
+  materiaIaService
+    .sincronizarEngajamentoRecentes(userId, { limit: 35, concurrency: 3 })
+    .catch((err) => console.warn('[minhas-materias] sync engajamento:', err.message));
+}
+
 async function listMinhasMaterias(req, res, next) {
   try {
     const q = String(req.query.q || req.query.busca || '').trim();
@@ -964,19 +977,12 @@ async function listMinhasMaterias(req, res, next) {
     const perPage = 10;
     const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
 
-    // Aba Viralizou: sincroniza engajamento das publicadas recentes ANTES de filtrar
-    // (senão posts que viralizaram no FB mas ainda sem dado no banco não aparecem)
-    let engajamentoSync = null;
-    if (statusFilter === 'viralizou') {
-      try {
-        engajamentoSync = await materiaIaService.sincronizarEngajamentoRecentes(req.session.userId, {
-          limit: 35,
-          concurrency: 3,
-        });
-      } catch (err) {
-        console.warn('[minhas-materias] sync engajamento:', err.message);
-      }
-    }
+    // Aba Viralizou: o sync de engajamento (35 posts na Ayrshare) rodava aqui
+    // dentro e a página ficava carregando até ele terminar. Agora a lista sai
+    // com o que já está no banco e o sync corre por fora, no máximo a cada
+    // 10 min por conta; a próxima abertura já mostra os números novos.
+    const engajamentoSync = null;
+    if (statusFilter === 'viralizou') sincronizarEngajamentoPorFora(req.session.userId);
 
     if (statusFilter === 'agendado') {
       try {
