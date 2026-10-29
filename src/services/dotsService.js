@@ -148,8 +148,12 @@ function provedores() {
     {
       id: 'deepseek',
       nome: 'DeepSeek',
-      detalhe: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
-      disponivel: Boolean(String(process.env.DEEPSEEK_API_KEY || '').trim()),
+      detalhe: require('./tokenFreeGatewayService').deepseekPeloGateway()
+        ? 'DeepSeek web (token-free)'
+        : process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
+      disponivel:
+        Boolean(String(process.env.DEEPSEEK_API_KEY || '').trim()) ||
+        require('./tokenFreeGatewayService').deepseekPeloGateway(),
     },
     {
       id: 'gratis',

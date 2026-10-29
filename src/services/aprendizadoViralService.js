@@ -134,7 +134,10 @@ function montarMensagens(materias) {
 
 function iaConfigurada() {
   try {
-    return require('./editorialLearningService') && (env.deepseekApiKey || env.anthropicApiKey);
+    return (
+      require('./editorialLearningService') &&
+      (env.deepseekApiKey || env.anthropicApiKey || require('./deepseekService').deepseekPeloGateway())
+    );
   } catch {
     return false;
   }
@@ -157,23 +160,13 @@ async function chamarIa(messages) {
     });
   }
 
-  const axios = require('axios');
-  const body = {
-    model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
+  // DeepSeek web do gateway com o token-free ligado; API oficial só sem ele
+  // (ou com DEEPSEEK_USAR_API=true).
+  return require('./deepseekService').chatCompletionDeepseekDireto(messages, {
     temperature: 0.2,
-    response_format: { type: 'json_object' },
-    messages,
-  };
-  if (String(body.model).includes('v4')) body.thinking = { type: 'disabled' };
-  const { data } = await axios.post(
-    process.env.DEEPSEEK_URL || 'https://api.deepseek.com/chat/completions',
-    body,
-    {
-      headers: { Authorization: `Bearer ${env.deepseekApiKey}`, 'Content-Type': 'application/json' },
-      timeout: 90_000,
-    }
-  );
-  return data?.choices?.[0]?.message?.content || '';
+    json: true,
+    timeout: 90_000,
+  });
 }
 
 /** Regras devolvidas pela IA, limpas e contidas. */

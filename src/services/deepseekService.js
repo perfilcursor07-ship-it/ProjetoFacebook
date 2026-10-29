@@ -160,6 +160,19 @@ function tokenFreeDisponivel() {
   return require('./tokenFreeGatewayService').isConfigured();
 }
 
+/** DeepSeek sai pelo DeepSeek web do gateway, não pela API paga? */
+function deepseekPeloGateway() {
+  return require('./tokenFreeGatewayService').deepseekPeloGateway();
+}
+
+/** Modelo do DeepSeek web no gateway (deepseek-v4-flash ou deepseek-v4-pro). */
+function modeloDeepseekWeb(model) {
+  for (const m of [model, DEEPSEEK_MODEL]) {
+    if (/^deepseek-v4-(flash|pro)$/.test(String(m || ''))) return String(m);
+  }
+  return 'deepseek-v4-flash';
+}
+
 /**
  * Esta chamada especifica vai no gateway local?
  *
@@ -232,6 +245,7 @@ function inferirTarefa(messages, tarefaPedida) {
  * Claude — com a divisão padrão ela continua sendo necessária.
  */
 function assertDeepseek(tarefa = null) {
+  if (deepseekPeloGateway()) return;
   if (tokenFreeDisponivel() && (!tarefa || usarTokenFree(tarefa))) return;
   if (claudeDisponivel() && TODAS_AS_TAREFAS.every((t) => TAREFAS_NO_CLAUDE.has(t))) return;
   // Com o free tier cobrindo o que sobrou do Claude, a chave da DeepSeek deixa
@@ -360,6 +374,13 @@ async function chatCompletionDeepseekDireto(
   messages,
   { temperature = 0.78, json = true, thinking = false, model = DEEPSEEK_MODEL, timeout = 120_000 } = {}
 ) {
+  // Token-free ligado: o "DeepSeek" desta chamada é o DeepSeek web do gateway.
+  if (deepseekPeloGateway()) {
+    const tokenFree = require('./tokenFreeGatewayService');
+    return tokenFree.comModelo(modeloDeepseekWeb(model), () =>
+      tokenFree.chatCompletion(messages, { temperature, json, timeout, tarefa: 'auxiliar' })
+    );
+  }
   assertDeepseek();
   const selectedModel = String(model || DEEPSEEK_MODEL);
   await require('./iaPausaService').garantirLiberada(selectedModel);
@@ -456,7 +477,7 @@ async function chatCompletionClaudeObrigatorio(messages, options = {}) {
 async function completarComModeloDeTitulos(messages, options = {}, { somenteClaude = false } = {}) {
   const fixo = await require('./iaModeloTarefaService').modeloDaTarefa('titulos').catch(() => null);
   const completar = somenteClaude ? chatCompletionClaudeObrigatorio : chatCompletion;
-  if (fixo && /deepseek/i.test(fixo) && env.deepseekApiKey) {
+  if (fixo && /deepseek/i.test(fixo) && env.deepseekApiKey && !deepseekPeloGateway()) {
     try {
       // Títulos são um extra da matéria: a tela fica em "Montando 3 títulos…"
       // enquanto isto não volta. Prazo curto e, falhando, tenta a cadeia normal.
@@ -515,6 +536,18 @@ async function chatCompletionStream(
         tarefa: tarefaResolvida,
       });
     }
+  } else if (deepseekPeloGateway()) {
+    const tokenFree = require('./tokenFreeGatewayService');
+    return tokenFree.comModelo(modeloDeepseekWeb(model), () =>
+      tokenFree.chatCompletionStream(messages, {
+        temperature,
+        onDelta,
+        timeout,
+        tarefa: tarefaResolvida,
+        conversationId,
+        conversationName,
+      })
+    );
   } else if (!String(env.deepseekApiKey || '').trim()) {
     const err = new Error('DeepSeek não está configurado para o fallback de redação');
     err.status = 503;
@@ -4672,6 +4705,7 @@ module.exports = {
   comProvedor,
   chatCompletionClaudeObrigatorio,
   chatCompletionDeepseekDireto,
+  deepseekPeloGateway,
   completarComModeloDeTitulos,
   traduzirPostsParaPortugues,
   sugerirConsultasImagem,

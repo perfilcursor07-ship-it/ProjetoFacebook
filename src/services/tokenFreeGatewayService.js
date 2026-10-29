@@ -57,6 +57,20 @@ function isConfigured() {
   return provedorSelecionado() && Boolean(BASE_URL && MODELO);
 }
 
+/**
+ * Com o token-free ligado, "DeepSeek" é o DeepSeek web do gateway, para
+ * qualquer tarefa — inclusive Dots, títulos e aprendizado. A API paga
+ * (DEEPSEEK_API_KEY) só entra com DEEPSEEK_USAR_API=true. Antes ela era usada
+ * sem aviso sempre que o web falhava, e a conta da API continuava subindo.
+ */
+function deepseekPeloGateway() {
+  return (
+    provedorSelecionado() &&
+    Boolean(BASE_URL) &&
+    String(process.env.DEEPSEEK_USAR_API || '').trim().toLowerCase() !== 'true'
+  );
+}
+
 function cobreTarefa(tarefa = 'conversa') {
   return isConfigured() && TAREFAS.has(String(tarefa || 'conversa').trim().toLowerCase());
 }
@@ -354,7 +368,8 @@ async function chatCompletion(
     aoReceberBuscasDeImagem = null,
   } = {}
 ) {
-  assertConfigured(tarefa);
+  // DeepSeek pelo gateway vale para qualquer tarefa (ver deepseekPeloGateway).
+  if (!(ehModeloDeepseek() && deepseekPeloGateway())) assertConfigured(tarefa);
   // "Parar IA" em /claude: geral ou só este modelo.
   await require('./iaPausaService').garantirLiberada(modeloAtual());
   const inicio = Date.now();
@@ -404,6 +419,7 @@ function ehModeloDeepseek(modelo = modeloAtual()) {
  * Quando o web voltar a funcionar, ele volta a ser usado sozinho.
  */
 function podeIrPelaApiDeepseek(err) {
+  if (deepseekPeloGateway()) return false;
   if (!ehModeloDeepseek() || !String(env.deepseekApiKey || '').trim()) return false;
   if (err?.iaPausada) return false;
   const texto = `${err?.message || ''} ${mensagemRemota(err?.cause || err)}`;
@@ -438,7 +454,8 @@ async function chatCompletionStream(
     aoReceberBuscasDeImagem = null,
   } = {}
 ) {
-  assertConfigured(tarefa);
+  // DeepSeek pelo gateway vale para qualquer tarefa (ver deepseekPeloGateway).
+  if (!(ehModeloDeepseek() && deepseekPeloGateway())) assertConfigured(tarefa);
   // "Parar IA" em /claude: geral ou só este modelo.
   await require('./iaPausaService').garantirLiberada(modeloAtual());
   const inicio = Date.now();
@@ -611,6 +628,7 @@ module.exports = {
   modeloAtual,
   isConfigured,
   cobreTarefa,
+  deepseekPeloGateway,
   prepararMensagens,
   prepararPromptUnicoClaudeWeb,
   limparCercaJson,

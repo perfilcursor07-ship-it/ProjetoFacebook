@@ -1,10 +1,7 @@
 const EditorialAprendizados = require('../models/EditorialAprendizados');
 const EditorialEstiloUsuario = require('../models/EditorialEstiloUsuario');
-const axios = require('axios');
 const { env } = require('../config/env');
 
-const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
-const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || env.deepseekModel || 'deepseek-v4-flash';
 
 /**
  * Destilar estilo, memória de chat e a lição do "Ensinar IA" são tarefas curtas
@@ -19,8 +16,17 @@ function claudeParaAuxiliar() {
   }
 }
 
+function deepseekPeloGateway() {
+  try {
+    return require('./deepseekService').deepseekPeloGateway();
+  } catch {
+    return false;
+  }
+}
+
 function iaConfigurada() {
-  return claudeParaAuxiliar() ? Boolean(env.anthropicApiKey) : Boolean(env.deepseekApiKey);
+  if (claudeParaAuxiliar()) return Boolean(env.anthropicApiKey);
+  return Boolean(env.deepseekApiKey) || deepseekPeloGateway();
 }
 
 async function chamarIaJson(messages, { timeout = 90_000 } = {}) {
@@ -31,21 +37,13 @@ async function chamarIaJson(messages, { timeout = 90_000 } = {}) {
       maxTokens: 1500,
     });
   }
-  const body = {
-    model: DEEPSEEK_MODEL,
+  // DeepSeek web do gateway com o token-free ligado; API oficial só sem ele
+  // (ou com DEEPSEEK_USAR_API=true).
+  return require('./deepseekService').chatCompletionDeepseekDireto(messages, {
     temperature: 0.2,
-    response_format: { type: 'json_object' },
-    messages,
-  };
-  if (String(DEEPSEEK_MODEL).includes('v4')) body.thinking = { type: 'disabled' };
-  const { data } = await axios.post(DEEPSEEK_URL, body, {
-    headers: {
-      Authorization: 'Bearer ' + env.deepseekApiKey,
-      'Content-Type': 'application/json',
-    },
+    json: true,
     timeout,
   });
-  return data?.choices?.[0]?.message?.content || '';
 }
 
 const MAX_TRECHO = 4000;
@@ -215,7 +213,7 @@ async function registrarAprendizado({
 }
 
 async function atualizarRegrasEstilo(userId) {
-  if (!env.deepseekApiKey) return EditorialEstiloUsuario.findByUser(userId);
+  if (!iaConfigurada()) return EditorialEstiloUsuario.findByUser(userId);
   const exemplos = await EditorialAprendizados.findRecentByUser(userId, 8);
   if (!exemplos.length) return EditorialEstiloUsuario.findByUser(userId);
 
