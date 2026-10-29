@@ -15,8 +15,30 @@ app.set('trust proxy', 1);
 app.use(require('./services/vigiaLentidao').medirRequisicao);
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+// Arquivo com ?v= no endereço muda de nome a cada versão: o navegador guarda e
+// não pergunta de novo. Antes ia "max-age=0" em tudo e cada troca de página
+// revalidava CSS/JS um a um com o servidor (~0,2 s de ida e volta cada).
+app.use((req, res, next) => {
+  if (req.method === 'GET' && req.query.v && /\.(css|js|png|jpe?g|webp|svg|gif|ico|woff2?)$/i.test(req.path)) {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  }
+  next();
+});
+// Versão do app.css (refeito no deploy pelo build:css) para o ?v= dos layouts.
+const APP_CSS_V = (() => {
+  try {
+    return String(Math.floor(require('fs').statSync(path.join(__dirname, '../public/css/app.css')).mtimeMs));
+  } catch {
+    return String(Date.now());
+  }
+})();
+app.use((req, res, next) => {
+  res.locals.appCssV = APP_CSS_V;
+  next();
+});
 app.use(express.static(path.join(__dirname, '../public')));
-app.use('/media', express.static(path.resolve(env.storagePath)));
+// Capas e imagens salvas têm nome único (data + aleatório): cache de 1 h.
+app.use('/media', express.static(path.resolve(env.storagePath), { maxAge: '1h' }));
 // Capa reduzida para as listas: a original tem vários MB (miniaturaService).
 app.use('/miniatura', require('./services/miniaturaService').servirMiniatura);
 
