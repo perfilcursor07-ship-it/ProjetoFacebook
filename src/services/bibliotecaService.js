@@ -2641,6 +2641,12 @@ async function tickBrightDataSnapshots() {
   }
 }
 
+/** Fonte sendo lida agora (o log de travamento mostra qual). */
+let fonteAtual = null;
+function fonteEmVarredura() {
+  return fonteAtual;
+}
+
 async function tickFontes() {
   const due = await BibliotecaFontes.findDue();
   const userIds = new Set();
@@ -2663,6 +2669,7 @@ async function tickFontes() {
     if (!reservada) continue;
 
     if (fonte.user_id) userIds.add(Number(fonte.user_id));
+    fonteAtual = `fonte #${fonte.id} ${fonte.plataforma || ''} ${String(fonte.url || fonte.handle || '').slice(0, 80)}`.trim();
     try {
       await escanearFonte(fonte, { silentFirst: true });
       // Voltou a responder: ritmo normal de novo.
@@ -2692,10 +2699,12 @@ async function tickFontes() {
   }
   // Limpeza de alertas órfãos / duplicados fora do carregamento da página
   for (const uid of userIds) {
+    fonteAtual = `limpeza de alertas do user #${uid}`;
     await BibliotecaAlertas.limparOrfaos(uid).catch(() => 0);
     const n = await BibliotecaAlertas.limparDuplicados(uid).catch(() => 0);
     if (n > 0) console.log(`[biblioteca] user #${uid}: removidos ${n} alerta(s) duplicado(s)`);
   }
+  fonteAtual = null;
 }
 
 async function salvarRankingViral(userId, ranking) {
@@ -3293,6 +3302,7 @@ module.exports = {
   publicarPostDireto,
   tickBrightDataSnapshots,
   tickFontes,
+  fonteEmVarredura,
   tickAutopilot,
   dashboardUsuario,
   detalheFonte,

@@ -38,7 +38,8 @@ let timer = null;
  * segurou o processo — e o log diz quais tarefas estavam rodando nessa hora.
  * @param {() => Iterable<string>} [tarefasRodando]
  */
-function iniciar(tarefasRodando = () => []) {
+function iniciar(tarefasRodando = () => [], processo = '') {
+  const rotulo = processo ? `[travado][${processo}]` : '[travado]';
   if (timer || !ligado()) return;
   let esperado = Date.now() + PASSO_MS;
   timer = setInterval(() => {
@@ -53,7 +54,7 @@ function iniciar(tarefasRodando = () => []) {
       nomes = [];
     }
     console.warn(
-      `[travado] Node parado por ${atraso}ms — rodando: ${nomes.length ? nomes.join(', ') : 'nenhuma tarefa de fundo'}`
+      `${rotulo} Node parado por ${atraso}ms — rodando: ${nomes.length ? nomes.join(', ') : 'nenhuma tarefa de fundo'}`
     );
   }, PASSO_MS);
   timer.unref?.();
