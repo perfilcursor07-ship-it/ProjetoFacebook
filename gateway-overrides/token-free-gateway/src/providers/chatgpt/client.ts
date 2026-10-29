@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Page } from "playwright-core";
 import { pasteText } from "../../browser/dom-input.ts";
 import { BrowserManager } from "../../browser/manager.ts";
+import { registrarPagina } from "../../viralizeai/abas.ts";
 import { BaseApiClient } from "../factory/base-api-client.ts";
 import type { ApiClientConfig, NormalizedSendParams } from "../factory/types.ts";
 import { parseCookieHeader } from "../shared/cookie-parser.ts";
@@ -108,6 +109,17 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 	private cookie: string;
 	private conversationId: string | undefined;
 	private parentMessageId: string | undefined;
+
+	/**
+	 * viralizeai: a aba onde a conversa é lida, UMA só, aberta o tempo todo.
+	 *
+	 * Estática de propósito: o cliente é recriado quando a sessão expira, e a
+	 * aba não pode morrer junto — é justamente ela que já passou pelo
+	 * Cloudflare e guarda o `cf_clearance`.
+	 */
+	private static abaDeLeituraFixa: Page | null = null;
+	/** Até quando parar de abrir a conversa, depois de levar um desafio. */
+	private static desafioAte = 0;
 
 	constructor(auth: ChatGPTWebAuth) {
 		super(auth);
