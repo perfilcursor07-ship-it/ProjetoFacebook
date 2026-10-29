@@ -3,7 +3,9 @@ import { test } from "node:test";
 import {
 	RECARREGAR_MS,
 	comecarPedido,
+	ehAbaAuxiliar,
 	enderecoLimpo,
+	marcarAbaAuxiliar,
 	recarregarAbasVelhas,
 	registrarPagina,
 } from "../src/viralizeai/abas.ts";
@@ -70,4 +72,28 @@ test("pedido que chega durante a recarga espera ela terminar", async () => {
 	assert.deepEqual(aba.idas, ["https://claude.ai/new"], "o pedido só começou depois da página pronta");
 	encerrar();
 	await recarga;
+});
+
+test("aba de apoio é reconhecida; aba comum não", () => {
+	// A leitura da conversa do ChatGPT usa uma aba fixa própria, parada em
+	// `chatgpt.com/c/<id>`. `BrowserManager.getPage` escolhe a primeira aba
+	// cuja URL contenha o domínio: sem esta marca, um dia em que a aba
+	// principal morresse ela devolveria a aba de leitura, e as duas passariam
+	// a navegar uma por cima da outra no meio de um pedido.
+	const leitura = abaFalsa("https://chatgpt.com/c/6ad19384-8b78");
+	const principal = abaFalsa("https://chatgpt.com/");
+	assert.equal(ehAbaAuxiliar(pagina(leitura)), false);
+	marcarAbaAuxiliar(pagina(leitura));
+	assert.equal(ehAbaAuxiliar(pagina(leitura)), true);
+	assert.equal(ehAbaAuxiliar(pagina(principal)), false);
+});
+
+test("aba de apoio continua entrando na reciclagem de memória", async () => {
+	// Ela é a que mais junta memória: fica parada numa conversa com imagens.
+	const inicio = 2_000_000;
+	const leitura = abaFalsa("https://chatgpt.com/c/conversa-com-fotos");
+	registrarPagina(pagina(leitura), inicio);
+	marcarAbaAuxiliar(pagina(leitura));
+	assert.equal(await recarregarAbasVelhas(inicio + RECARREGAR_MS), 1);
+	assert.deepEqual(leitura.idas, ["https://chatgpt.com/"]);
 });

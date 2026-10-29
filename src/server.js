@@ -41,6 +41,21 @@ function validacaoSocialLiberada(rede) {
   return true;
 }
 
+/** Sobe o processo da varredura das fontes e o religa se ele cair. */
+function iniciarVarreduraSeparada() {
+  const { fork } = require('child_process');
+  const subir = () => {
+    // Com o canal IPC do fork, o filho percebe quando este processo some
+    // (deploy, pm2 reload) e sai sozinho — ver 'disconnect' em varreduraFontes.js.
+    const filho = fork(path.join(__dirname, 'varreduraFontes.js'), [], { env: process.env });
+    filho.on('exit', (codigo, sinal) => {
+      console.error(`[varredura] processo saiu (código ${codigo}, sinal ${sinal}) — religando em 30 s`);
+      setTimeout(subir, 30_000).unref();
+    });
+  };
+  subir();
+}
+
 app.listen(env.port, async () => {
   console.log(`ViralizeAI rodando em http://localhost:${env.port}`);
   try {
@@ -157,11 +172,19 @@ app.listen(env.port, async () => {
       ],
     ];
     // Vai no ritmo que der: rede, scraping e IA.
+    //
+    // A varredura das fontes travava o Node do site por 80–87 s a cada ~5 min
+    // (log "[travado] … rodando: biblioteca-fontes"), e nenhuma página abria.
+    // Agora ela roda em processo próprio (varreduraFontes.js); só coleta e
+    // salva, não publica, então não disputa as travas em memória daqui.
+    // BIBLIOTECA_FONTES_SEPARADO=false volta a rodá-la aqui dentro.
+    const fontesSeparado = String(process.env.BIBLIOTECA_FONTES_SEPARADO ?? 'true').toLowerCase() !== 'false';
     const lentas = [
       ['monitores', () => materiaIaService.tickMonitores()],
-      ['biblioteca-fontes', () => bibliotecaService.tickFontes()],
+      ...(fontesSeparado ? [] : [['biblioteca-fontes', () => bibliotecaService.tickFontes()]]),
       ['biblioteca-autopilot', () => bibliotecaService.tickAutopilot()],
     ];
+    if (fontesSeparado) iniciarVarreduraSeparada();
     const emSequencia = async (etapas) => {
       for (const [nome, executar] of etapas) await correr(nome, executar);
     };

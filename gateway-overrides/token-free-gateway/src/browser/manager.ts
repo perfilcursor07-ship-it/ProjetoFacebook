@@ -7,7 +7,7 @@
 import type { Browser, BrowserContext, Page } from "playwright-core";
 import { chromium } from "playwright-core";
 import { getChromeWebSocketUrl, getDefaultCdpUrl, getHeadersWithAuth } from "./cdp-helpers.ts";
-import { registrarPagina } from "../viralizeai/abas.ts";
+import { ehAbaAuxiliar, registrarPagina } from "../viralizeai/abas.ts";
 
 export interface BrowserCookie {
 	name: string;
@@ -61,7 +61,9 @@ class BrowserManager {
 	async getPage(domain: string, fallbackUrl?: string): Promise<Page> {
 		const ctx = await this.getContext();
 		const pages = ctx.pages();
-		const existing = pages.find((p) => p.url().includes(domain));
+		// A aba de leitura da conversa também está no chatgpt.com e não pode
+		// ser entregue como aba principal do provedor (veja ../viralizeai/abas.ts).
+		const existing = pages.find((p) => p.url().includes(domain) && !ehAbaAuxiliar(p));
 		// viralizeai: abas dos provedores são recarregadas de tempos em tempos
 		// para não acumular memória (veja ../viralizeai/abas.ts).
 		if (existing) {

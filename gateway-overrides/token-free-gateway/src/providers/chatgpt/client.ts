@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Page } from "playwright-core";
 import { pasteText } from "../../browser/dom-input.ts";
 import { BrowserManager } from "../../browser/manager.ts";
-import { registrarPagina } from "../../viralizeai/abas.ts";
+import { marcarAbaAuxiliar, registrarPagina } from "../../viralizeai/abas.ts";
 import { BaseApiClient } from "../factory/base-api-client.ts";
 import type { ApiClientConfig, NormalizedSendParams } from "../factory/types.ts";
 import { parseCookieHeader } from "../shared/cookie-parser.ts";
@@ -54,6 +54,12 @@ const PEDE_IMAGEM = /\b(imagem|imagens|foto|fotos|capa|ilustra[çc][ãa]o|image|
  * (galeria de busca, citação de imagem, imagem gerada).
  */
 const SINAL_DE_IMAGEM = /image_group|image_v2|image_results|image_asset_pointer|turn\d+image\d+|"image_query"/i;
+/**
+ * viralizeai: quanto tempo parar de abrir a conversa depois de um desafio
+ * do Cloudflare. Quem marca a caixa é o editor, no VNC; insistir sozinho é
+ * o que transforma um desafio em bloqueio da sessão.
+ */
+const DESAFIO_ESPERA_MS = 15 * 60_000;
 
 /**
  * viralizeai: conversa do ChatGPT de cada conversa do "ChatGPT livre"
@@ -775,20 +781,110 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 		}
 	}
 
-	private async imagensDaTela(conversationId: string, assinatura = ""): Promise<string[]> {
+	/**
+	 * viralizeai: a aba fixa onde a conversa é lida.
+	 *
+	 * Antes cada matéria abria uma aba NOVA e carregava `chatgpt.com/c/<id>`
+	 * do zero. Carregamento de documento, vindo de aba recém-criada, repetido
+	 * a cada matéria, é o desenho exato do que o Cloudflare do chatgpt.com
+	 * trata como robô — e o editor passou a ver "Verify you are human" no VNC.
+	 *
+	 * Agora é uma aba só, que fica aberta: ela já passou pela verificação,
+	 * guarda o `cf_clearance` e, estando no site, troca de conversa por dentro
+	 * do próprio app, sem baixar documento nenhum.
+	 */
+	private async abaDeLeitura(): Promise<Page> {
+		const viva = ChatGPTWebClient.abaDeLeituraFixa;
+		if (viva && !viva.isClosed()) {
+			try {
+				await viva.evaluate(() => document.readyState);
+				return viva;
+			} catch {
+				// morta: abre outra abaixo
+			}
+		}
 		const ctx = await BrowserManager.getInstance().getContext();
 		const aba = await ctx.newPage();
-		try {
-			// Sem tamanho de tela o ChatGPT pode não desenhar a lista de
-			// mensagens numa aba de fundo (o antigo leitor via DOM via 0 turnos).
-			await aba.setViewportSize({ width: 1366, height: 1000 }).catch(() => {});
-			await aba.goto(`https://chatgpt.com/c/${encodeURIComponent(conversationId)}`, {
-				waitUntil: "domcontentloaded",
-				timeout: 45_000,
-			});
+		// Sem tamanho de tela o ChatGPT pode não desenhar a lista de mensagens
+		// numa aba de fundo (o antigo leitor via DOM via 0 turnos).
+		await aba.setViewportSize({ width: 1366, height: 1000 }).catch(() => {});
+		await aba.goto("https://chatgpt.com/", { waitUntil: "domcontentloaded", timeout: 45_000 });
+		// Entra na reciclagem das abas fixas: parada numa conversa cheia de
+		// imagens, esta aba é a que mais junta memória no Chrome do servidor.
+		registrarPagina(aba);
+		marcarAbaAuxiliar(aba);
+		ChatGPTWebClient.abaDeLeituraFixa = aba;
+		return aba;
+	}
+
+	/** viralizeai: a tela do Cloudflare ("Verify you are human") está na frente? */
+	private async temDesafio(aba: Page): Promise<boolean> {
+		return aba
+			.evaluate(() => {
+				if (document.querySelector('iframe[src*="challenges.cloudflare.com"]')) return true;
+				const texto = document.body?.innerText || "";
+				return /verify you are human|verifique se (você|voce) é humano|just a moment/i.test(texto);
+			})
+			.catch(() => false);
+	}
+
+	/**
+	 * viralizeai: abre a conversa sem baixar documento.
+	 *
+	 * Dentro do app do ChatGPT trocar de conversa é navegação do React: o
+	 * endereço muda, a tela re-renderiza e nenhum pedido de documento sai — e é
+	 * o pedido de documento que o Cloudflare desafia. Clicar no link da
+	 * conversa na barra lateral é o caminho que o próprio site usa.
+	 *
+	 * Só cai no carregamento normal quando a aba ainda não está no site ou
+	 * quando o app não reagiu à troca.
+	 */
+	private async abrirConversa(aba: Page, conversationId: string): Promise<void> {
+		const caminho = `/c/${encodeURIComponent(conversationId)}`;
+		const turnoNaTela = () =>
+			aba
+				.waitForSelector('[data-message-author-role="assistant"], [data-turn="assistant"]', { timeout: 12_000 })
+				.then(() => true)
+				.catch(() => false);
+		if (aba.url().includes(caminho) && (await turnoNaTela())) return;
+		if (aba.url().includes("chatgpt.com")) {
 			await aba
-				.waitForSelector('[data-message-author-role="assistant"], [data-turn="assistant"]', { timeout: 30_000 })
+				.evaluate((destino: string) => {
+					const link = document.querySelector<HTMLAnchorElement>(`a[href="${destino}"]`);
+					if (link) {
+						link.click();
+						return;
+					}
+					// Sem o link na lista lateral: navegação do próprio router.
+					history.pushState({}, "", destino);
+					window.dispatchEvent(new PopStateEvent("popstate"));
+				}, caminho)
 				.catch(() => {});
+			if (await turnoNaTela()) return;
+			console.log("[viralizeai-imagem] o app não trocou de conversa sozinho; carregando a página");
+		}
+		await aba.goto(`https://chatgpt.com${caminho}`, { waitUntil: "domcontentloaded", timeout: 45_000 });
+		await turnoNaTela();
+	}
+
+	private async imagensDaTela(conversationId: string, assinatura = ""): Promise<string[]> {
+		if (Date.now() < ChatGPTWebClient.desafioAte) {
+			console.warn("[viralizeai-imagem] Cloudflare pediu verificação há pouco; não abro a conversa agora");
+			return [];
+		}
+		const aba = await this.abaDeLeitura();
+		try {
+			await this.abrirConversa(aba, conversationId);
+			// Resolver o desafio é com o editor, no VNC. Aqui só paramos de
+			// insistir: insistir é o que transforma um desafio em bloqueio.
+			if (await this.temDesafio(aba)) {
+				ChatGPTWebClient.desafioAte = Date.now() + DESAFIO_ESPERA_MS;
+				console.warn(
+					'[viralizeai-imagem] Cloudflare mostrou "Verify you are human" na aba de leitura. ' +
+						`Abra o VNC e marque a caixa uma vez; por ${Math.round(DESAFIO_ESPERA_MS / 60_000)} min a matéria sai sem a imagem da tela.`,
+				);
+				return [];
+			}
 			// Acha o turno DESTA resposta pelo texto dela (o começo da matéria) e
 			// leva para a tela — imagem com loading=lazy só carrega visível.
 			//
@@ -802,6 +898,11 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 					const doAssistente = (el: Element) =>
 						el.matches('[data-turn="assistant"]') ||
 						Boolean(el.querySelector('[data-message-author-role="assistant"]'));
+					// A aba é reaproveitada: marca da leitura anterior sai antes,
+					// senão ela venceria no `querySelector` por vir antes no DOM.
+					for (const velho of Array.from(document.querySelectorAll('[data-viralizeai-turno="1"]'))) {
+						velho.removeAttribute("data-viralizeai-turno");
+					}
 					let turnos = Array.from(document.querySelectorAll('article, [data-testid^="conversation-turn"]'))
 						.filter(doAssistente)
 						.reverse();
@@ -906,7 +1007,14 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 			}
 			return saida;
 		} finally {
-			await aba.close().catch(() => {});
+			// A aba NÃO é fechada: fechar e reabrir a cada matéria é o que
+			// chamava o Cloudflare. A memória dela fica por conta da
+			// reciclagem das abas fixas (../../viralizeai/abas.ts).
+			await aba.evaluate(() => {
+				for (const el of Array.from(document.querySelectorAll('[data-viralizeai-turno="1"]'))) {
+					el.removeAttribute("data-viralizeai-turno");
+				}
+			}).catch(() => {});
 		}
 	}
 

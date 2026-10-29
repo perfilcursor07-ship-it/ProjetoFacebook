@@ -27,6 +27,26 @@ let recarregando: Promise<void> | null = null;
 const abertaDesde = new WeakMap<Page, number>();
 const paginas = new Set<Page>();
 
+/**
+ * viralizeai: abas de apoio — as que NÃO devem ser entregues como a aba
+ * principal de um provedor.
+ *
+ * A leitura da conversa do ChatGPT usa uma aba fixa própria, parada em
+ * `chatgpt.com/c/<id>`. `BrowserManager.getPage` escolhe a primeira aba cuja
+ * URL contenha o domínio: sem esta marca, um dia em que a aba principal
+ * morresse ela devolveria a aba de leitura, e as duas passariam a navegar
+ * uma por cima da outra no meio de um pedido.
+ */
+const auxiliares = new WeakSet<Page>();
+
+export function marcarAbaAuxiliar(page: Page): void {
+	auxiliares.add(page);
+}
+
+export function ehAbaAuxiliar(page: Page): boolean {
+	return auxiliares.has(page);
+}
+
 /** Aba entregue a um provedor (chamado por BrowserManager.getPage). */
 export function registrarPagina(page: Page, agora = Date.now()): void {
 	if (paginas.has(page)) return;
