@@ -157,6 +157,15 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 	/** Token visto numa requisição que a PRÓPRIA página fez. */
 	private bearerCapturado = "";
 	private paginasEscutadas = new WeakSet<object>();
+	/**
+	 * Renovação em andamento.
+	 *
+	 * A Biblioteca dispara dezenas de pedidos em paralelo; sem isto, cada um
+	 * recarregaria a aba do DeepSeek ao levar 40003 — uma aba recarregando sem
+	 * parar nunca chega a emitir a requisição autenticada que estamos
+	 * esperando, além de piscar na tela do editor no VNC.
+	 */
+	private renovando: Promise<void> | null = null;
 
 	/**
 	 * viralizeai: escuta as requisições da página para pegar o token vivo.
@@ -196,15 +205,23 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 	 * vivo no cabeçalho. Só acontece quando o token atual já foi recusado,
 	 * situação em que nada estava funcionando mesmo.
 	 */
-	private async provocarRequisicao(page: Page): Promise<void> {
+	private async provocarRequisicao(page: Page, recusado: string): Promise<void> {
+		// O que já foi recusado não serve de resposta para esta espera.
+		this.bearerCapturado = "";
 		try {
 			await page.reload({ waitUntil: "domcontentloaded", timeout: 30_000 });
 		} catch {
 			return; // recarga falhou; o resto segue com o que houver
 		}
-		for (let i = 0; i < 20 && !this.bearerCapturado; i++) {
+		// Depois do reload o app ainda carrega e hidrata antes de chamar a API.
+		// Com 10 s a espera terminava cedo e o token chegava depois de já termos
+		// desistido — era o "token capturado" aparecendo DEPOIS do "sem desafio"
+		// no log.
+		for (let i = 0; i < 60; i++) {
+			if (this.bearerCapturado && this.bearerCapturado !== recusado) return;
 			await new Promise((r) => setTimeout(r, 500));
 		}
+		console.warn("[viralizeai-deepseek] a pagina nao emitiu requisicao autenticada em 30s");
 	}
 
 	/**
@@ -228,10 +245,29 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 		// Uma leitura por minuto basta: o token dura horas e cada leitura é uma
 		// ida ao navegador. `forcar` é para quando o token já se provou inválido.
 		if (!forcar && Date.now() - this.bearerLidoEm < 60_000) return;
+		// Quem chegar durante uma renovação espera a dela terminar e aproveita
+		// o resultado, em vez de abrir outra.
+		if (this.renovando) {
+			await this.renovando.catch(() => {});
+			return;
+		}
+		this.renovando = this.renovarAgora(forcar);
+		try {
+			await this.renovando;
+		} finally {
+			this.renovando = null;
+		}
+	}
+
+	private async renovarAgora(forcar: boolean): Promise<void> {
 		try {
 			const page = await this.getPage();
 			this.escutarAutorizacao(page);
-			if (forcar && !this.bearerCapturado) await this.provocarRequisicao(page);
+			// Forçado quer dizer "o token atual acabou de ser recusado". Nesse
+			// caso não adianta reusar o que já está capturado: é justamente ele.
+			// Antes a condição `!this.bearerCapturado` impedia a recarga sempre
+			// que houvesse um token capturado, e a renovação nunca acontecia.
+			if (forcar) await this.provocarRequisicao(page, this.auth.bearer);
 			if (this.bearerCapturado && this.bearerCapturado !== this.auth.bearer) {
 				console.log("[viralizeai-deepseek] token renovado pela sessao (requisicao da pagina)");
 				this.auth.bearer = this.bearerCapturado;

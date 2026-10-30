@@ -183,7 +183,7 @@ test('aba parada e provocada para ter o que capturar', () => {
   assert.ok(CLIENTE.includes('page.reload('));
   // So depois de um token recusado: recarregar a aba e visivel no VNC e nao
   // pode acontecer a toa.
-  assert.ok(CLIENTE.includes('if (forcar && !this.bearerCapturado) await this.provocarRequisicao(page);'));
+  assert.ok(CLIENTE.includes('if (forcar) await this.provocarRequisicao(page, this.auth.bearer);'));
 });
 
 test('o ouvinte nao e registrado duas vezes na mesma aba', () => {
@@ -194,4 +194,27 @@ test('o ouvinte nao e registrado duas vezes na mesma aba', () => {
 
 test('o token capturado nunca vai para o log', () => {
   assert.doesNotMatch(CLIENTE, /console\.(log|warn|error)\([^)]*bearerCapturado/);
+});
+
+test('forcado recarrega mesmo ja tendo token capturado', () => {
+  // O furo da rodada anterior: `!this.bearerCapturado` impedia a recarga
+  // sempre que houvesse um token capturado — e havia, era justamente o que
+  // acabara de ser recusado. A renovacao nunca acontecia.
+  assert.ok(CLIENTE.includes('this.bearerCapturado = "";'), 'o recusado precisa ser descartado');
+  assert.ok(CLIENTE.includes('this.bearerCapturado !== recusado'));
+});
+
+test('a espera cobre o tempo de o app hidratar', () => {
+  // Com 10s a espera acabava antes e o token chegava depois de termos
+  // desistido: no log, "token capturado" aparecia DEPOIS de "sem desafio".
+  assert.ok(CLIENTE.includes('for (let i = 0; i < 60; i++)'));
+  assert.ok(CLIENTE.includes('nao emitiu requisicao autenticada em 30s'));
+});
+
+test('uma renovacao por vez, compartilhada', () => {
+  // A Biblioteca dispara dezenas de pedidos em paralelo. Sem isto cada um
+  // recarregaria a aba, que nunca chegaria a emitir a requisicao esperada.
+  assert.ok(CLIENTE.includes('private renovando: Promise<void> | null = null;'));
+  assert.ok(CLIENTE.includes('await this.renovando.catch(() => {});'));
+  assert.ok(CLIENTE.includes('this.renovando = null;'));
 });
