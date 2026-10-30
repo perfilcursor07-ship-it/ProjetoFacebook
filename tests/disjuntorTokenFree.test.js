@@ -81,3 +81,23 @@ test('sessão expirada também abre', () => {
   for (let i = 0; i < DISJUNTOR_FALHAS; i++) registrarFalha(sessao, CHATGPT);
   assert.throws(() => assertDisjuntor(CHATGPT));
 });
+
+test('o disjuntor não pode bloquear o desvio para a API oficial', () => {
+  // Ele é verificado DENTRO do try, senão a chamada nunca chega ao catch —
+  // que é onde mora o desvio para a API paga da DeepSeek. Lançando antes do
+  // try, ligar DEEPSEEK_USAR_API=true não adiantaria nada.
+  const fonte = require('node:fs').readFileSync('src/services/tokenFreeGatewayService.js', 'utf8');
+  for (const [nome, inicio] of [
+    ['chatCompletion', 'async function chatCompletion('],
+    ['chatCompletionStream', 'async function chatCompletionStream('],
+  ]) {
+    const corpo = fonte.slice(fonte.indexOf(inicio), fonte.indexOf(inicio) + 2500);
+    const tryEm = corpo.indexOf('\n  try {');
+    const checagem = corpo.indexOf('assertDisjuntor();');
+    assert.ok(tryEm > 0 && checagem > 0, `${nome}: trecho não encontrado`);
+    assert.ok(checagem > tryEm, `${nome}: assertDisjuntor está fora do try`);
+  }
+  // E a marca precisa sobreviver ao normalizarErro, senão o desvio não a vê.
+  assert.match(fonte, /if \(err\?\.disjuntorAberto\) normalizado\.disjuntorAberto = true;/);
+  assert.match(fonte, /if \(err\?\.disjuntorAberto\) return true;/);
+});

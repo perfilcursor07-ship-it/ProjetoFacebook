@@ -216,6 +216,9 @@ function normalizarErro(err) {
   // `code` em tudo) e trocava todas por "Não consegui salvar esta resposta
   // agora" — escondendo justamente o que resolveria o problema.
   normalizado.paraUsuario = true;
+  // Sem carregar a marca, o desvio para a API oficial não reconhece o erro
+  // do disjuntor e a DeepSeek paga nunca entrava no lugar da web.
+  if (err?.disjuntorAberto) normalizado.disjuntorAberto = true;
   normalizado.cause = err;
   return normalizado;
 }
@@ -470,12 +473,15 @@ async function chatCompletion(
 ) {
   // DeepSeek pelo gateway vale para qualquer tarefa (ver deepseekPeloGateway).
   if (!(ehModeloDeepseek() && deepseekPeloGateway())) assertConfigured(tarefa);
-  assertDisjuntor();
   // "Parar IA" em /claude: geral ou só este modelo.
   await require('./iaPausaService').garantirLiberada(modeloAtual());
   const inicio = Date.now();
 
   try {
+    // Dentro do try de propósito: com o disjuntor aberto a chamada tem de
+    // cair no catch abaixo, que é onde mora o desvio para a API oficial da
+    // DeepSeek. Lançando aqui fora, o desvio nunca acontecia.
+    assertDisjuntor();
     const { data } = await axios.post(
       `${BASE_URL}/chat/completions`,
       bodyDaChamada(messages, {
@@ -525,6 +531,9 @@ function podeIrPelaApiDeepseek(err) {
   if (deepseekPeloGateway()) return false;
   if (!ehModeloDeepseek() || !String(env.deepseekApiKey || '').trim()) return false;
   if (err?.iaPausada) return false;
+  // Disjuntor aberto quer dizer "o web já falhou várias vezes seguidas": é
+  // exatamente quando a API oficial deve entrar, não quando desistir.
+  if (err?.disjuntorAberto) return true;
   const texto = `${err?.message || ''} ${mensagemRemota(err?.cause || err)}`;
   return /PoW challenge|create_pow_challenge|Failed to create PoW|deepseek/i.test(texto)
     || [401, 403, 502, 503].includes(Number(err?.status || err?.response?.status || 0));
@@ -615,7 +624,6 @@ async function chatCompletionStream(
 ) {
   // DeepSeek pelo gateway vale para qualquer tarefa (ver deepseekPeloGateway).
   if (!(ehModeloDeepseek() && deepseekPeloGateway())) assertConfigured(tarefa);
-  assertDisjuntor();
   // "Parar IA" em /claude: geral ou só este modelo.
   await require('./iaPausaService').garantirLiberada(modeloAtual());
   const inicio = Date.now();
@@ -623,6 +631,9 @@ async function chatCompletionStream(
   const limpador = criarLimpadorDeStream();
 
   try {
+    // Ver o comentário em chatCompletion: aqui dentro para o catch poder
+    // desviar para a API oficial da DeepSeek.
+    assertDisjuntor();
     const response = await axios.post(
       `${BASE_URL}/chat/completions`,
       bodyDaChamada(messages, {
