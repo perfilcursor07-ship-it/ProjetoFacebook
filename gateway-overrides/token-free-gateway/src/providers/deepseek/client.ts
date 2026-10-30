@@ -183,7 +183,7 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 			const lido = (await page.evaluate(async (ignorarGuardado: boolean) => {
 				// Aba em outro site tem outro localStorage: não serve.
 				if (!location.hostname.endsWith("deepseek.com")) {
-					return { token: "", origem: "aba-errada", chaves: [] as string[] };
+					return { token: "", origem: "aba-errada", chaves: [] as string[], corpo: "" };
 				}
 				const store = globalThis.localStorage;
 				const chaves: string[] = [];
@@ -201,14 +201,14 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 						if (parsed && typeof parsed === "object" && "token" in parsed) {
 							const t = (parsed as { token?: unknown }).token;
 							if (typeof t === "string" && t.length > 20) {
-								return { token: t, origem: `localStorage:${chave}`, chaves };
+								return { token: t, origem: `localStorage:${chave}`, chaves, corpo: "" };
 							}
 						}
 						if (typeof parsed === "string" && parsed.length > 20) {
-							return { token: parsed, origem: `localStorage:${chave}`, chaves };
+							return { token: parsed, origem: `localStorage:${chave}`, chaves, corpo: "" };
 						}
 					} catch {
-						if (valor.length > 20) return { token: valor, origem: `localStorage:${chave}`, chaves };
+						if (valor.length > 20) return { token: valor, origem: `localStorage:${chave}`, chaves, corpo: "" };
 					}
 				}
 				if (ignorarGuardado) {
@@ -223,24 +223,54 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 					const res = await fetch("https://chat.deepseek.com/api/v0/users/current", {
 						credentials: "include",
 					});
-					if (res.ok) {
-						const corpo = (await res.json()) as { data?: { biz_data?: { token?: string } } };
-						const t = corpo?.data?.biz_data?.token;
-						if (typeof t === "string" && t.length > 20) {
-							return { token: t, origem: "users/current", chaves };
-						}
+					const texto = await res.text();
+					let corpo: unknown = null;
+					try {
+						corpo = JSON.parse(texto);
+					} catch {
+						corpo = null;
 					}
-					return { token: "", origem: `users/current HTTP ${res.status}`, chaves };
+					// O token já mudou de lugar uma vez: procura pelo nome do campo,
+					// em qualquer profundidade, em vez de um caminho fixo.
+					const procurar = (alvo: unknown, nivel = 0): string => {
+						if (!alvo || typeof alvo !== "object" || nivel > 5) return "";
+						for (const [chave, valor] of Object.entries(alvo as Record<string, unknown>)) {
+							if (/token/i.test(chave) && typeof valor === "string" && valor.length > 20) {
+								return valor;
+							}
+							const achado = procurar(valor, nivel + 1);
+							if (achado) return achado;
+						}
+						return "";
+					};
+					const t = procurar(corpo);
+					if (t) return { token: t, origem: "users/current", chaves, corpo: "" };
+					// Sem token: o corpo CENSURADO ajuda a entender o porquê. Qualquer
+					// cadeia longa vira <...>: ela pode ser credencial.
+					const censurado = texto
+						.replace(/[A-Za-z0-9._-]{20,}/g, "<...>")
+						.slice(0, 300);
+					return { token: "", origem: `users/current HTTP ${res.status}`, chaves, corpo: censurado };
 				} catch (e) {
-					return { token: "", origem: `users/current falhou: ${String(e)}`, chaves };
+					return { token: "", origem: `users/current falhou: ${String(e)}`, chaves, corpo: "" };
 				}
-			}, forcar)) as { token: string; origem: string; chaves: string[] };
+			}, forcar)) as { token: string; origem: string; chaves: string[]; corpo: string };
 			this.bearerLidoEm = Date.now();
 			if (!lido.token) {
 				// Os NOMES das chaves, nunca os valores: eles são a credencial.
 				console.warn(
-					`[viralizeai-deepseek] nenhum token na sessão (${lido.origem}); chaves: ${lido.chaves.join(", ").slice(0, 300)}`,
+					`[viralizeai-deepseek] nenhum token na sessão (${lido.origem}); ` +
+						`corpo: ${lido.corpo || "-"}; chaves: ${lido.chaves.join(", ").slice(0, 400)}`,
 				);
+				// A aba está logada e nenhum token aparece em lugar nenhum: a sessão
+				// não é mais por bearer, é por cookie. Mandar um bearer vencido é
+				// pior que não mandar nenhum — é ele que o servidor recusa com
+				// 40003. Zerando, a requisição vai só com os cookies da aba, como
+				// as do próprio site.
+				if (forcar && this.auth.bearer) {
+					console.warn("[viralizeai-deepseek] tentando sem o cabeçalho Authorization, só com os cookies da aba");
+					this.auth.bearer = "";
+				}
 				return;
 			}
 			if (lido.token !== this.auth.bearer) {

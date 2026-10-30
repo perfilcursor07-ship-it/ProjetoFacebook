@@ -33,7 +33,8 @@ test('sem token no localStorage, pede um novo à própria API', () => {
   // É esta chamada que devolve token NOVO: o localStorage pode estar com um
   // já vencido, ou sequer ter a chave.
   assert.ok(CLIENTE.includes('api/v0/users/current'));
-  assert.ok(CLIENTE.includes('corpo?.data?.biz_data?.token'));
+  // O caminho fixo `data.biz_data.token` saiu: ele já mudou uma vez. Agora é
+  // varredura por nome de campo (coberta no teste logo abaixo).
   // Com os cookies da aba logada, que é o que o editor vê no VNC.
   assert.ok(CLIENTE.includes('credentials: "include"'));
 });
@@ -144,4 +145,30 @@ test('renovação que devolve o mesmo token aparece no log', () => {
   // foi exatamente o que aconteceu com a primeira versão deste conserto.
   assert.ok(CLIENTE.includes('a sessão devolveu o MESMO token'));
   assert.ok(CLIENTE.includes('} else if (forcar) {'));
+});
+
+test('sem token em lugar nenhum, tenta só com os cookies da aba', () => {
+  // O log mostrou a chave do token ausente do localStorage (só sobrou
+  // `settingsJwt`, `smidV2`, cache de analytics) e `users/current` voltando
+  // 200 sem token. Ou seja: o site não usa mais bearer, usa cookie. Mandar um
+  // bearer vencido é PIOR que não mandar nenhum — é ele que vira 40003.
+  assert.ok(CLIENTE.includes('this.auth.bearer = "";'));
+  assert.ok(CLIENTE.includes('tentando sem o cabeçalho Authorization'));
+  // E o cabeçalho some sozinho quando o bearer é vazio.
+  assert.match(CLIENTE, /\.\.\.\(this\.auth\.bearer \? \{ Authorization/);
+});
+
+test('o token é procurado em qualquer campo da resposta da API', () => {
+  // `data.biz_data.token` é um caminho fixo e já mudou uma vez.
+  const i = CLIENTE.indexOf('users/current');
+  const trecho = CLIENTE.slice(i - 200, i + 1800);
+  assert.match(trecho, /\/token\/i\.test\(chave\)/);
+  assert.match(trecho, /nivel > 5/, 'a varredura precisa de fundo');
+});
+
+test('o corpo registrado da API vai censurado', () => {
+  // Diagnóstico não pode virar vazamento: qualquer cadeia longa (que pode
+  // ser credencial) sai do log.
+  assert.ok(CLIENTE.includes('.replace(/[A-Za-z0-9._-]{20,}/g, "<...>")'));
+  assert.ok(CLIENTE.includes('corpo: ${lido.corpo || "-"}'));
 });
