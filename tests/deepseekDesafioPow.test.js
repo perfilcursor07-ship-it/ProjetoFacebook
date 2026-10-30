@@ -250,3 +250,43 @@ test('a resposta registrada da criacao de conversa vai censurada', () => {
   const trecho = CLIENTE.slice(i - 400, i + 200);
   assert.ok(trecho.includes('replace(/[A-Za-z0-9._-]{20,}/g, "<...>")'));
 });
+
+test('o id da conversa e achado onde quer que esteja', () => {
+  // A resposta real, de SUCESSO (code 0), que o log revelou:
+  //   {"code":0,...,"biz_data":{"chat_session":{"id":"...","title":null,...}}}
+  // O gateway procurava em biz_data.id e biz_data.chat_session_id. Nenhum
+  // casava, o id saia vazio e a mensagem morria num 422 de UUID.
+  assert.ok(CLIENTE.includes('private static acharIdDaConversa('));
+  assert.ok(CLIENTE.includes('biz?.chat_session as Record<string, unknown>'));
+
+  // Mesma logica do client, sobre a resposta real e sobre variacoes.
+  const achar = (alvo, nivel = 0) => {
+    if (!alvo || typeof alvo !== 'object' || nivel > 6) return '';
+    if (Array.isArray(alvo)) {
+      for (const item of alvo) {
+        const a = achar(item, nivel + 1);
+        if (a) return a;
+      }
+      return '';
+    }
+    for (const chave of ['id', 'chat_session_id']) {
+      const v = alvo[chave];
+      if (typeof v === 'string' && /^[0-9a-f-]{32,36}$/i.test(v)) return v;
+    }
+    for (const v of Object.values(alvo)) {
+      const a = achar(v, nivel + 1);
+      if (a) return a;
+    }
+    return '';
+  };
+
+  const id = '0198ab34cd56ef7890abcdef12345678';
+  assert.equal(achar({ code: 0, data: { biz_data: { chat_session: { id, title: null, seq_id: 215566389 } } } }), id);
+  assert.equal(achar({ data: { biz_data: { id } } }), id);
+  assert.equal(achar({ data: { biz_data: { chat_session_id: id } } }), id);
+  // Um UUID com hifens tambem serve.
+  const uuid = '6ae51ac7-d1d4-83ea-8feb-c1c220bf7ab7';
+  assert.equal(achar({ data: { biz_data: { chat_session: { id: uuid } } } }), uuid);
+  // E um `id` que nao e id de conversa nao pode ser confundido com um.
+  assert.equal(achar({ data: { biz_data: { chat_session: { id: 42, seq_id: 215566389 } } } }), '');
+});

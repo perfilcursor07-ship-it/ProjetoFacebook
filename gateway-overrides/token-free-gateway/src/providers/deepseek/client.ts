@@ -554,6 +554,42 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 	}
 
 	/**
+	 * viralizeai: o id da conversa, onde quer que ele esteja na resposta.
+	 *
+	 * O gateway procurava em `biz_data.id` e `biz_data.chat_session_id`. O
+	 * DeepSeek passou a devolver assim:
+	 *
+	 *   {"code":0,...,"biz_data":{"chat_session":{"id":"...","title":null,...}}}
+	 *
+	 * Resposta de SUCESSO, id um nível mais fundo. Nenhum dos dois caminhos
+	 * casava, o id saía vazio e a mensagem seguinte morria num 422 de UUID.
+	 * Procurar pelo formato evita depender do caminho de novo.
+	 */
+	private static acharIdDaConversa(alvo: unknown, nivel = 0): string {
+		if (!alvo || typeof alvo !== "object" || nivel > 6) return "";
+		if (Array.isArray(alvo)) {
+			for (const item of alvo) {
+				const achado = DeepSeekWebClient.acharIdDaConversa(item, nivel + 1);
+				if (achado) return achado;
+			}
+			return "";
+		}
+		const o = alvo as Record<string, unknown>;
+		for (const chave of ["id", "chat_session_id"]) {
+			const valor = o[chave];
+			// 32 hexadecimais, com ou sem os hífens do UUID: é o que o DeepSeek
+			// espera de volta. Assim um `id` numérico de outro objeto da
+			// resposta (seq_id, biz_id) não é confundido com o da conversa.
+			if (typeof valor === "string" && /^[0-9a-f-]{32,36}$/i.test(valor)) return valor;
+		}
+		for (const valor of Object.values(o)) {
+			const achado = DeepSeekWebClient.acharIdDaConversa(valor, nivel + 1);
+			if (achado) return achado;
+		}
+		return "";
+	}
+
+	/**
 	 * viralizeai: cria a conversa no DeepSeek, renovando o token se preciso.
 	 *
 	 * Antes isto devolvia `chat_session_id: ""` em silêncio quando a resposta
@@ -573,14 +609,19 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 		for (let tentativa = 0; tentativa < 2; tentativa++) {
 			const bruto = await this.pedirSessao();
 			const data = bruto as DeepSeekChatSessionResponse;
-			const sessionId = data.data?.biz_data?.id || data.data?.biz_data?.chat_session_id || "";
+			const biz = data.data?.biz_data as Record<string, unknown> | undefined;
+			const sessao = ((biz?.chat_session as Record<string, unknown>) ?? biz) ?? {};
+			const sessionId =
+				(typeof sessao.id === "string" && sessao.id) ||
+				(typeof sessao.chat_session_id === "string" && sessao.chat_session_id) ||
+				DeepSeekWebClient.acharIdDaConversa(bruto);
 			if (sessionId) {
 				return {
-					biz_id: data.data?.biz_data?.biz_id || "",
-					title: data.data?.biz_data?.title || "",
-					...data.data?.biz_data,
+					biz_id: String(sessao.biz_id ?? biz?.biz_id ?? ""),
+					title: String(sessao.title ?? biz?.title ?? ""),
+					...(sessao as object),
 					chat_session_id: sessionId,
-				};
+				} as DeepSeekChatSession;
 			}
 
 			const codigo = Number((bruto as { code?: unknown })?.code);
