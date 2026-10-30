@@ -60,6 +60,16 @@ const SINAL_DE_IMAGEM = /image_group|image_v2|image_results|image_asset_pointer|
  * o que transforma um desafio em bloqueio da sessão.
  */
 const DESAFIO_ESPERA_MS = 15 * 60_000;
+/**
+ * viralizeai: teto de cada foto que volta embutida como `data:`.
+ *
+ * A URL do ChatGPT é assinada e dá 403 fora da sessão, então a foto viaja em
+ * base64 dentro do stream — e base64 engorda o arquivo em 1/3. Com o teto
+ * antigo de 15 MB, três fotos davam 60 MB numa linha SSE só, que o
+ * ViralizeAI ainda tinha de passar por JSON.parse. Capa de matéria com mais
+ * de 8 MB não existe; o que passa disso é arquivo cru de câmera.
+ */
+const TETO_DA_FOTO = 8 * 1024 * 1024;
 
 /**
  * viralizeai: conversa do ChatGPT de cada conversa do "ChatGPT livre"
@@ -774,7 +784,7 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 			const tipo = (String(r.headers()["content-type"] || "").split(";")[0] ?? "").trim().toLowerCase();
 			if (!tipo.startsWith("image/")) return null;
 			const corpo = await r.body();
-			if (corpo.length < 5_000 || corpo.length > 15 * 1024 * 1024) return null;
+			if (corpo.length < 5_000 || corpo.length > TETO_DA_FOTO) return null;
 			return `data:${tipo};base64,${corpo.toString("base64")}`;
 		} catch {
 			return null;
@@ -976,7 +986,7 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 						try {
 							const r = await fetch(src, { credentials: "include" });
 							const blob = r.ok ? await r.blob() : null;
-							if (!blob || !blob.type.startsWith("image/") || blob.size < 5_000 || blob.size > 15 * 1024 * 1024) {
+							if (!blob || !blob.type.startsWith("image/") || blob.size < 5_000 || blob.size > TETO_DA_FOTO) {
 								return null;
 							}
 							return await new Promise<string>((resolve, reject) => {
@@ -1064,7 +1074,7 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 							headers: token && url.startsWith("https://chatgpt.com/") ? { Authorization: `Bearer ${token}` } : {},
 						});
 						const blob = r.ok ? await r.blob() : null;
-						if (!blob || !blob.type.startsWith("image/") || blob.size < 1024 || blob.size > 15 * 1024 * 1024) {
+						if (!blob || !blob.type.startsWith("image/") || blob.size < 1024 || blob.size > TETO_DA_FOTO) {
 							saida.push(null);
 							continue;
 						}

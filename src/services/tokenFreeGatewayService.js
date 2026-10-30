@@ -1,4 +1,5 @@
 const { AsyncLocalStorage } = require('node:async_hooks');
+const { StringDecoder } = require('node:string_decoder');
 const axios = require('axios');
 const { env } = require('../config/env');
 const { limparMarcacaoChatgpt, criarLimpadorDeStream, removerRespostaRepetida } = require('./chatgptMarkup');
@@ -349,6 +350,91 @@ function entregarBuscasDeImagem(callback, textoBruto) {
   }
 }
 
+/**
+ * Disjuntor por modelo: para de chamar um provedor que está quebrado.
+ *
+ * A DeepSeek web mudou o desafio anti-robô e toda chamada passou a voltar
+ * "PoW challenge missing in response". Sem nada que segurasse, a Biblioteca
+ * tentava traduzir post por post e o log virou isto:
+ *
+ *   19:13:14 [biblioteca] traduzir post: ... PoW challenge missing in response
+ *   19:13:15 [biblioteca] traduzir post: ... PoW challenge missing in response
+ *   (vinte por minuto, sem parar)
+ *
+ * Cada tentativa dessas acorda o Chrome do gateway. Repetir não conserta nada
+ * — só queima CPU do servidor e enche o log, escondendo erro de verdade.
+ *
+ * Falha que não se resolve sozinha (desafio anti-robô, sessão expirada) abre o
+ * disjuntor depois de três seguidas: por FALHAS_ATE_ABRIR minutos as chamadas
+ * daquele modelo falham na hora, sem rede. Qualquer sucesso fecha de novo.
+ * Cada modelo tem o seu — DeepSeek fora do ar não pode travar o ChatGPT.
+ */
+const DISJUNTOR_FALHAS = 3;
+const DISJUNTOR_MS = 5 * 60_000;
+const disjuntores = new Map();
+
+/** Erro que repetir não resolve (vale abrir o disjuntor). */
+function falhaPersistente(err) {
+  const texto = `${err?.message || ''} ${mensagemRemota(err?.cause || err)}`;
+  // "Sessao do Token-Free Gateway expirada ou sem autorizacao": as duas
+  // palavras não vêm coladas, então o padrão aceita o que houver no meio.
+  return /PoW challenge|create_pow_challenge|Failed to create PoW|sess[ãa]o\b[\s\S]{0,40}\bexpirad|session expired/i.test(
+    texto
+  );
+}
+
+function estadoDoDisjuntor(modelo = modeloAtual()) {
+  let estado = disjuntores.get(modelo);
+  if (!estado) {
+    estado = { falhas: 0, abertoAte: 0, motivo: '' };
+    disjuntores.set(modelo, estado);
+  }
+  return estado;
+}
+
+/** Fecha o disjuntor: o provedor respondeu. */
+function registrarSucesso(modelo = modeloAtual()) {
+  const estado = estadoDoDisjuntor(modelo);
+  if (estado.abertoAte) console.info(`[token-free] ${modelo} voltou a responder`);
+  estado.falhas = 0;
+  estado.abertoAte = 0;
+  estado.motivo = '';
+}
+
+/** Conta a falha e abre o disjuntor quando ela já se repetiu demais. */
+function registrarFalha(err, modelo = modeloAtual()) {
+  if (!falhaPersistente(err)) return;
+  const estado = estadoDoDisjuntor(modelo);
+  estado.falhas += 1;
+  estado.motivo = String(err?.message || err || '').slice(0, 200);
+  if (estado.falhas < DISJUNTOR_FALHAS || estado.abertoAte > Date.now()) return;
+  estado.abertoAte = Date.now() + DISJUNTOR_MS;
+  console.warn(
+    `[token-free] ${modelo} falhou ${estado.falhas}x seguidas (${estado.motivo}); ` +
+      `pausando as chamadas por ${Math.round(DISJUNTOR_MS / 60_000)} min`
+  );
+}
+
+/** Disjuntor aberto: falha na hora, sem acordar o Chrome do gateway. */
+function assertDisjuntor(modelo = modeloAtual()) {
+  const estado = estadoDoDisjuntor(modelo);
+  if (!estado.abertoAte) return;
+  if (estado.abertoAte <= Date.now()) {
+    // Passou o tempo: deixa UMA chamada passar para testar o provedor.
+    estado.abertoAte = 0;
+    estado.falhas = DISJUNTOR_FALHAS - 1;
+    return;
+  }
+  const faltam = Math.ceil((estado.abertoAte - Date.now()) / 1000);
+  const err = new Error(
+    `${modelo} está fora do ar há várias tentativas (${estado.motivo}). ` +
+      `Nova tentativa em ${faltam}s.`
+  );
+  err.status = 503;
+  err.disjuntorAberto = true;
+  throw err;
+}
+
 async function chatCompletion(
   messages,
   {
@@ -370,6 +456,7 @@ async function chatCompletion(
 ) {
   // DeepSeek pelo gateway vale para qualquer tarefa (ver deepseekPeloGateway).
   if (!(ehModeloDeepseek() && deepseekPeloGateway())) assertConfigured(tarefa);
+  assertDisjuntor();
   // "Parar IA" em /claude: geral ou só este modelo.
   await require('./iaPausaService').garantirLiberada(modeloAtual());
   const inicio = Date.now();
@@ -394,9 +481,11 @@ async function chatCompletion(
     entregarConversa(aoReceberConversa, data);
     if (!texto) throw new Error('resposta vazia');
     logar(inicio, tarefa, data?.usage);
+    registrarSucesso();
     return json ? limparCercaJson(texto) : texto;
   } catch (err) {
     const normalizado = normalizarErro(err);
+    if (!err?.disjuntorAberto) registrarFalha(normalizado);
     if (podeIrPelaApiDeepseek(normalizado)) {
       avisarDesvioDeepseek(normalizado);
       const deepseek = require('./deepseekService');
@@ -439,6 +528,62 @@ function avisarDesvioDeepseek(err) {
  * Se a conexao falhar antes do primeiro delta, tenta a chamada comum. Depois
  * do primeiro delta nao repete a requisicao, para nao duplicar texto na tela.
  */
+/**
+ * Lê um stream SSE pedaço a pedaço, entregando uma linha por vez.
+ *
+ * Por que não é `buffer.split()` a cada pedaço, que é o jeito curto:
+ *
+ * A imagem que o ChatGPT mostra na conversa vem no stream como `data:` em
+ * base64 — uma ÚNICA linha SSE de dezenas de MB. Com o split, cada pedaço de
+ * 64 KB que chegava varria o buffer inteiro outra vez: ~700 varreduras de um
+ * texto que ia a 60 MB, tudo síncrono. Era isso o log
+ *
+ *   [travado] Node parado por 64313ms — rodando: nenhuma tarefa de fundo
+ *
+ * e, com o Node parado, nenhuma página abria — para ninguém. Aqui a procura
+ * recomeça de onde parou, então cada byte é olhado uma vez só.
+ *
+ * O StringDecoder guarda caractere multibyte partido entre dois pedaços; sem
+ * ele um acento cortado no meio virava lixo no texto da matéria.
+ */
+function criarLeitorSse(processarLinha) {
+  const decoder = new StringDecoder('utf8');
+  // Pedaços da linha que ainda não terminou. Guardar a lista em vez de ir
+  // concatenando num texto só é o ponto: `indexOf` numa string que acabou de
+  // crescer obriga o V8 a achatá-la inteira, e isso a cada pedaço que chega
+  // dá o mesmo custo quadrático que o `split` tinha. Aqui a procura acontece
+  // só dentro do pedaço recém-chegado, e a junção, uma vez por linha.
+  let partes = [];
+  const montar = () => (partes.length === 1 ? partes[0] : partes.join(''));
+  const empurrar = (texto) => {
+    if (!texto) return;
+    let inicio = 0;
+    for (;;) {
+      const fim = texto.indexOf('\n', inicio);
+      if (fim < 0) break;
+      partes.push(texto.slice(inicio, fim));
+      const linha = montar();
+      partes = [];
+      inicio = fim + 1;
+      processarLinha(linha);
+    }
+    if (inicio < texto.length) partes.push(texto.slice(inicio));
+  };
+  return {
+    escrever(pedaco) {
+      empurrar(decoder.write(pedaco));
+    },
+    fim() {
+      empurrar(decoder.end());
+      // Última linha sem quebra no fim: o gateway manda "data: [DONE]\n\n",
+      // mas uma conexão cortada pode deixar conteúdo pendurado aqui.
+      const sobra = montar();
+      partes = [];
+      if (sobra.trim()) processarLinha(sobra);
+    },
+  };
+}
+
 async function chatCompletionStream(
   messages,
   {
@@ -456,6 +601,7 @@ async function chatCompletionStream(
 ) {
   // DeepSeek pelo gateway vale para qualquer tarefa (ver deepseekPeloGateway).
   if (!(ehModeloDeepseek() && deepseekPeloGateway())) assertConfigured(tarefa);
+  assertDisjuntor();
   // "Parar IA" em /claude: geral ou só este modelo.
   await require('./iaPausaService').garantirLiberada(modeloAtual());
   const inicio = Date.now();
@@ -482,7 +628,6 @@ async function chatCompletionStream(
     );
 
     await new Promise((resolve, reject) => {
-      let buffer = '';
       const processarLinha = (linha) => {
         const texto = String(linha || '').trim();
         if (!texto.startsWith('data:')) return;
@@ -513,14 +658,10 @@ async function chatCompletionStream(
         }
       };
 
-      response.data.on('data', (chunk) => {
-        buffer += chunk.toString('utf8');
-        const linhas = buffer.split(/\r?\n/);
-        buffer = linhas.pop() || '';
-        linhas.forEach(processarLinha);
-      });
+      const leitor = criarLeitorSse(processarLinha);
+      response.data.on('data', (chunk) => leitor.escrever(chunk));
       response.data.on('end', () => {
-        if (buffer.trim()) processarLinha(buffer);
+        leitor.fim();
         resolve();
       });
       response.data.on('error', reject);
@@ -529,8 +670,10 @@ async function chatCompletionStream(
     if (!full.trim()) throw new Error('stream vazio');
     logar(inicio, `${tarefa}/stream`);
     entregarBuscasDeImagem(aoReceberBuscasDeImagem, full);
+    registrarSucesso();
     return removerRespostaRepetida(limparMarcacaoChatgpt(full)).trim();
   } catch (err) {
+    if (!err?.disjuntorAberto) registrarFalha(normalizarErro(err));
     if (full.trim()) throw normalizarErro(err);
     // DeepSeek web fora: em vez de tentar o gateway de novo (falha igual),
     // segue em streaming pela API oficial — o texto continua aparecendo aos poucos.
@@ -617,6 +760,8 @@ function pedidosEmAndamento() {
 }
 
 module.exports = {
+  criarLeitorSse,
+  _disjuntor: { assertDisjuntor, registrarFalha, registrarSucesso, disjuntores, DISJUNTOR_FALHAS },
   chatCompletion: contandoPedido(chatCompletion),
   chatCompletionStream: contandoPedido(chatCompletionStream),
   pedidosEmAndamento,
