@@ -284,7 +284,16 @@ async function enviar(req, res, next) {
       enviarEvento({ tipo: 'erro', erro: aviso });
       return res.end();
     }
-    const ehErroInterno = Boolean(err.sql || err.sqlMessage || err.code);
+    // Erro de banco/driver traz SQL e dados na mensagem: fica no log, não na
+    // tela. Por isso qualquer erro com `code` é tratado como interno.
+    //
+    // A exceção é `paraUsuario`: a recusa do provedor vinha com
+    // `code: 'ERR_BAD_RESPONSE'` (o axios põe code em tudo) e virava "Não
+    // consegui salvar esta resposta agora". Nada tinha deixado de ser salvo —
+    // a DeepSeek é que havia recusado — e a tela escondia justamente o que
+    // resolveria, então o editor reenviava sem fim. Quem escreve a mensagem
+    // diz se ela pode ser lida (ver normalizarErro no tokenFreeGatewayService).
+    const ehErroInterno = !err.paraUsuario && Boolean(err.sql || err.sqlMessage || err.code);
     // A conversa foi excluída (na lista ou em outra aba) durante a pesquisa:
     // a chave estrangeira recusa a resposta. Não é falha do sistema.
     const conversaExcluida = err.code === 'ER_NO_REFERENCED_ROW_2';

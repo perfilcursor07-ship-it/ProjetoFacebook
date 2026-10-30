@@ -188,6 +188,14 @@ function normalizarErro(err) {
 
   if (codigo === 'ECONNREFUSED' || codigo === 'ENOTFOUND') {
     mensagem = `Token-Free Gateway nao esta acessivel em ${BASE_URL}. Execute "token-free-gateway start".`;
+  } else if (/PoW challenge|create_pow_challenge|Failed to create PoW/i.test(remoto)) {
+    // "PoW challenge missing in response" não diz nada a quem está no chat, e
+    // era isso que chegava na tela. O desafio anti-robô da DeepSeek mudou e o
+    // gateway não sabe resolvê-lo: reenviar não adianta, e é o que o editor
+    // ficava fazendo.
+    mensagem =
+      `${modeloAtual()} está recusando as conexões do servidor (mudou a verificação anti-robô do site). ` +
+      'Reenviar não resolve: escolha outro modelo nesta conversa.';
   } else if (status === 401 || /session expired|sess[aã]o expir/i.test(remoto)) {
     mensagem = `Sessao do Token-Free Gateway expirada ou sem autorizacao. Execute "token-free-gateway webauth". (${remoto})`;
   } else if (status === 404 && /authorized provider|model/i.test(remoto)) {
@@ -203,6 +211,11 @@ function normalizarErro(err) {
   const normalizado = new Error(mensagem);
   normalizado.status = status || 502;
   normalizado.code = codigo || undefined;
+  // As mensagens acima foram escritas para alguém ler: podem ir à tela. Sem
+  // esta marca o controller as confundia com erro de banco (o axios põe
+  // `code` em tudo) e trocava todas por "Não consegui salvar esta resposta
+  // agora" — escondendo justamente o que resolveria o problema.
+  normalizado.paraUsuario = true;
   normalizado.cause = err;
   return normalizado;
 }
@@ -432,6 +445,7 @@ function assertDisjuntor(modelo = modeloAtual()) {
   );
   err.status = 503;
   err.disjuntorAberto = true;
+  err.paraUsuario = true;
   throw err;
 }
 
