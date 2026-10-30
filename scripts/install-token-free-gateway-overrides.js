@@ -63,6 +63,65 @@ const patches = [
   //
   // Agora, sem PID file, o processo que serve é procurado pela linha de
   // comando antes de desistir.
+  // "PoW challenge missing in response": o pedido do desafio anti-robô da
+  // DeepSeek volta 200, mas o desafio não está em nenhum dos três lugares que
+  // o gateway conhece — eles mudaram o formato da resposta. Sem desafio, toda
+  // matéria pedida à DeepSeek falha, mesmo com a sessão logada no VNC.
+  //
+  // Em vez de cravar um quarto caminho fixo, o desafio é procurado pelo seu
+  // formato (algorithm + salt + challenge), onde quer que ele esteja. E se
+  // mesmo assim não houver nenhum, a resposta inteira vai para o log: sem ela
+  // o próximo conserto seria palpite outra vez.
+  {
+    file: 'src/providers/deepseek/client.ts',
+    marca: 'viralizeai-deepseek',
+    procurar: [
+      '\t\tconst data = evalResult.data as DeepSeekPowResponse;',
+      '\t\tconst challenge = data.data?.biz_data?.challenge || data.data?.challenge || data.challenge;',
+      '\t\tif (!challenge) throw new Error("PoW challenge missing in response");',
+      '\t\treturn challenge;',
+    ].join('\n'),
+    trocar: [
+      '\t\tconst data = evalResult.data as DeepSeekPowResponse;',
+      '\t\t// viralizeai-deepseek: acha o desafio pelo formato, não pelo caminho.',
+      '\t\tconst procurarDesafio = (alvo: unknown, nivel = 0): DeepSeekPowChallenge | null => {',
+      '\t\t\tif (!alvo || typeof alvo !== "object" || nivel > 5) return null;',
+      '\t\t\tif (Array.isArray(alvo)) {',
+      '\t\t\t\tfor (const item of alvo) {',
+      '\t\t\t\t\tconst achado = procurarDesafio(item, nivel + 1);',
+      '\t\t\t\t\tif (achado) return achado;',
+      '\t\t\t\t}',
+      '\t\t\t\treturn null;',
+      '\t\t\t}',
+      '\t\t\tconst o = alvo as Record<string, unknown>;',
+      '\t\t\tif (',
+      '\t\t\t\ttypeof o.algorithm === "string" &&',
+      '\t\t\t\ttypeof o.salt === "string" &&',
+      '\t\t\t\ttypeof o.challenge === "string"',
+      '\t\t\t) {',
+      '\t\t\t\treturn o as unknown as DeepSeekPowChallenge;',
+      '\t\t\t}',
+      '\t\t\tfor (const valor of Object.values(o)) {',
+      '\t\t\t\tconst achado = procurarDesafio(valor, nivel + 1);',
+      '\t\t\t\tif (achado) return achado;',
+      '\t\t\t}',
+      '\t\t\treturn null;',
+      '\t\t};',
+      '\t\tconst challenge =',
+      '\t\t\tdata.data?.biz_data?.challenge ||',
+      '\t\t\tdata.data?.challenge ||',
+      '\t\t\tdata.challenge ||',
+      '\t\t\tprocurarDesafio(data);',
+      '\t\tif (!challenge) {',
+      '\t\t\t// A resposta inteira, para o próximo conserto não ser palpite.',
+      '\t\t\tconsole.error(',
+      '\t\t\t\t`[viralizeai-deepseek] resposta sem desafio: ${JSON.stringify(data).slice(0, 800)}`,',
+      '\t\t\t);',
+      '\t\t\tthrow new Error("PoW challenge missing in response");',
+      '\t\t}',
+      '\t\treturn challenge;',
+    ].join('\n'),
+  },
   {
     file: 'src/cli/daemon.ts',
     marca: 'pidDoGatewayServindo',
