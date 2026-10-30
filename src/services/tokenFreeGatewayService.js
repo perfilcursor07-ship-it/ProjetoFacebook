@@ -386,7 +386,14 @@ function entregarBuscasDeImagem(callback, textoBruto) {
  * Cada modelo tem o seu — DeepSeek fora do ar não pode travar o ChatGPT.
  */
 const DISJUNTOR_FALHAS = 3;
-const DISJUNTOR_MS = 5 * 60_000;
+// A primeira pausa é curta de propósito. Quando a causa é algo que alguém
+// acabou de consertar (religar o gateway, renovar a sessão), esperar cinco
+// minutos por um provedor que já voltou é só atraso: o editor fica olhando
+// "nova tentativa em 280s" com tudo funcionando do outro lado. Se continuar
+// falhando, a pausa dobra a cada abertura — aí sim o provedor está fora
+// mesmo e insistir não ajuda ninguém.
+const DISJUNTOR_MS = 60_000;
+const DISJUNTOR_MS_MAX = 10 * 60_000;
 const disjuntores = new Map();
 
 /** Erro que repetir não resolve (vale abrir o disjuntor). */
@@ -402,7 +409,7 @@ function falhaPersistente(err) {
 function estadoDoDisjuntor(modelo = modeloAtual()) {
   let estado = disjuntores.get(modelo);
   if (!estado) {
-    estado = { falhas: 0, abertoAte: 0, motivo: '' };
+    estado = { falhas: 0, abertoAte: 0, motivo: '', aberturas: 0 };
     disjuntores.set(modelo, estado);
   }
   return estado;
@@ -415,6 +422,7 @@ function registrarSucesso(modelo = modeloAtual()) {
   estado.falhas = 0;
   estado.abertoAte = 0;
   estado.motivo = '';
+  estado.aberturas = 0;
 }
 
 /** Conta a falha e abre o disjuntor quando ela já se repetiu demais. */
@@ -424,10 +432,12 @@ function registrarFalha(err, modelo = modeloAtual()) {
   estado.falhas += 1;
   estado.motivo = String(err?.message || err || '').slice(0, 200);
   if (estado.falhas < DISJUNTOR_FALHAS || estado.abertoAte > Date.now()) return;
-  estado.abertoAte = Date.now() + DISJUNTOR_MS;
+  const espera = Math.min(DISJUNTOR_MS * 2 ** estado.aberturas, DISJUNTOR_MS_MAX);
+  estado.aberturas += 1;
+  estado.abertoAte = Date.now() + espera;
   console.warn(
     `[token-free] ${modelo} falhou ${estado.falhas}x seguidas (${estado.motivo}); ` +
-      `pausando as chamadas por ${Math.round(DISJUNTOR_MS / 60_000)} min`
+      `pausando as chamadas por ${Math.round(espera / 1000)}s`
   );
 }
 

@@ -101,3 +101,39 @@ test('o disjuntor não pode bloquear o desvio para a API oficial', () => {
   assert.match(fonte, /if \(err\?\.disjuntorAberto\) normalizado\.disjuntorAberto = true;/);
   assert.match(fonte, /if \(err\?\.disjuntorAberto\) return true;/);
 });
+
+test('a primeira pausa e curta; so dobra se continuar falhando', () => {
+  // Quando alguem acabou de consertar a causa (religar o gateway, renovar a
+  // sessao), esperar cinco minutos por um provedor que ja voltou e so atraso.
+  for (let i = 0; i < DISJUNTOR_FALHAS; i++) registrarFalha(pow(), DEEPSEEK);
+  let err = null;
+  try {
+    assertDisjuntor(DEEPSEEK);
+  } catch (e) {
+    err = e;
+  }
+  const primeira = Number(err.message.match(/em (\d+)s/)[1]);
+  assert.ok(primeira <= 60, `primeira pausa de ${primeira}s e longa demais`);
+
+  // Passou a pausa, falhou de novo: a proxima tem de ser maior.
+  disjuntores.get(DEEPSEEK).abertoAte = Date.now() - 1;
+  assertDisjuntor(DEEPSEEK);
+  for (let i = 0; i < DISJUNTOR_FALHAS; i++) registrarFalha(pow(), DEEPSEEK);
+  let err2 = null;
+  try {
+    assertDisjuntor(DEEPSEEK);
+  } catch (e) {
+    err2 = e;
+  }
+  const segunda = Number(err2.message.match(/em (\d+)s/)[1]);
+  assert.ok(segunda > primeira, `segunda pausa (${segunda}s) nao cresceu`);
+});
+
+test('sucesso zera tambem a escalada da pausa', () => {
+  // Senao um provedor que oscila acabaria com pausas de dez minutos para
+  // sempre, mesmo voltando a responder entre uma e outra.
+  for (let i = 0; i < DISJUNTOR_FALHAS; i++) registrarFalha(pow(), DEEPSEEK);
+  assert.throws(() => assertDisjuntor(DEEPSEEK));
+  registrarSucesso(DEEPSEEK);
+  assert.equal(disjuntores.get(DEEPSEEK).aberturas, 0);
+});
