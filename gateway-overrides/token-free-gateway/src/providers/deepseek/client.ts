@@ -527,7 +527,8 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 		throw new Error(`Unsupported PoW algorithm: ${algorithm}`);
 	}
 
-	async createChatSession(): Promise<DeepSeekChatSession> {
+	/** viralizeai: uma tentativa de criar a conversa, com o bearer atual. */
+	private async pedirSessao(): Promise<unknown> {
 		const page = await this.getPage();
 		const headers = this.browserHeaders();
 		const evalResult = (await page.evaluate(
@@ -549,14 +550,50 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 		)) as BrowserEvalResult;
 		if (!evalResult.ok)
 			throw new Error(`Failed to create chat session: ${evalResult.status} ${evalResult.error}`);
-		const data = evalResult.data as DeepSeekChatSessionResponse;
-		const sessionId = data.data?.biz_data?.id || data.data?.biz_data?.chat_session_id || "";
-		return {
-			biz_id: data.data?.biz_data?.biz_id || "",
-			title: data.data?.biz_data?.title || "",
-			...data.data?.biz_data,
-			chat_session_id: sessionId,
-		};
+		return evalResult.data;
+	}
+
+	/**
+	 * viralizeai: cria a conversa no DeepSeek, renovando o token se preciso.
+	 *
+	 * Antes isto devolvia `chat_session_id: ""` em silêncio quando a resposta
+	 * não trazia id — o que acontece com token vencido, porque a chamada volta
+	 * HTTP 200 com `{"code":40003}`. O id vazio seguia para a mensagem e o
+	 * DeepSeek respondia um 422 incompreensível:
+	 *
+	 *   UUID parsing failed: invalid length: expected length 32, found 0
+	 *
+	 * O erro real (token) aparecia como erro de formato de UUID. Agora segue a
+	 * mesma regra do desafio anti-robô: token recusado, renova pela sessão e
+	 * tenta mais uma vez; sem id depois disso, falha dizendo o porquê.
+	 */
+	async createChatSession(): Promise<DeepSeekChatSession> {
+		await this.atualizarBearerDaPagina();
+
+		for (let tentativa = 0; tentativa < 2; tentativa++) {
+			const bruto = await this.pedirSessao();
+			const data = bruto as DeepSeekChatSessionResponse;
+			const sessionId = data.data?.biz_data?.id || data.data?.biz_data?.chat_session_id || "";
+			if (sessionId) {
+				return {
+					biz_id: data.data?.biz_data?.biz_id || "",
+					title: data.data?.biz_data?.title || "",
+					...data.data?.biz_data,
+					chat_session_id: sessionId,
+				};
+			}
+
+			const codigo = Number((bruto as { code?: unknown })?.code);
+			if (tentativa === 0 && (codigo === 40003 || codigo === 40002)) {
+				console.warn("[viralizeai-deepseek] conversa recusada; renovando o token e tentando de novo");
+				await this.atualizarBearerDaPagina(true);
+				continue;
+			}
+			// Censurado: a resposta pode trazer credencial.
+			const censurado = JSON.stringify(bruto).replace(/[A-Za-z0-9._-]{20,}/g, "<...>").slice(0, 300);
+			throw new Error(`DeepSeek nao criou a conversa: ${censurado}`);
+		}
+		throw new Error("DeepSeek nao criou a conversa depois de renovar o token");
 	}
 
 	async chatCompletions(params: {

@@ -218,3 +218,35 @@ test('uma renovacao por vez, compartilhada', () => {
   assert.ok(CLIENTE.includes('await this.renovando.catch(() => {});'));
   assert.ok(CLIENTE.includes('this.renovando = null;'));
 });
+
+test('conversa sem id nunca segue adiante', () => {
+  // Com token vencido a criacao da conversa volta HTTP 200 e sem id, e o id
+  // vazio seguia para a mensagem. O DeepSeek respondia com um erro que nao
+  // tinha nada a ver com a causa:
+  //
+  //   422 UUID parsing failed: invalid length: expected length 32, found 0
+  //
+  // O problema era o token; a tela dizia que era formato de UUID.
+  assert.ok(CLIENTE.includes('DeepSeek nao criou a conversa'));
+  assert.doesNotMatch(
+    CLIENTE,
+    /return \{[^}]*chat_session_id: ""/,
+    'id vazio nao pode mais ser devolvido como se fosse valido'
+  );
+});
+
+test('a conversa tambem renova o token e tenta de novo', () => {
+  // Mesma regra do desafio anti-robo: uma segunda chance com token renovado.
+  const i = CLIENTE.indexOf('async createChatSession()');
+  const trecho = CLIENTE.slice(i, i + 2200);
+  assert.match(trecho, /await this\.atualizarBearerDaPagina\(\);/);
+  assert.match(trecho, /await this\.atualizarBearerDaPagina\(true\);/);
+  assert.match(trecho, /codigo === 40003 \|\| codigo === 40002/);
+  assert.match(trecho, /for \(let tentativa = 0; tentativa < 2; tentativa\+\+\)/);
+});
+
+test('a resposta registrada da criacao de conversa vai censurada', () => {
+  const i = CLIENTE.indexOf('DeepSeek nao criou a conversa');
+  const trecho = CLIENTE.slice(i - 400, i + 200);
+  assert.ok(trecho.includes('replace(/[A-Za-z0-9._-]{20,}/g, "<...>")'));
+});
