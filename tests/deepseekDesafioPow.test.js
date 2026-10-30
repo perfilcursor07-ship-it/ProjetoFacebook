@@ -127,3 +127,21 @@ test('a varredura acha o desafio onde quer que ele esteja', () => {
   // O envelope de erro real não pode virar desafio falso.
   assert.equal(achar({ code: 40003, msg: 'Authorization Failed (invalid token)', data: null }), null);
 });
+
+test('renovação forçada pula o localStorage e vai direto à API', () => {
+  // O furo que isto fecha: o token vencido ESTÁ no localStorage (foi de lá
+  // que o webauth o tirou). Reler o localStorage depois de um 40003 devolve
+  // o mesmo token recusado, e a segunda tentativa falhava igual. Só a API,
+  // com os cookies da sessão, emite um token novo.
+  assert.ok(CLIENTE.includes('!ignorarGuardado && i < store.length'));
+  assert.ok(CLIENTE.includes('}, forcar)'), 'o sinalizador precisa chegar dentro da página');
+  // Mesmo pulando a busca, os nomes das chaves continuam indo para o log.
+  assert.ok(CLIENTE.includes('if (ignorarGuardado) {'));
+});
+
+test('renovação que devolve o mesmo token aparece no log', () => {
+  // Sem isso ela some em silêncio e a falha seguinte fica sem explicação —
+  // foi exatamente o que aconteceu com a primeira versão deste conserto.
+  assert.ok(CLIENTE.includes('a sessão devolveu o MESMO token'));
+  assert.ok(CLIENTE.includes('} else if (forcar) {'));
+});

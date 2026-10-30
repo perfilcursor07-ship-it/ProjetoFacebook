@@ -180,14 +180,17 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 		if (!forcar && Date.now() - this.bearerLidoEm < 60_000) return;
 		try {
 			const page = await this.getPage();
-			const lido = (await page.evaluate(async () => {
+			const lido = (await page.evaluate(async (ignorarGuardado: boolean) => {
 				// Aba em outro site tem outro localStorage: não serve.
 				if (!location.hostname.endsWith("deepseek.com")) {
 					return { token: "", origem: "aba-errada", chaves: [] as string[] };
 				}
 				const store = globalThis.localStorage;
 				const chaves: string[] = [];
-				for (let i = 0; i < store.length; i++) {
+				// Depois de um token recusado, o localStorage é o ÚLTIMO lugar
+				// onde procurar: é de lá que veio o token que acabou de ser
+				// recusado. Pulando direto para a API, vem um token novo.
+				for (let i = 0; !ignorarGuardado && i < store.length; i++) {
 					const chave = store.key(i);
 					if (!chave) continue;
 					chaves.push(chave);
@@ -208,8 +211,14 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 						if (valor.length > 20) return { token: valor, origem: `localStorage:${chave}`, chaves };
 					}
 				}
-				// Sem token guardado: pede um à própria API, com os cookies desta
-				// aba. Esta é a chamada que devolve um token NOVO.
+				if (ignorarGuardado) {
+					for (let i = 0; i < store.length; i++) {
+						const chave = store.key(i);
+						if (chave) chaves.push(chave);
+					}
+				}
+				// Sem token guardado (ou ignorando o guardado): pede um à própria
+				// API, com os cookies desta aba. É a chamada que devolve token NOVO.
 				try {
 					const res = await fetch("https://chat.deepseek.com/api/v0/users/current", {
 						credentials: "include",
@@ -225,7 +234,7 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 				} catch (e) {
 					return { token: "", origem: `users/current falhou: ${String(e)}`, chaves };
 				}
-			})) as { token: string; origem: string; chaves: string[] };
+			}, forcar)) as { token: string; origem: string; chaves: string[] };
 			this.bearerLidoEm = Date.now();
 			if (!lido.token) {
 				// Os NOMES das chaves, nunca os valores: eles são a credencial.
@@ -237,6 +246,10 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 			if (lido.token !== this.auth.bearer) {
 				console.log(`[viralizeai-deepseek] token renovado pela sessão (${lido.origem})`);
 				this.auth.bearer = lido.token;
+			} else if (forcar) {
+				// Sem esta linha, uma renovação que devolve o mesmo token some em
+				// silêncio e a falha seguinte fica sem explicação.
+				console.warn(`[viralizeai-deepseek] a sessão devolveu o MESMO token (${lido.origem})`);
 			}
 		} catch (err) {
 			console.warn(
