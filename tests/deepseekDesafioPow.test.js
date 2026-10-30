@@ -143,19 +143,8 @@ test('renovação forçada pula o localStorage e vai direto à API', () => {
 test('renovação que devolve o mesmo token aparece no log', () => {
   // Sem isso ela some em silêncio e a falha seguinte fica sem explicação —
   // foi exatamente o que aconteceu com a primeira versão deste conserto.
-  assert.ok(CLIENTE.includes('a sessão devolveu o MESMO token'));
+  assert.ok(CLIENTE.includes('a sessao devolveu o MESMO token'));
   assert.ok(CLIENTE.includes('} else if (forcar) {'));
-});
-
-test('sem token em lugar nenhum, tenta só com os cookies da aba', () => {
-  // O log mostrou a chave do token ausente do localStorage (só sobrou
-  // `settingsJwt`, `smidV2`, cache de analytics) e `users/current` voltando
-  // 200 sem token. Ou seja: o site não usa mais bearer, usa cookie. Mandar um
-  // bearer vencido é PIOR que não mandar nenhum — é ele que vira 40003.
-  assert.ok(CLIENTE.includes('this.auth.bearer = "";'));
-  assert.ok(CLIENTE.includes('tentando sem o cabeçalho Authorization'));
-  // E o cabeçalho some sozinho quando o bearer é vazio.
-  assert.match(CLIENTE, /\.\.\.\(this\.auth\.bearer \? \{ Authorization/);
 });
 
 test('o token é procurado em qualquer campo da resposta da API', () => {
@@ -171,4 +160,38 @@ test('o corpo registrado da API vai censurado', () => {
   // ser credencial) sai do log.
   assert.ok(CLIENTE.includes('.replace(/[A-Za-z0-9._-]{20,}/g, "<...>")'));
   assert.ok(CLIENTE.includes('corpo: ${lido.corpo || "-"}'));
+});
+
+test('o token e capturado das requisicoes da propria pagina', () => {
+  // A descoberta que fechou o caso, lida no repositorio do gateway: o app do
+  // DeepSeek NAO guarda o token no localStorage. Ele fica na memoria do app e
+  // entra por interceptor em cada chamada a /api/v0/. O proprio `webauth` do
+  // gateway o captura assim — espiando as requisicoes da pagina.
+  assert.ok(CLIENTE.includes('page.on("request"'));
+  assert.ok(CLIENTE.includes('req.url().includes("/api/v0/")'));
+  assert.ok(CLIENTE.includes('auth.slice(7)'));
+  // E e a PRIMEIRA fonte consultada: e onde o token realmente esta.
+  const captura = CLIENTE.indexOf('this.bearerCapturado && this.bearerCapturado !== this.auth.bearer');
+  const storage = CLIENTE.indexOf('const store = globalThis.localStorage;');
+  assert.ok(captura > 0 && storage > captura, 'a captura precisa vir antes do localStorage');
+});
+
+test('aba parada e provocada para ter o que capturar', () => {
+  // Sem requisicao nenhuma nao ha cabecalho a ler. Recarregar faz o app
+  // refazer as chamadas de /api/v0/ com o token vivo.
+  assert.ok(CLIENTE.includes('private async provocarRequisicao('));
+  assert.ok(CLIENTE.includes('page.reload('));
+  // So depois de um token recusado: recarregar a aba e visivel no VNC e nao
+  // pode acontecer a toa.
+  assert.ok(CLIENTE.includes('if (forcar && !this.bearerCapturado) await this.provocarRequisicao(page);'));
+});
+
+test('o ouvinte nao e registrado duas vezes na mesma aba', () => {
+  // Um ouvinte por pedido vazaria memoria no processo do gateway.
+  assert.ok(CLIENTE.includes('this.paginasEscutadas.has(page)'));
+  assert.ok(CLIENTE.includes('new WeakSet<object>()'));
+});
+
+test('o token capturado nunca vai para o log', () => {
+  assert.doesNotMatch(CLIENTE, /console\.(log|warn|error)\([^)]*bearerCapturado/);
 });

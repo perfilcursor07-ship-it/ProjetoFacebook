@@ -154,6 +154,58 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 	}
 
 	private bearerLidoEm = 0;
+	/** Token visto numa requisição que a PRÓPRIA página fez. */
+	private bearerCapturado = "";
+	private paginasEscutadas = new WeakSet<object>();
+
+	/**
+	 * viralizeai: escuta as requisições da página para pegar o token vivo.
+	 *
+	 * O app do DeepSeek não guarda o token no localStorage — ele fica na
+	 * memória do próprio app e entra por interceptor em cada chamada a
+	 * `/api/v0/`. Procurá-lo no armazenamento era procurar onde ele não está;
+	 * o jeito de obtê-lo é o mesmo que o `webauth` do gateway usa: ler o
+	 * cabeçalho Authorization das requisições que a página faz sozinha.
+	 *
+	 * O ouvinte fica ligado na aba e nunca derruba um pedido.
+	 */
+	private escutarAutorizacao(page: Page): void {
+		if (this.paginasEscutadas.has(page)) return;
+		this.paginasEscutadas.add(page);
+		page.on("request", (req) => {
+			try {
+				if (!req.url().includes("/api/v0/")) return;
+				const auth = req.headers().authorization;
+				if (!auth?.startsWith("Bearer ")) return;
+				const token = auth.slice(7);
+				if (token.length > 20 && token !== this.bearerCapturado) {
+					this.bearerCapturado = token;
+					console.log("[viralizeai-deepseek] token capturado de uma requisicao da propria pagina");
+				}
+			} catch {
+				/* ouvinte de diagnostico nunca pode quebrar a navegacao */
+			}
+		});
+	}
+
+	/**
+	 * viralizeai: faz a página falar, para o ouvinte acima ter o que ouvir.
+	 *
+	 * Numa aba parada nenhuma requisição acontece e não há token a capturar.
+	 * Recarregar faz o app refazer as chamadas de `/api/v0/` — com o token
+	 * vivo no cabeçalho. Só acontece quando o token atual já foi recusado,
+	 * situação em que nada estava funcionando mesmo.
+	 */
+	private async provocarRequisicao(page: Page): Promise<void> {
+		try {
+			await page.reload({ waitUntil: "domcontentloaded", timeout: 30_000 });
+		} catch {
+			return; // recarga falhou; o resto segue com o que houver
+		}
+		for (let i = 0; i < 20 && !this.bearerCapturado; i++) {
+			await new Promise((r) => setTimeout(r, 500));
+		}
+	}
 
 	/**
 	 * viralizeai: usa o token que a SESSÃO logada está usando agora.
@@ -163,14 +215,12 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 	 *
 	 *   {"code":40003,"msg":"Authorization Failed (invalid token)"}
 	 *
-	 * HTTP 200, sem 401, sem nada que aponte a causa — com a aba do DeepSeek
-	 * aberta e logada na tela do servidor, o que torna o erro incompreensível
-	 * para quem está no chat.
+	 * HTTP 200, sem 401 — com a aba do DeepSeek aberta e logada na tela do
+	 * servidor, o que torna o erro incompreensível para quem está no chat.
 	 *
-	 * Dois caminhos, nesta ordem: o localStorage da aba (é de onde o `webauth`
-	 * lê) e, se ele não tiver, a própria API do DeepSeek pelos cookies da
-	 * sessão — que devolve um token NOVO em vez de um já vencido. É o que faz
-	 * "está logado no navegador" bastar de verdade.
+	 * A ordem é: o que o ouvinte capturou das requisições da própria página
+	 * (é lá que o token vive), depois o localStorage e a API, que são os
+	 * caminhos antigos e seguem valendo onde ainda funcionarem.
 	 *
 	 * Nunca lança: não conseguindo ler, o token salvo continua valendo.
 	 */
@@ -180,6 +230,14 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 		if (!forcar && Date.now() - this.bearerLidoEm < 60_000) return;
 		try {
 			const page = await this.getPage();
+			this.escutarAutorizacao(page);
+			if (forcar && !this.bearerCapturado) await this.provocarRequisicao(page);
+			if (this.bearerCapturado && this.bearerCapturado !== this.auth.bearer) {
+				console.log("[viralizeai-deepseek] token renovado pela sessao (requisicao da pagina)");
+				this.auth.bearer = this.bearerCapturado;
+				this.bearerLidoEm = Date.now();
+				return;
+			}
 			const lido = (await page.evaluate(async (ignorarGuardado: boolean) => {
 				// Aba em outro site tem outro localStorage: não serve.
 				if (!location.hostname.endsWith("deepseek.com")) {
@@ -189,7 +247,7 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 				const chaves: string[] = [];
 				// Depois de um token recusado, o localStorage é o ÚLTIMO lugar
 				// onde procurar: é de lá que veio o token que acabou de ser
-				// recusado. Pulando direto para a API, vem um token novo.
+				// recusado.
 				for (let i = 0; !ignorarGuardado && i < store.length; i++) {
 					const chave = store.key(i);
 					if (!chave) continue;
@@ -208,7 +266,9 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 							return { token: parsed, origem: `localStorage:${chave}`, chaves, corpo: "" };
 						}
 					} catch {
-						if (valor.length > 20) return { token: valor, origem: `localStorage:${chave}`, chaves, corpo: "" };
+						if (valor.length > 20) {
+							return { token: valor, origem: `localStorage:${chave}`, chaves, corpo: "" };
+						}
 					}
 				}
 				if (ignorarGuardado) {
@@ -217,8 +277,6 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 						if (chave) chaves.push(chave);
 					}
 				}
-				// Sem token guardado (ou ignorando o guardado): pede um à própria
-				// API, com os cookies desta aba. É a chamada que devolve token NOVO.
 				try {
 					const res = await fetch("https://chat.deepseek.com/api/v0/users/current", {
 						credentials: "include",
@@ -230,8 +288,6 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 					} catch {
 						corpo = null;
 					}
-					// O token já mudou de lugar uma vez: procura pelo nome do campo,
-					// em qualquer profundidade, em vez de um caminho fixo.
 					const procurar = (alvo: unknown, nivel = 0): string => {
 						if (!alvo || typeof alvo !== "object" || nivel > 5) return "";
 						for (const [chave, valor] of Object.entries(alvo as Record<string, unknown>)) {
@@ -245,11 +301,8 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 					};
 					const t = procurar(corpo);
 					if (t) return { token: t, origem: "users/current", chaves, corpo: "" };
-					// Sem token: o corpo CENSURADO ajuda a entender o porquê. Qualquer
-					// cadeia longa vira <...>: ela pode ser credencial.
-					const censurado = texto
-						.replace(/[A-Za-z0-9._-]{20,}/g, "<...>")
-						.slice(0, 300);
+					// Sem token: o corpo CENSURADO ajuda a entender o porquê.
+					const censurado = texto.replace(/[A-Za-z0-9._-]{20,}/g, "<...>").slice(0, 300);
 					return { token: "", origem: `users/current HTTP ${res.status}`, chaves, corpo: censurado };
 				} catch (e) {
 					return { token: "", origem: `users/current falhou: ${String(e)}`, chaves, corpo: "" };
@@ -259,31 +312,20 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 			if (!lido.token) {
 				// Os NOMES das chaves, nunca os valores: eles são a credencial.
 				console.warn(
-					`[viralizeai-deepseek] nenhum token na sessão (${lido.origem}); ` +
+					`[viralizeai-deepseek] nenhum token na sessao (${lido.origem}); ` +
 						`corpo: ${lido.corpo || "-"}; chaves: ${lido.chaves.join(", ").slice(0, 400)}`,
 				);
-				// A aba está logada e nenhum token aparece em lugar nenhum: a sessão
-				// não é mais por bearer, é por cookie. Mandar um bearer vencido é
-				// pior que não mandar nenhum — é ele que o servidor recusa com
-				// 40003. Zerando, a requisição vai só com os cookies da aba, como
-				// as do próprio site.
-				if (forcar && this.auth.bearer) {
-					console.warn("[viralizeai-deepseek] tentando sem o cabeçalho Authorization, só com os cookies da aba");
-					this.auth.bearer = "";
-				}
 				return;
 			}
 			if (lido.token !== this.auth.bearer) {
-				console.log(`[viralizeai-deepseek] token renovado pela sessão (${lido.origem})`);
+				console.log(`[viralizeai-deepseek] token renovado pela sessao (${lido.origem})`);
 				this.auth.bearer = lido.token;
 			} else if (forcar) {
-				// Sem esta linha, uma renovação que devolve o mesmo token some em
-				// silêncio e a falha seguinte fica sem explicação.
-				console.warn(`[viralizeai-deepseek] a sessão devolveu o MESMO token (${lido.origem})`);
+				console.warn(`[viralizeai-deepseek] a sessao devolveu o MESMO token (${lido.origem})`);
 			}
 		} catch (err) {
 			console.warn(
-				`[viralizeai-deepseek] não li o token da página: ${err instanceof Error ? err.message : String(err)}`,
+				`[viralizeai-deepseek] nao li o token da pagina: ${err instanceof Error ? err.message : String(err)}`,
 			);
 		}
 	}
