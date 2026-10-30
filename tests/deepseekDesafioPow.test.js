@@ -91,3 +91,32 @@ test('a varredura acha o desafio onde quer que ele esteja', () => {
   // Envelope de erro não vira desafio falso.
   assert.equal(procurarDesafio({ code: 40003, msg: 'not logged in' }), null);
 });
+
+test('o token é lido da aba logada, não só do webauth', () => {
+  // A causa de fundo: o gateway captura o bearer UMA vez, no `webauth`, e usa
+  // para sempre (ver providers/deepseek/auth.ts). O token rotaciona, e quando
+  // envelhece o desafio volta vazio — com a sessão logada na tela do servidor,
+  // que é o que faz o erro não ter explicação para quem está no chat.
+  assert.match(SCRIPT, /marca: 'atualizarBearerDaPagina'/);
+  assert.ok(SCRIPT.includes('this.auth.bearer = token;'));
+  // Antes de montar os headers: é neles que o bearer entra.
+  const i = SCRIPT.indexOf('await this.atualizarBearerDaPagina();');
+  const j = SCRIPT.indexOf('const headers = this.browserHeaders();', i);
+  assert.ok(i > 0 && j > i, 'a atualização tem de vir antes dos headers');
+});
+
+test('a leitura do token não pesa nem derruba o pedido', () => {
+  // Uma ida ao navegador por pedido seria desperdício: o token dura horas.
+  assert.ok(SCRIPT.includes('Date.now() - this.bearerLidoEm < 60_000'));
+  // Falha ao ler não pode cancelar a matéria: o token salvo segue valendo.
+  assert.ok(SCRIPT.includes('não li o token da página'));
+  // Aba em outro site tem outro localStorage.
+  assert.ok(SCRIPT.includes('location.hostname.endsWith("deepseek.com")'));
+});
+
+test('os dois patches do DeepSeek convivem no arquivo instalado', () => {
+  if (!fs.existsSync(ALVO)) return; // gateway não instalado nesta máquina
+  const codigo = fs.readFileSync(ALVO, 'utf8');
+  assert.equal((codigo.match(/atualizarBearerDaPagina\(\)/g) || []).length, 2, 'definição + chamada');
+  assert.equal((codigo.match(/const procurarDesafio = /g) || []).length, 1);
+});

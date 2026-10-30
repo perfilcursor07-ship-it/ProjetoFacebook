@@ -72,6 +72,82 @@ const patches = [
   // formato (algorithm + salt + challenge), onde quer que ele esteja. E se
   // mesmo assim não houver nenhum, a resposta inteira vai para o log: sem ela
   // o próximo conserto seria palpite outra vez.
+  // O gateway captura o bearer do DeepSeek UMA vez, no `webauth`, e usa para
+  // sempre (ver src/providers/deepseek/auth.ts). O token rotaciona: depois de
+  // alguns dias o pedido do desafio anti-robô passa a voltar 200 sem desafio
+  // nenhum e toda matéria falha — com a sessão logada e tudo certo na tela do
+  // servidor, que é justamente o que faz o erro não ter explicação.
+  //
+  // Lido da própria aba logada antes de cada pedido, o token volta a valer
+  // sozinho. É o que faz "está logado no VNC" realmente bastar.
+  {
+    file: 'src/providers/deepseek/client.ts',
+    marca: 'atualizarBearerDaPagina',
+    procurar: [
+      '\tasync createPowChallenge(targetPath: string): Promise<DeepSeekPowChallenge> {',
+      '\t\tconsole.log(`[DeepSeekWebClient] Creating PoW challenge for ${targetPath}...`);',
+      '\t\tconst page = await this.getPage();',
+      '\t\tconst headers = this.browserHeaders();',
+    ].join('\n'),
+    trocar: [
+      '\tprivate bearerLidoEm = 0;',
+      '',
+      '\t/**',
+      '\t * viralizeai: usa o token que a PÁGINA está usando agora.',
+      '\t *',
+      '\t * O salvo no webauth envelhece e, quando envelhece, o desafio anti-robô',
+      '\t * volta vazio — sem erro de HTTP, sem nada que aponte a causa. Ler da',
+      '\t * aba logada faz a sessão do navegador voltar a ser a fonte da verdade.',
+      '\t *',
+      '\t * Nunca lança: não conseguindo ler, o salvo continua valendo.',
+      '\t */',
+      '\tprivate async atualizarBearerDaPagina(): Promise<void> {',
+      '\t\t// Uma leitura por minuto basta: o token dura horas e cada leitura é',
+      '\t\t// uma ida ao navegador.',
+      '\t\tif (Date.now() - this.bearerLidoEm < 60_000) return;',
+      '\t\ttry {',
+      '\t\t\tconst page = await this.getPage();',
+      '\t\t\tconst token = (await page.evaluate(() => {',
+      '\t\t\t\t// Aba em outro site tem outro localStorage: não serve.',
+      '\t\t\t\tif (!location.hostname.endsWith("deepseek.com")) return "";',
+      '\t\t\t\tconst store = globalThis.localStorage;',
+      '\t\t\t\tfor (let i = 0; i < store.length; i++) {',
+      '\t\t\t\t\tconst chave = store.key(i);',
+      '\t\t\t\t\tif (!chave || !/token|auth/i.test(chave)) continue;',
+      '\t\t\t\t\tconst valor = store.getItem(chave) ?? "";',
+      '\t\t\t\t\ttry {',
+      '\t\t\t\t\t\tconst lido: unknown = JSON.parse(valor);',
+      '\t\t\t\t\t\tif (lido && typeof lido === "object" && "token" in lido) {',
+      '\t\t\t\t\t\t\tconst t = (lido as { token?: unknown }).token;',
+      '\t\t\t\t\t\t\tif (typeof t === "string" && t.length > 20) return t;',
+      '\t\t\t\t\t\t}',
+      '\t\t\t\t\t\tif (typeof lido === "string" && lido.length > 20) return lido;',
+      '\t\t\t\t\t} catch {',
+      '\t\t\t\t\t\tif (valor.length > 20) return valor;',
+      '\t\t\t\t\t}',
+      '\t\t\t\t}',
+      '\t\t\t\treturn "";',
+      '\t\t\t})) as string;',
+      '\t\t\tthis.bearerLidoEm = Date.now();',
+      '\t\t\tif (token && token !== this.auth.bearer) {',
+      '\t\t\t\tconsole.log("[viralizeai-deepseek] token da sessão mudou; usando o da página");',
+      '\t\t\t\tthis.auth.bearer = token;',
+      '\t\t\t}',
+      '\t\t} catch (err) {',
+      '\t\t\tconsole.warn(',
+      '\t\t\t\t`[viralizeai-deepseek] não li o token da página: ${err instanceof Error ? err.message : String(err)}`,',
+      '\t\t\t);',
+      '\t\t}',
+      '\t}',
+      '',
+      '\tasync createPowChallenge(targetPath: string): Promise<DeepSeekPowChallenge> {',
+      '\t\tconsole.log(`[DeepSeekWebClient] Creating PoW challenge for ${targetPath}...`);',
+      '\t\tconst page = await this.getPage();',
+      '\t\t// Antes dos headers: é aqui que o bearer entra neles.',
+      '\t\tawait this.atualizarBearerDaPagina();',
+      '\t\tconst headers = this.browserHeaders();',
+    ].join('\n'),
+  },
   {
     file: 'src/providers/deepseek/client.ts',
     marca: 'viralizeai-deepseek',
