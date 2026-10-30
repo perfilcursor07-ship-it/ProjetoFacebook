@@ -54,6 +54,78 @@ const patches = [
       '\t\t"--disable-backgrounding-occluded-windows",',
     ].join('\n'),
   },
+  // `gateway:restart` virava no-op quando o PID file sumia: o `stop` desistia
+  // ("Gateway is not running"), o `start` esbarrava na porta ocupada
+  // (EADDRINUSE) e o processo ANTIGO seguia servindo. No servidor isso deixou
+  // um gateway de 14 dias no ar — todo `npm run gateway:sync` atualizava os
+  // arquivos e nenhuma correção entrava, porque o código já estava carregado
+  // na memória daquele processo.
+  //
+  // Agora, sem PID file, o processo que serve é procurado pela linha de
+  // comando antes de desistir.
+  {
+    file: 'src/cli/daemon.ts',
+    marca: 'pidDoGatewayServindo',
+    procurar: [
+      'export async function stopDaemon() {',
+      '\tconst pid = readPid();',
+      '\tif (!pid) {',
+      '\t\tconsole.log("Gateway is not running (no PID file found)");',
+      '\t\treturn;',
+      '\t}',
+    ].join('\n'),
+    trocar: [
+      '/**',
+      ' * viralizeai: acha o gateway que está servindo quando o PID file sumiu.',
+      ' *',
+      ' * Sem isto o `restart` desiste no `stop`, o `start` morre com EADDRINUSE',
+      ' * e o processo velho continua de pé — por 14 dias, no caso que motivou',
+      ' * este patch, com todas as correções do gateway paradas em disco.',
+      ' *',
+      ' * Procura pela linha de comando em /proc (Linux); em outro sistema devolve',
+      ' * null e o comportamento antigo continua valendo.',
+      ' */',
+      'function pidDoGatewayServindo(): number | null {',
+      '\tif (process.platform !== "linux") return null;',
+      '\ttry {',
+      '\t\tfor (const nome of readdirSync("/proc")) {',
+      '\t\t\tif (!/^[0-9]+$/.test(nome)) continue;',
+      '\t\t\tconst pid = Number(nome);',
+      '\t\t\tif (pid === process.pid) continue;',
+      '\t\t\tlet linha = "";',
+      '\t\t\ttry {',
+      '\t\t\t\tlinha = readFileSync(`/proc/${nome}/cmdline`, "utf8");',
+      '\t\t\t} catch {',
+      '\t\t\t\tcontinue; // processo morreu no meio da varredura, ou não é nosso',
+      '\t\t\t}',
+      '\t\t\tif (linha.includes("token-free-gateway") && linha.includes("__serve")) return pid;',
+      '\t\t}',
+      '\t} catch {',
+      '\t\t/* sem /proc: cai no comportamento antigo */',
+      '\t}',
+      '\treturn null;',
+      '}',
+      '',
+      'export async function stopDaemon() {',
+      '\tlet pid = readPid();',
+      '\tif (!pid) {',
+      '\t\tpid = pidDoGatewayServindo();',
+      '\t\tif (!pid) {',
+      '\t\t\tconsole.log("Gateway is not running (no PID file found)");',
+      '\t\t\treturn;',
+      '\t\t}',
+      '\t\tconsole.log(`Gateway sem PID file; achei quem está servindo (PID: ${pid})`);',
+      '\t}',
+    ].join('\n'),
+  },
+  {
+    file: 'src/cli/daemon.ts',
+    // A marca é a linha inteira, não só `readdirSync`: a palavra sozinha já
+    // aparece no patch acima, e o guard de idempotência pulava este aqui.
+    marca: 'readFileSync, readdirSync } from "node:fs"',
+    procurar: 'import { closeSync, openSync, readFileSync } from "node:fs";',
+    trocar: 'import { closeSync, openSync, readFileSync, readdirSync } from "node:fs";',
+  },
   {
     file: 'src/server.ts',
     marca: 'handleChatCompletions(body, provider, req.signal)',
