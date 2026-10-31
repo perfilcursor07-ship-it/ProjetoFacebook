@@ -116,25 +116,99 @@ export class DeepSeekWebClient extends BaseApiClient<DeepSeekWebCredentials> {
 		throw new Error("DeepSeek uses custom sendMessage; callApi is not reachable.");
 	}
 
+	/**
+	 * viralizeai: o DeepSeek recusou a thread que estamos continuando?
+	 *
+	 *   {"code":0,"data":{"biz_code":26,"biz_msg":"invalid message id"}}
+	 *
+	 * HTTP 200, `code: 0` — sucesso no envelope de fora. O erro vem no
+	 * `biz_code`, e o stream acaba sem uma linha de texto. Na tela isso saía
+	 * como "abriu a resposta e não escreveu nada", que parece recusa do
+	 * provedor ao assunto e não tem nada a ver.
+	 *
+	 * Acontece quando o `parent_message_id` guardado não pertence mais à
+	 * conversa: sessão trocada do lado deles, mensagem apagada, ou o id que
+	 * capturamos não ser o que eles esperam de volta.
+	 */
+	private static threadRecusada(inicio: string): boolean {
+		if (!inicio.includes("biz_code")) return false;
+		return /"biz_code"\s*:\s*26\b/.test(inicio) || /invalid\s+message\s+id/i.test(inicio);
+	}
+
+	/**
+	 * viralizeai: lê o primeiro pedaço do stream sem consumi-lo.
+	 *
+	 * O erro de thread chega logo na primeira linha. Espiando aqui dá para
+	 * recomeçar a conversa e tentar de novo ANTES de o editor ver falha —
+	 * depois que o parser começa, já é tarde: o stream não volta atrás.
+	 */
+	private static async espiarInicio(
+		body: ReadableStream<Uint8Array>,
+	): Promise<{ inicio: string; stream: ReadableStream<Uint8Array> }> {
+		const reader = body.getReader();
+		const primeiro = await reader.read();
+		const inicio = primeiro.value ? new TextDecoder().decode(primeiro.value) : "";
+		// O pedaço espiado volta para a frente da fila; quem consome não nota.
+		let pendente: Uint8Array | undefined = primeiro.done ? undefined : primeiro.value;
+		const stream = new ReadableStream<Uint8Array>({
+			async pull(controller) {
+				if (pendente) {
+					const repetir = pendente;
+					pendente = undefined;
+					controller.enqueue(repetir);
+					return;
+				}
+				const proximo = await reader.read();
+				if (proximo.done) {
+					controller.close();
+					reader.releaseLock();
+					return;
+				}
+				controller.enqueue(proximo.value);
+			},
+			cancel(motivo) {
+				reader.cancel(motivo).catch(() => {});
+			},
+		});
+		return { inicio, stream };
+	}
+
 	override async sendMessage(params: {
 		message: string;
 		model?: string;
 		signal?: AbortSignal;
 	}): Promise<ReadableStream<Uint8Array>> {
 		await this.getPage();
-		if (!this.chatSessionId) {
-			const session = await this.createChatSession();
-			this.chatSessionId = session.chat_session_id || "";
+
+		for (let tentativa = 0; tentativa < 2; tentativa++) {
+			if (!this.chatSessionId) {
+				const session = await this.createChatSession();
+				this.chatSessionId = session.chat_session_id || "";
+			}
+			const body = await this.chatCompletions({
+				sessionId: this.chatSessionId,
+				parentMessageId: this.parentMessageId,
+				message: params.message,
+				model: params.model,
+				signal: params.signal,
+			});
+			if (!body) throw new Error("DeepSeek Web API returned empty response body");
+
+			const { inicio, stream } = await DeepSeekWebClient.espiarInicio(body);
+			if (tentativa === 0 && DeepSeekWebClient.threadRecusada(inicio)) {
+				console.warn(
+					"[viralizeai-deepseek] thread recusada (invalid message id); abrindo conversa nova e reenviando",
+				);
+				// Conversa inteira do zero: manter o id antigo é o que causa o
+				// erro, e o parent sozinho não basta se a sessão também caducou.
+				this.chatSessionId = "";
+				this.parentMessageId = null;
+				await stream.cancel().catch(() => {});
+				continue;
+			}
+			return stream;
 		}
-		const body = await this.chatCompletions({
-			sessionId: this.chatSessionId,
-			parentMessageId: this.parentMessageId,
-			message: params.message,
-			model: params.model,
-			signal: params.signal,
-		});
-		if (!body) throw new Error("DeepSeek Web API returned empty response body");
-		return body;
+		throw new Error("DeepSeek recusou a conversa duas vezes seguidas (invalid message id)");
 	}
 
 	override async parseStream(
