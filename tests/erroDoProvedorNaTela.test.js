@@ -157,3 +157,54 @@ test('resposta vazia diz que pode ser recusa, e vale para todo provedor', () => 
   // Antes so o ChatGPT tinha mensagem propria; DeepSeek caia no generico.
   assert.doesNotMatch(trecho, /\^\(gpt\|o\d\|chatgpt\)/);
 });
+
+test('recusa do provedor diz QUAIS modelos ainda restam', async () => {
+  // Cada provedor recusa um conjunto diferente de assuntos — a DeepSeek corta
+  // politica, por exemplo. "Use outro modelo" sem dizer quais deixa o editor
+  // adivinhando no meio de uma pauta.
+  const modelosPath = require.resolve('../src/services/materiaModelosService');
+  require.cache[modelosPath] = {
+    id: modelosPath,
+    filename: modelosPath,
+    loaded: true,
+    exports: {
+      resolverModelo: async () => null,
+      resolverModeloChatgpt: async () => null,
+      nomeModeloHumano: (m) => String(m || ''),
+      listarHabilitados: async () => [
+        { id: 'deepseek-v4-pro' },
+        { id: 'gpt-5.6' },
+        { id: 'claude-sonnet-5' },
+      ],
+    },
+  };
+  delete require.cache[controllerPath];
+  require.cache[servicePath] = {
+    id: servicePath,
+    filename: servicePath,
+    loaded: true,
+    exports: {
+      responder: async ({ onEvent }) => {
+        onEvent({ tipo: 'inicio-resposta' });
+        const err = new Error('deepseek-v4-pro abriu a resposta e nao escreveu nada.');
+        err.status = 502;
+        err.code = 'ERR_BAD_RESPONSE';
+        err.paraUsuario = true;
+        err.respostaVazia = true;
+        err.modeloQueRecusou = 'deepseek-v4-pro';
+        throw err;
+      },
+    },
+  };
+  const controller = require(controllerPath);
+
+  const res = new FakeResponse();
+  await controller.enviar(fakeRequest(), res, () => {});
+
+  assert.match(res.output, /Habilitados nesta conta/);
+  assert.match(res.output, /gpt-5\.6/);
+  assert.match(res.output, /claude-sonnet-5/);
+  // O que acabou de recusar nao entra na lista de alternativas.
+  const sugestao = res.output.slice(res.output.indexOf('Habilitados nesta conta'));
+  assert.doesNotMatch(sugestao, /deepseek-v4-pro/);
+});

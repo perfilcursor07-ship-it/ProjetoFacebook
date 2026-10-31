@@ -739,6 +739,9 @@ async function chatCompletionStream(
       );
       erro.status = 502;
       erro.paraUsuario = true;
+      // Marca lida pelo controller para sugerir quais modelos ainda restam.
+      erro.respostaVazia = true;
+      erro.modeloQueRecusou = modeloAtual();
       throw erro;
     }
     console.warn('[token-free-stream] stream indisponivel; tentando modo comum:', mensagemRemota(err));

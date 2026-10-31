@@ -302,11 +302,29 @@ async function enviar(req, res, next) {
     } else if (ehErroInterno) {
       console.error('[materia-chat] erro interno:', err.code || '', err.sqlMessage || err.message);
     }
-    const paraUsuario = conversaExcluida
+    let paraUsuario = conversaExcluida
       ? 'Esta conversa foi excluída enquanto a resposta era gerada, então a resposta não foi salva. Abra uma nova conversa e envie o pedido de novo.'
       : ehErroInterno
         ? 'Não consegui salvar esta resposta agora. Tente enviar de novo.'
         : err.message || 'Falha ao gerar a resposta';
+
+    // Provedor que encerrou sem escrever nada recusou o assunto desta
+    // conversa, e cada um recusa um conjunto diferente: a DeepSeek corta
+    // política, por exemplo. Dizer "use outro modelo" sem dizer QUAIS deixa o
+    // editor adivinhando no meio de uma pauta.
+    if (err.respostaVazia) {
+      try {
+        const outros = (await materiaModelos.listarHabilitados())
+          .map((item) => item.id)
+          .filter((id) => id && id !== err.modeloQueRecusou)
+          .slice(0, 4);
+        if (outros.length) {
+          paraUsuario += ` Habilitados nesta conta: ${outros.join(', ')}.`;
+        }
+      } catch {
+        /* a lista é um extra; a mensagem principal já diz o essencial */
+      }
+    }
 
     if (!res.headersSent) {
       if (ehErroInterno) return res.status(500).json({ error: paraUsuario });
