@@ -141,6 +141,7 @@ async function listarCatalogo() {
 
   // Modelos de texto do Hugging Face: aparecem para o administrador marcar,
   // lado a lado com os do gateway. Sem HF_TOKEN a lista vem vazia e nada muda.
+  const huggingFaceConfigurado = require('./hfChatService').isConfigured();
   let doHuggingFace = [];
   try {
     doHuggingFace = (await require('./hfChatService').listarModelos({ timeout: 4_000 }))
@@ -156,10 +157,17 @@ async function listarCatalogo() {
 
   return {
     gatewayOnline,
+    huggingFaceConfigurado,
     modelos: ids.map((id) => {
       const linha = salvos.get(id);
+      const provedor = provedorDoModelo(id);
+      const disponivel = provedor === 'huggingface'
+        ? (huggingFaceConfigurado ? doHuggingFace.includes(id) : false)
+        : gatewayOnline
+          ? doGateway.includes(id)
+          : null;
       return descrever(id, {
-        disponivel: doHuggingFace.includes(id) ? true : gatewayOnline ? doGateway.includes(id) : null,
+        disponivel,
         habilitado: linha ? Boolean(linha.habilitado) : semConfiguracao && id === gateway.MODELO,
         padrao: linha ? Boolean(linha.padrao) : semConfiguracao && id === gateway.MODELO,
       });

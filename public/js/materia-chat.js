@@ -190,7 +190,12 @@
 
   const MODELO_KEY = 'ViralizeAI.materiaModelo';
   const MODELO_CHATGPT_KEY = 'ViralizeAI.materiaModeloChatgpt';
-  const ROTULO_PROVEDOR = { claude: 'Claude', chatgpt: 'ChatGPT' };
+  const ROTULO_PROVEDOR = {
+    claude: 'Claude',
+    chatgpt: 'ChatGPT',
+    deepseek: 'DeepSeek',
+    huggingface: 'Hugging Face',
+  };
   // Gerador de imagem escolhido em /claude (ChatGPT, Grok ou Google Gemini).
   let geradorImagemNome = 'ChatGPT';
   try {
@@ -296,7 +301,7 @@
           modelo: escolhido.id,
           nome: escolhido.nome,
           nivel: ROTULO_PROVEDOR[escolhido.provedor] || '',
-          origem: 'token-free-gateway',
+          origem: escolhido.provedor === 'huggingface' ? 'Hugging Face Inference Providers' : 'modelo configurado',
         }
       : state.modelosIa?.[tipo] || modeloFallback(tipo);
     const nome = modelo.nome || 'IA';

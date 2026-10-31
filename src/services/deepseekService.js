@@ -261,6 +261,9 @@ function inferirTarefa(messages, tarefaPedida) {
  * Claude — com a divisão padrão ela continua sendo necessária.
  */
 function assertDeepseek(tarefa = null) {
+  // Um modelo HF escolhido explicitamente no /materia-manual não depende da
+  // chave da DeepSeek. A escolha fica no AsyncLocalStorage desta requisição.
+  if (modeloHuggingFaceDaVez()) return;
   if (deepseekPeloGateway()) return;
   if (tokenFreeDisponivel() && (!tarefa || usarTokenFree(tarefa))) return;
   if (claudeDisponivel() && TODAS_AS_TAREFAS.every((t) => TAREFAS_NO_CLAUDE.has(t))) return;
@@ -360,12 +363,9 @@ async function chatCompletion(
   // "Parar IA" geral vale antes de qualquer provedor (inclusive o gratuito).
   await require('./iaPausaService').garantirLiberada();
   const tarefaResolvida = inferirTarefa(messages, tarefa);
-  const gratis = await tentarFreeTier(messages, {
-    temperature,
-    json,
-    tarefa: tarefaResolvida,
-  });
-  if (gratis) return gratis;
+  // A escolha explícita do editor tem prioridade sobre o free tier. Antes o
+  // seletor mostrava Hugging Face, mas tarefas cobertas pelo gratuito eram
+  // respondidas por outro modelo silenciosamente.
   const modeloHf = modeloHuggingFaceDaVez();
   if (modeloHf) {
     return require('./hfChatService').chatCompletion(messages, {
@@ -374,6 +374,12 @@ async function chatCompletion(
       json,
     });
   }
+  const gratis = await tentarFreeTier(messages, {
+    temperature,
+    json,
+    tarefa: tarefaResolvida,
+  });
+  if (gratis) return gratis;
   if (usarTokenFree(tarefaResolvida)) {
     return require('./tokenFreeGatewayService').chatCompletion(messages, {
       temperature,
@@ -537,12 +543,6 @@ async function chatCompletionStream(
   await require('./iaPausaService').garantirLiberada();
   const tarefaResolvida = tarefa || 'conversa';
   if (!forceDeepseek) {
-    const gratisStream = await tentarFreeTierStream(messages, {
-      temperature,
-      onDelta,
-      tarefa: tarefaResolvida,
-    });
-    if (gratisStream) return gratisStream;
     const modeloHfStream = modeloHuggingFaceDaVez();
     if (modeloHfStream) {
       return require('./hfChatService').chatCompletionStream(messages, {
@@ -552,6 +552,12 @@ async function chatCompletionStream(
         timeout,
       });
     }
+    const gratisStream = await tentarFreeTierStream(messages, {
+      temperature,
+      onDelta,
+      tarefa: tarefaResolvida,
+    });
+    if (gratisStream) return gratisStream;
     if (usarTokenFree(tarefaResolvida)) {
       return require('./tokenFreeGatewayService').chatCompletionStream(messages, {
         temperature,

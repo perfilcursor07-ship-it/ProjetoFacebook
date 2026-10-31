@@ -59,6 +59,9 @@ function ehModeloHf(id) {
 function erro(message, status = 502, code = '') {
   const err = new Error(message);
   err.status = status;
+  // O controller do chat esconde erros com `code` por segurança (banco,
+  // driver etc.). Estes textos já são saneados e precisam chegar ao editor.
+  err.paraUsuario = true;
   if (code) err.code = code;
   return err;
 }
@@ -172,7 +175,7 @@ async function chatCompletion(
 ) {
   assertConfigurado();
   const id = String(modelo || '').trim();
-  if (!id) throw erro('Nenhum modelo do Hugging Face foi escolhido para esta conversa.', 400);
+  if (!ehModeloHf(id)) throw erro('Nenhum modelo válido do Hugging Face foi escolhido para esta conversa.', 400);
 
   const inicio = Date.now();
   let data;
@@ -202,7 +205,7 @@ async function chatCompletionStream(
 ) {
   assertConfigurado();
   const id = String(modelo || '').trim();
-  if (!id) throw erro('Nenhum modelo do Hugging Face foi escolhido para esta conversa.', 400);
+  if (!ehModeloHf(id)) throw erro('Nenhum modelo válido do Hugging Face foi escolhido para esta conversa.', 400);
 
   const inicio = Date.now();
   let completo = '';

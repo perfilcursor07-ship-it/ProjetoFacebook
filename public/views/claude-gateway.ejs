@@ -167,7 +167,7 @@
         <div>
           <h2 id="modelos-materia-titulo" class="text-sm font-semibold text-white">Modelos para escrever matérias</h2>
           <p class="mt-1 max-w-2xl text-xs leading-relaxed text-slate-400">
-            Marque os modelos que os editores podem escolher em <a href="/materia-manual" class="text-emerald-300 hover:text-emerald-200">Criar matéria</a>. O modelo padrão já vem selecionado para quem não escolher outro.
+            Marque os modelos que os editores podem escolher em <a href="/materia-manual" class="text-emerald-300 hover:text-emerald-200">Criar matéria</a>. Modelos do Hugging Face usam o <code>HF_TOKEN</code> do servidor; Claude, DeepSeek e ChatGPT continuam disponíveis normalmente.
           </p>
         </div>
         <span id="modelos-materia-gateway" class="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] font-medium text-slate-400">Carregando</span>
@@ -225,7 +225,7 @@
 
   <script id="claude-initial-status" type="application/json"><%- JSON.stringify(initialStatus).replace(/</g, '\\u003c') %></script>
   <script src="/js/claude-gateway-admin.js?v=20260921chromeRecovery1"></script>
-  <script src="/js/claude-modelos-materia.js?v=20260924modelos1"></script>
+  <script src="/js/claude-modelos-materia.js?v=20261030hfchat1"></script>
   <script src="/js/claude-modelos-tarefa.js?v=20261005imagem1"></script>
   <script src="/js/claude-pausa-ia.js?v=20261001pausa1"></script>
 <%- include('partials/app-end') %>

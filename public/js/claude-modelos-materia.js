@@ -10,6 +10,8 @@
   const provedores = {
     claude: { rotulo: 'Claude', classe: 'border-orange-400/30 bg-orange-400/10 text-orange-200' },
     chatgpt: { rotulo: 'ChatGPT', classe: 'border-sky-400/30 bg-sky-400/10 text-sky-200' },
+    deepseek: { rotulo: 'DeepSeek', classe: 'border-violet-400/30 bg-violet-400/10 text-violet-200' },
+    huggingface: { rotulo: 'Hugging Face', classe: 'border-yellow-400/30 bg-yellow-400/10 text-yellow-200' },
   };
   let modelos = [];
 
@@ -26,6 +28,11 @@
   }
 
   function textoDisponibilidade(modelo) {
+    if (modelo.provedor === 'huggingface') {
+      if (modelo.disponivel === true) return 'Disponível pelo Hugging Face';
+      if (modelo.disponivel === false) return 'Indisponível — confira HF_TOKEN ou o provedor deste modelo';
+      return 'Disponibilidade no Hugging Face não verificada';
+    }
     if (modelo.disponivel === true) return 'Disponível no gateway';
     if (modelo.disponivel === false) return 'Não anunciado pelo gateway — faça login nesta conta';
     return 'Disponibilidade não verificada';
@@ -129,6 +136,9 @@
   function aplicar(data) {
     modelos = Array.isArray(data.modelos) ? data.modelos : [];
     setGateway(Boolean(data.gatewayOnline));
+    gatewayEl.title = data.huggingFaceConfigurado
+      ? 'Hugging Face configurado com HF_TOKEN'
+      : 'Para usar modelos Hugging Face, configure HF_TOKEN no servidor';
     render();
   }
 
