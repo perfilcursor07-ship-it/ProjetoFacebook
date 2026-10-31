@@ -724,11 +724,21 @@ async function chatCompletionStream(
     // ChatGPT que chegou a responder (stream aberto, só sem texto legível) não
     // é falha de conexão: repetir mandaria o pedido de novo, abrindo outra
     // conversa no chatgpt.com e fazendo o editor esperar a pesquisa toda outra vez.
-    if (/^(gpt|o\d|chatgpt)/i.test(modeloAtual()) && /stream vazio/i.test(String(err?.message || ''))) {
+    // Provedor que chegou a responder (conexão aberta, zero texto) não é falha
+    // de conexão: repetir manda o pedido de novo e faz o editor esperar tudo
+    // outra vez para dar no mesmo.
+    //
+    // E "resposta vazia" não diz nada a quem está no chat. O caso mais comum é
+    // o provedor ter recusado o pedido e encerrado sem escrever nada — a
+    // recusa não vem como erro, vem como silêncio.
+    if (/stream vazio/i.test(String(err?.message || ''))) {
       const erro = new Error(
-        'O ChatGPT respondeu, mas o texto não chegou até aqui. Veja no log do gateway as linhas [ChatGPT Web] desta conversa.'
+        `${modeloAtual()} abriu a resposta e não escreveu nada. Isso costuma ser recusa do provedor ao pedido ` +
+          'desta conversa; reenviar o mesmo texto dá no mesmo. Reformule o pedido ou use outro modelo. ' +
+          'O log do gateway mostra o que o provedor devolveu.'
       );
       erro.status = 502;
+      erro.paraUsuario = true;
       throw erro;
     }
     console.warn('[token-free-stream] stream indisponivel; tentando modo comum:', mensagemRemota(err));

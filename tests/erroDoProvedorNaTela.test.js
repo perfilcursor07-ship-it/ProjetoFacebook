@@ -142,3 +142,18 @@ test('a recusa da DeepSeek vira texto que diz o que fazer', () => {
   assert.match(trecho, /Reenviar não resolve/i, 'precisa dizer que insistir não adianta');
   assert.match(trecho, /escolha outro modelo/i, 'precisa dizer o que fazer');
 });
+
+test('resposta vazia diz que pode ser recusa, e vale para todo provedor', () => {
+  // "Token-Free Gateway falhou: resposta vazia" nao diz nada a quem esta no
+  // chat. O caso mais comum e o provedor ter recusado o pedido e encerrado
+  // sem escrever nada: a recusa nao vem como erro, vem como silencio.
+  const fonte = require('node:fs').readFileSync('src/services/tokenFreeGatewayService.js', 'utf8');
+  const i = fonte.indexOf("if (/stream vazio/i.test(String(err?.message");
+  assert.ok(i > 0, 'o tratamento do stream vazio sumiu');
+  const trecho = fonte.slice(i, i + 900);
+  assert.match(trecho, /recusa do provedor/i);
+  assert.match(trecho, /reenviar o mesmo texto da no mesmo|reenviar o mesmo texto dá no mesmo/i);
+  assert.match(trecho, /erro\.paraUsuario = true;/, 'a mensagem precisa chegar a tela');
+  // Antes so o ChatGPT tinha mensagem propria; DeepSeek caia no generico.
+  assert.doesNotMatch(trecho, /\^\(gpt\|o\d\|chatgpt\)/);
+});
