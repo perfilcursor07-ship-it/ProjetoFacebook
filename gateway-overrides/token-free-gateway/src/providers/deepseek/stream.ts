@@ -32,6 +32,20 @@ export async function parseDeepSeekStream(
 	let currentMode: "text" | "thinking" | "tool_call" = "text";
 	let tagBuffer = "";
 
+	// viralizeai: amostra do que chegou, para o caso de sair texto vazio.
+	//
+	// "abriu a resposta e nao escreveu nada" tem duas causas possiveis que se
+	// parecem na tela: o provedor recusou o assunto, ou o formato do stream
+	// mudou e o parser nao entendeu. Este cliente ja teve TRES casos do
+	// segundo tipo (desafio, id da conversa, caminho do token). Sem ver as
+	// linhas cruas, a diferenca entre "recusou" e "nao entendi" e chute.
+	const amostra: string[] = [];
+	const guardarAmostra = (linha: string) => {
+		if (amostra.length >= 12 || !linha) return;
+		// Qualquer cadeia longa pode ser credencial ou id de sessao.
+		amostra.push(linha.replace(/[A-Za-z0-9._-]{30,}/g, "<...>").slice(0, 200));
+	};
+
 	const emitText = (delta: string) => {
 		const clean = stripJunk(delta);
 		if (!clean) return;
@@ -187,6 +201,7 @@ export async function parseDeepSeekStream(
 	};
 
 	const processLine = (line: string) => {
+		guardarAmostra(line);
 		if (!line) return;
 		if (line.startsWith("event: ")) return;
 
@@ -278,5 +293,14 @@ export async function parseDeepSeekStream(
 		reader.releaseLock();
 	}
 
+	if (!text.trim()) {
+		// `thinkingText` separado de propósito: se ele veio cheio e o texto
+		// vazio, o modelo escreveu e quem perdeu o conteúdo foi o parser —
+		// conclusão oposta à de uma recusa.
+		console.warn(
+			`[viralizeai-deepseek] stream sem texto (pensamento: ${thinkingText.trim().length} chars). ` +
+				`Primeiras linhas: ${amostra.join(" | ").slice(0, 1200)}`,
+		);
+	}
 	return { text: text.trim(), thinkingText: thinkingText.trim() };
 }
