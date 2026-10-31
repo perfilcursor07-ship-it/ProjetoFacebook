@@ -24,6 +24,7 @@ const TIMEOUT_MS = Math.max(15_000, Number(process.env.HF_CHAT_TIMEOUT_MS) || 18
  * Abertos, com bom português e servidos por vários provedores.
  */
 const MODELOS_PADRAO = Object.freeze([
+  require('./hfZeroGpuChatService').MODELO,
   'openai/gpt-oss-120b',
   'deepseek-ai/DeepSeek-V3.1',
   'Qwen/Qwen3-235B-A22B-Instruct-2507',
@@ -113,15 +114,16 @@ function traduzirErro(err, modelo) {
  * então o administrador não marca um modelo que já ia falhar.
  */
 async function listarModelos({ timeout = 6_000 } = {}) {
+  const zeroGpu = require('./hfZeroGpuChatService').MODELO;
   const fixos = modelosDoEnv();
-  if (fixos.length) return fixos;
+  if (fixos.length) return [...new Set([zeroGpu, ...fixos])];
   if (!isConfigured()) return [];
   try {
     const { data } = await axios.get(`${BASE_URL}/models`, { headers: cabecalhos(), timeout });
     const ids = (data?.data || [])
       .map((item) => String(item?.id || '').trim())
       .filter((id) => ehModeloHf(id));
-    return ids.length ? ids : [...MODELOS_PADRAO];
+    return ids.length ? [...new Set([zeroGpu, ...ids])] : [...MODELOS_PADRAO];
   } catch (err) {
     console.warn('[hf-chat] listagem de modelos falhou, usando a lista padrão:', err.message);
     return [...MODELOS_PADRAO];
@@ -176,6 +178,11 @@ async function chatCompletion(
   assertConfigurado();
   const id = String(modelo || '').trim();
   if (!ehModeloHf(id)) throw erro('Nenhum modelo válido do Hugging Face foi escolhido para esta conversa.', 400);
+  const zeroGpu = require('./hfZeroGpuChatService');
+  if (id === zeroGpu.MODELO) {
+    const texto = await zeroGpu.gerar(messages, { temperature, json, timeout });
+    return json ? limparJson(texto) : texto;
+  }
 
   const inicio = Date.now();
   let data;
@@ -186,7 +193,15 @@ async function chatCompletion(
       { headers: cabecalhos(), timeout }
     ));
   } catch (err) {
-    throw traduzirErro(err, id);
+    const traduzido = traduzirErro(err, id);
+    // PRO não dá Inference Providers ilimitado. Quando acabam os US$ 2
+    // mensais, usa automaticamente a cota diária ZeroGPU da mesma conta.
+    if (traduzido.code === 'HF_SEM_CREDITO' && process.env.HF_CHAT_ZEROGPU_FALLBACK !== 'false') {
+      console.warn(`[hf-chat] saldo de Inference Providers acabou; usando ${zeroGpu.MODELO}`);
+      const texto = await zeroGpu.gerar(messages, { temperature, json, timeout });
+      return json ? limparJson(texto) : texto;
+    }
+    throw traduzido;
   }
 
   logarUso(id, inicio, data?.usage);
@@ -206,6 +221,10 @@ async function chatCompletionStream(
   assertConfigurado();
   const id = String(modelo || '').trim();
   if (!ehModeloHf(id)) throw erro('Nenhum modelo válido do Hugging Face foi escolhido para esta conversa.', 400);
+  const zeroGpu = require('./hfZeroGpuChatService');
+  if (id === zeroGpu.MODELO) {
+    return zeroGpu.gerar(messages, { temperature, json: false, onDelta, timeout });
+  }
 
   const inicio = Date.now();
   let completo = '';
@@ -242,6 +261,11 @@ async function chatCompletionStream(
       resposta.data.on('error', reject);
     });
   } catch (err) {
+    const traduzido = traduzirErro(err, id);
+    if (traduzido.code === 'HF_SEM_CREDITO' && process.env.HF_CHAT_ZEROGPU_FALLBACK !== 'false') {
+      console.warn(`[hf-chat] saldo de Inference Providers acabou no stream; usando ${zeroGpu.MODELO}`);
+      return zeroGpu.gerar(messages, { temperature, json: false, onDelta, timeout });
+    }
     console.warn(`[hf-chat] stream de ${id} falhou, usando modo normal:`, err.message);
     completo = '';
   }

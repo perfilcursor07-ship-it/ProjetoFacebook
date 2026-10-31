@@ -30,6 +30,10 @@ function nomeModeloHumano(modelo) {
   const valor = String(modelo || '').trim();
   const lower = valor.toLowerCase();
   if (!valor) return 'Modelo IA';
+  if (lower.startsWith('zerogpu/')) {
+    const curto = valor.split('/').pop().replace(/[-_]/g, ' ').trim();
+    return `${curto} · ZeroGPU`;
+  }
   if (valor.includes('/')) {
     const curto = valor.split('/').pop().replace(/[-_]/g, ' ').replace(/:.*$/, '').trim();
     return `${curto} (HF)`;

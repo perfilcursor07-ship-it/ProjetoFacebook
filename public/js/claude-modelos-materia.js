@@ -33,6 +33,11 @@
 
   function textoDisponibilidade(modelo) {
     if (modelo.provedor === 'huggingface') {
+      if (String(modelo.id || '').toLowerCase().startsWith('zerogpu/')) {
+        return modelo.disponivel === false
+          ? 'ZeroGPU indisponível — confira o HF_TOKEN'
+          : 'Usa a cota diária PRO ZeroGPU — não usa créditos por token';
+      }
       if (modelo.disponivel === true) return 'Disponível pelo Hugging Face';
       if (modelo.disponivel === false) return 'Indisponível — confira HF_TOKEN ou o provedor deste modelo';
       return 'Disponibilidade no Hugging Face não verificada';
