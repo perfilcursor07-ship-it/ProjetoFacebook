@@ -3145,8 +3145,12 @@ async function responder({
     // Link colado continua sendo extraído aqui: isso é leitura de uma fonte
     // que o editor escolheu, não pesquisa.
     const iaPesquisaSozinha = chat.modo === 'chatgpt';
+    // Aqui também o botão decide. `pedidoSolicitaPesquisa` saiu da conta: ele
+    // religava a pesquisa a partir de palavras do pedido, com a caixa
+    // desmarcada na tela. O link que o sistema não conseguiu ler continua
+    // valendo — é fonte escolhida pelo editor, não pesquisa que ele não pediu.
     const pesquisarLivre = !iaPesquisaSozinha && !pediuSemPesquisaLivre && !pedidoMemoriaEditorial &&
-      (pesquisarWeb || artigoNaoExtraidoLivre || pedidoSolicitaPesquisa(pedido));
+      (pesquisarWeb || artigoNaoExtraidoLivre);
     if (pesquisarLivre) {
       registrarPasso({ kind: 'pesquisa', texto: 'Pesquisando na internet…' });
       try {
@@ -3189,10 +3193,12 @@ async function responder({
     }
     fontesWeb = fontesUnicas.slice(0, 12);
 
+    // Só muda o texto do passo mostrado na tela ("Pesquisando…" x
+    // "Escrevendo…"), mas tem de dizer a verdade: com a caixa desligada não
+    // há pesquisa, e anunciar uma seria mentir para o editor.
     const pediuPesquisaClaude = !iaPesquisaSozinha && !pedidoMemoriaEditorial && (
       artigoNaoExtraidoLivre ||
-      Boolean(pesquisarWeb) ||
-      pedidoSolicitaPesquisa(pedido)
+      Boolean(pesquisarWeb)
     );
     // "ChatGPT livre" é UMA conversa no chatgpt.com (a do Chrome do servidor,
     // visível no VNC) para cada conversa daqui. O gateway devolve onde a
@@ -3870,8 +3876,25 @@ async function responder({
     !pediuSemPesquisa &&
     (pedidoSolicitaPesquisa(pedido) ||
       /\b(internet|na\s+web|google|furo|outras?\s+fontes?|outro\s+ve[ií]culo|viral(?:izando)?)\b/i.test(pedido));
-  // Listar pautas exige busca — é o objetivo do modo.
-  let usarPesquisa = modoPautas || ((Boolean(pesquisarWeb) || pedidoMandaPesquisar) && !pediuSemPesquisa);
+  // O BOTÃO "Pesquisar fontes" decide, e só ele.
+  //
+  // Antes o texto do pedido podia religar a pesquisa sozinho: bastava conter
+  // "internet", "outras fontes", "viral" ou algo que `pedidoSolicitaPesquisa`
+  // reconhecesse. Com a caixa desmarcada o sistema saía apurando mesmo assim,
+  // e o editor via "Pesquisando na web…" sem ter pedido — sem relação com o
+  // estado que a tela mostrava.
+  //
+  // Listar pautas continua exigindo busca: é o objetivo do modo, e a própria
+  // tela liga a caixa ao entrar nele.
+  let usarPesquisa = modoPautas || (Boolean(pesquisarWeb) && !pediuSemPesquisa);
+  // Pedido que fala em pesquisar com a caixa desligada: não pesquisa, mas diz
+  // por quê. Ignorar em silêncio é que confunde.
+  if (!usarPesquisa && pedidoMandaPesquisar) {
+    registrarPasso({
+      kind: 'aviso',
+      texto: 'Você pediu pesquisa, mas o botão “Pesquisar fontes” está desligado — escrevi sem apurar na web.',
+    });
+  }
   const ajustePedeNovaApuracao =
     // Radicais com \w*: sem isso "\bpesquis\b" nunca batia em "pesquise".
     /\b(pesquis\w*|busqu\w*|procur\w*|atualiz\w*|mais\s+informa\w*|mais\s+dados|novos?\s+dados|complement\w*|apure|apurar|cruz(?:ar|e|em|ando)\b|repercuss\w*|coment[aá]rios?|internet|outras?\s+fontes?)/i.test(
