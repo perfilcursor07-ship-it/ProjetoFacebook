@@ -2786,6 +2786,34 @@ function pedidoQuerPesquisaGuardada(pedido) {
   return citaPesquisaFeita || outraSemAssunto;
 }
 
+/**
+ * Distingue uma correção de pauta de um ajuste meramente editorial.
+ *
+ * "Deixe mais curta" deve continuar usando a matéria anterior. Já
+ * "faça uma matéria algo assim: pastora é expulsa..." informa que o texto
+ * anterior entendeu a fonte pelo ângulo errado. Nesse caso precisamos reler
+ * os fatos da fonte original, sem oferecer a redação anterior ao modelo.
+ */
+function pedidoReorientaMateriaAnterior(pedido, temMateriaAnterior = false) {
+  if (!temMateriaAnterior) return false;
+  const texto = String(pedido || '').replace(/\s+/g, ' ').trim();
+  if (!texto || texto.length > 900 || /https?:\/\//i.test(texto)) return false;
+
+  const mandaRefazerMateria =
+    /\b(?:fa[çc]a|escreva|crie|monte|refa[çc]a|reescreva)\s+(?:(?:uma|a)\s+)?(?:nova\s+)?(?:mat[eé]ria|reportagem|not[ií]cia)\b/i.test(
+      texto
+    );
+  if (!mandaRefazerMateria) return false;
+
+  return (
+    /\b(?:algo|mais\s+ou\s+menos)\s+assim\b/i.test(texto) ||
+    /\b(?:com|nesse|neste)\s+(?:o\s+)?(?:foco|[aâ]ngulo|t[ií]tulo|assunto)\b/i.test(texto) ||
+    /\b(?:o\s+)?(?:foco|[aâ]ngulo|t[ií]tulo|assunto)\s+(?:correto\s+)?(?:[eé]|seria|deve\s+ser)\b/i.test(texto) ||
+    /\b(?:na\s+verdade|o\s+caso\s+[eé]|a\s+hist[oó]ria\s+[eé])\b/i.test(texto) ||
+    /\b(?:mat[eé]ria|reportagem|not[ií]cia)\s*(?::|—|-)\s*\S/i.test(texto)
+  );
+}
+
 async function responder({
   userId,
   chatId = null,
@@ -3764,10 +3792,15 @@ async function responder({
     /\b(?:nova|outra)\s+(?:pauta|mat[eé]ria|reportagem|assunto|tema)\b|\b(?:fa[çc]a|escreva|crie|quero)\s+(?:uma\s+)?(?:nova\s+|outra\s+)?(?:mat[eé]ria|reportagem)\s+sobre\b/i.test(
       pedido
     );
+  const pedidoReorientaMateria = pedidoReorientaMateriaAnterior(
+    pedido,
+    Boolean(ultimaMateriaAnterior)
+  );
   const pedidoCurtoDeContinuidade =
     Boolean(ultimaMateriaAnterior) &&
     pedido.length <= 320 &&
     !pedidoIndicaNovaPauta &&
+    !pedidoReorientaMateria &&
     !/https?:\/\//i.test(pedido) &&
     /\b(quero|deix[ae]|fa[çc]a|ficou|est[aá]|pode|coloque|inclua|use|mantenha|retire|tente|gostei|vers[aã]o|t[ií]tulo|texto|mat[eé]ria|mais|menos|tom|foco|[aâ]ngulo|comece|termine)\b/i.test(
       pedido
@@ -3790,6 +3823,7 @@ async function responder({
     !modoPautas &&
     !pedidoReaproveitaPesquisa &&
     !pedidoIndicaNovaPauta &&
+    !pedidoReorientaMateria &&
     (pedidoCurtoDeContinuidade ||
       /\b(mais\s+(?:curt[ao]|long[ao]|complet[ao]|detalhad[ao]|pol[eê]mic[ao]|forte|impactante|diret[ao]|emocionante|jornal[ií]stic[ao])|encurt|resum|troqu|troca|mud[ae]|ajust|acrescent|adicion|aprofund|desenvolv|melhor|refa[çc]|reescrev|corrig|tire|remova|outro\s+t[ií]tulo|nova\s+vers[aã]o|mesma\s+mat[eé]ria|esse\s+texto|nesse\s+texto|essa\s+mat[eé]ria|nesta\s+mat[eé]ria)/i.test(
         pedido
@@ -3959,6 +3993,7 @@ async function responder({
 
   // Instrução extra para a redação quando a matéria sai da pesquisa guardada.
   let instrucaoPesquisaGuardada = '';
+  let instrucaoReorientacao = '';
   if (pedidoReaproveitaPesquisa) {
     fontes = [...pesquisaGuardada];
     const titulosJaEscritos = anteriores
@@ -3978,6 +4013,29 @@ async function responder({
     registrarPasso({
       kind: 'fontes',
       texto: `Reaproveitando a pesquisa já feita nesta conversa (${fontes.length} fontes) — sem nova busca. Peça “nova pesquisa” para buscar de novo.`,
+    });
+  }
+
+  if (pedidoReorientaMateria && ultimaMateriaAnterior) {
+    fontes = [...fontesDaMateriaAnterior];
+    const fatosDaFonteOriginal = fontes.some((fonte) => fonte?.trecho || fonte?.resumo)
+      ? materiaIaService.montarBlocoFatos(fontes)
+      : '';
+    blocoFatos = fatosDaFonteOriginal
+      ? [
+          `NOVO FOCO INFORMADO PELO EDITOR (é obrigatório seguir este enquadramento):\n${pedido}`,
+          `FONTE ORIGINAL DA MATÉRIA (releia do zero; não use a redação anterior):\n${fatosDaFonteOriginal}`,
+        ].join('\n\n---\n\n')
+      : `NOVO FOCO INFORMADO PELO EDITOR:\n${pedido}\n\nA fonte anterior não guardou trechos suficientes. Não repita a matéria anterior nem invente detalhes; informe objetivamente se faltar base para escrever.`;
+    instrucaoReorientacao = [
+      'O editor corrigiu o foco porque a redação anterior interpretou a pauta de forma errada.',
+      'IGNORE COMPLETAMENTE a matéria anterior: não reaproveite título, lide, personagens, fatos, frases ou estrutura dela.',
+      'Escreva uma matéria nova do zero com o foco solicitado abaixo e confira cada informação na FONTE ORIGINAL fornecida.',
+      'Se a fonte original não sustentar o novo foco, explique em uma frase qual ponto está ausente; jamais repita o texto anterior como resposta.',
+    ].join('\n');
+    registrarPasso({
+      kind: 'pensando',
+      texto: 'Foco corrigido: relendo a fonte original e descartando a redação anterior.',
     });
   }
 
@@ -4814,7 +4872,11 @@ async function responder({
 
   // Um link novo é uma pauta nova. Não deixa uma matéria anterior da conversa
   // competir com a legenda que acabou de ser extraída do post atual.
-  const historicoBase = urlsFonte.length && !pedidoDeAjuste ? [] : anteriores;
+  const historicoBase = pedidoReorientaMateria
+    ? []
+    : urlsFonte.length && !pedidoDeAjuste
+      ? []
+      : anteriores;
   const historico = historicoBase.map((m) => ({ role: m.role, content: m.content }));
 
   // Fontes que o editor colou: o nome do veículo tem de sair citado na matéria.
@@ -4953,6 +5015,7 @@ async function responder({
       resposta = await deepseekService.conversarMateria({
         pedido: [
           pedido,
+          instrucaoReorientacao || null,
           instrucaoPesquisaGuardada || null,
           // Sem isto o pedido do editor ("título mais polêmico") ficava
           // guardado na configuração do dot e nunca chegava a quem escreve.
@@ -4968,7 +5031,8 @@ async function responder({
         fonteSocial: temFonteSocial,
         fonteSocialChars: caracteresFonteSocial,
         fonteEstrangeira,
-        reescritaDireta: temFonteDoLink && !usarPesquisa,
+        reescritaDireta:
+          (temFonteDoLink || (pedidoReorientaMateria && fontes.length > 0)) && !usarPesquisa,
         contextoAprendizado,
         politicasEditor,
         conversationId: `viralizeai:user:${userId}:chat:${chat.id}`,
@@ -5945,6 +6009,7 @@ module.exports = {
   imagemDaFonte,
   editarConteudoDaMensagem,
   interpretarResposta,
+  pedidoReorientaMateriaAnterior,
   pedidoQuerPesquisaGuardada,
   fontesDaPesquisaGuardada,
   interpretarRespostaLivreParaRascunho,
