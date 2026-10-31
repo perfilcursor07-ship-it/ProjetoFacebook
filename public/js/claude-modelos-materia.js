@@ -20,9 +20,13 @@
     statusEl.className = `text-[11px] ${erro ? 'text-rose-300' : 'text-slate-500'}`;
   }
 
-  function setGateway(online) {
-    gatewayEl.textContent = online ? 'Gateway online' : 'Gateway offline';
-    gatewayEl.className = online
+  function setProvedores(gatewayOnline, huggingFaceConfigurado) {
+    gatewayEl.textContent = [
+      gatewayOnline ? 'Gateway online' : 'Gateway offline',
+      huggingFaceConfigurado ? 'HF pronto' : 'HF sem token',
+    ].join(' · ');
+    const algumOnline = gatewayOnline || huggingFaceConfigurado;
+    gatewayEl.className = algumOnline
       ? 'rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300'
       : 'rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300';
   }
@@ -135,7 +139,7 @@
 
   function aplicar(data) {
     modelos = Array.isArray(data.modelos) ? data.modelos : [];
-    setGateway(Boolean(data.gatewayOnline));
+    setProvedores(Boolean(data.gatewayOnline), Boolean(data.huggingFaceConfigurado));
     gatewayEl.title = data.huggingFaceConfigurado
       ? 'Hugging Face configurado com HF_TOKEN'
       : 'Para usar modelos Hugging Face, configure HF_TOKEN no servidor';

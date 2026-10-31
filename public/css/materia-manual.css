@@ -321,6 +321,8 @@ body:has(.mia-manual-claude) #app-content > header { background: rgb(6 9 16 / 92
 .mia-manual-claude .mia-chat-model-pill span:first-child { color: #eef0f3; }
 .mia-manual-claude .mia-chat-model-pill[data-provider="chatgpt"] span:nth-child(2) { color: #7dd3fc; }
 .mia-manual-claude .mia-chat-model-pill[data-provider="claude"] span:nth-child(2) { color: #fdba74; }
+.mia-manual-claude .mia-chat-model-pill[data-provider="deepseek"] span:nth-child(2) { color: #c4b5fd; }
+.mia-manual-claude .mia-chat-model-pill[data-provider="huggingface"] span:nth-child(2) { color: #facc15; }
 .mia-manual-claude .mia-chat-model-menu {
   position: absolute; right: 0; bottom: calc(100% + .5rem); z-index: 30;
   display: grid; gap: .15rem; min-width: 13.5rem; padding: .4rem;
@@ -341,6 +343,8 @@ body:has(.mia-manual-claude) #app-content > header { background: rgb(6 9 16 / 92
 .mia-manual-claude .mia-chat-model-option small { color: var(--mia-chat-muted); font-size: .68rem; }
 .mia-manual-claude .mia-chat-model-option[data-provider="chatgpt"] small { color: #7dd3fc; }
 .mia-manual-claude .mia-chat-model-option[data-provider="claude"] small { color: #fdba74; }
+.mia-manual-claude .mia-chat-model-option[data-provider="deepseek"] small { color: #c4b5fd; }
+.mia-manual-claude .mia-chat-model-option[data-provider="huggingface"] small { color: #facc15; }
 .mia-manual-claude .mia-chat-model-option.is-active { background: var(--mia-chat-accent-soft); }
 .mia-manual-claude .mia-chat-model-option.is-active::after {
   content: ''; position: absolute; right: .75rem; top: 50%; width: .4rem; height: .7rem;
