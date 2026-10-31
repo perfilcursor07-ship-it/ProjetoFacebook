@@ -160,6 +160,22 @@ function tokenFreeDisponivel() {
   return require('./tokenFreeGatewayService').isConfigured();
 }
 
+/**
+ * Modelo do Hugging Face escolhido pelo editor no /materia-manual.
+ *
+ * A escolha viaja no mesmo AsyncLocalStorage que o gateway já usa
+ * (comModelo/modeloAtual) — é só um carregador de id por requisição, não tem
+ * nada de específico do gateway. Devolve null quando o modelo da vez não é do
+ * HF, e aí a cascata de sempre (grátis → gateway → Claude → DeepSeek) decide.
+ */
+function modeloHuggingFaceDaVez() {
+  if (provedorForcado()) return null;
+  const hf = require('./hfChatService');
+  if (!hf.isConfigured()) return null;
+  const escolhido = require('./tokenFreeGatewayService').modeloEscolhido?.();
+  return escolhido && hf.ehModeloHf(escolhido) ? escolhido : null;
+}
+
 /** DeepSeek sai pelo DeepSeek web do gateway, não pela API paga? */
 function deepseekPeloGateway() {
   return require('./tokenFreeGatewayService').deepseekPeloGateway();
@@ -350,6 +366,14 @@ async function chatCompletion(
     tarefa: tarefaResolvida,
   });
   if (gratis) return gratis;
+  const modeloHf = modeloHuggingFaceDaVez();
+  if (modeloHf) {
+    return require('./hfChatService').chatCompletion(messages, {
+      modelo: modeloHf,
+      temperature,
+      json,
+    });
+  }
   if (usarTokenFree(tarefaResolvida)) {
     return require('./tokenFreeGatewayService').chatCompletion(messages, {
       temperature,
@@ -519,6 +543,15 @@ async function chatCompletionStream(
       tarefa: tarefaResolvida,
     });
     if (gratisStream) return gratisStream;
+    const modeloHfStream = modeloHuggingFaceDaVez();
+    if (modeloHfStream) {
+      return require('./hfChatService').chatCompletionStream(messages, {
+        modelo: modeloHfStream,
+        temperature,
+        onDelta,
+        timeout,
+      });
+    }
     if (usarTokenFree(tarefaResolvida)) {
       return require('./tokenFreeGatewayService').chatCompletionStream(messages, {
         temperature,
@@ -4714,6 +4747,7 @@ module.exports = {
   TITULO_TOMES,
   assertDeepseek,
   usarClaude,
+  modeloHuggingFaceDaVez,
   usarTokenFree,
   MAX_MATERIA_CHARS,
 };

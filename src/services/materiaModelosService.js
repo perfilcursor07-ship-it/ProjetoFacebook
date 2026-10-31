@@ -11,7 +11,7 @@ const gateway = require('./tokenFreeGatewayService');
 
 const TABELA = 'materia_modelos';
 const MODELO_CHATGPT = String(process.env.CHATGPT_IMAGE_MODEL || 'gpt-5.6').trim();
-const ID_VALIDO = /^[a-z0-9][a-z0-9._:-]{1,119}$/i;
+const ID_VALIDO = /^[a-z0-9][a-z0-9._:/-]{1,119}$/i;
 const CACHE_MS = 15_000;
 
 let cache = null;
@@ -20,7 +20,9 @@ function provedorDoModelo(modelo) {
   const valor = String(modelo || '').toLowerCase();
   if (/^(gpt|o\d|chatgpt)/.test(valor)) return 'chatgpt';
   if (valor.includes('claude')) return 'claude';
-  if (valor.includes('deepseek')) return 'deepseek';
+  if (valor.includes('deepseek') && !valor.includes('/')) return 'deepseek';
+  // Id do Hugging Face vem como dono/modelo ("Qwen/Qwen3-…").
+  if (require('./hfChatService').ehModeloHf(valor)) return 'huggingface';
   return 'outro';
 }
 
@@ -28,6 +30,10 @@ function nomeModeloHumano(modelo) {
   const valor = String(modelo || '').trim();
   const lower = valor.toLowerCase();
   if (!valor) return 'Modelo IA';
+  if (valor.includes('/')) {
+    const curto = valor.split('/').pop().replace(/[-_]/g, ' ').replace(/:.*$/, '').trim();
+    return `${curto} (HF)`;
+  }
   if (lower.includes('claude-sonnet-5')) return 'Sonnet 5';
   if (lower.includes('claude-sonnet')) return 'Sonnet';
   if (lower.includes('claude-haiku')) return 'Haiku';
@@ -133,17 +139,27 @@ async function listarCatalogo() {
     doGateway = [];
   }
 
+  // Modelos de texto do Hugging Face: aparecem para o administrador marcar,
+  // lado a lado com os do gateway. Sem HF_TOKEN a lista vem vazia e nada muda.
+  let doHuggingFace = [];
+  try {
+    doHuggingFace = (await require('./hfChatService').listarModelos({ timeout: 4_000 }))
+      .filter((id) => ID_VALIDO.test(id));
+  } catch {
+    doHuggingFace = [];
+  }
+
   const linhas = await lerLinhas();
   const salvos = new Map(linhas.map((linha) => [linha.modelo, linha]));
   const semConfiguracao = !linhas.some((linha) => linha.habilitado);
-  const ids = [...new Set([gateway.MODELO, MODELO_CHATGPT, ...doGateway, ...salvos.keys()])];
+  const ids = [...new Set([gateway.MODELO, MODELO_CHATGPT, ...doGateway, ...doHuggingFace, ...salvos.keys()])];
 
   return {
     gatewayOnline,
     modelos: ids.map((id) => {
       const linha = salvos.get(id);
       return descrever(id, {
-        disponivel: gatewayOnline ? doGateway.includes(id) : null,
+        disponivel: doHuggingFace.includes(id) ? true : gatewayOnline ? doGateway.includes(id) : null,
         habilitado: linha ? Boolean(linha.habilitado) : semConfiguracao && id === gateway.MODELO,
         padrao: linha ? Boolean(linha.padrao) : semConfiguracao && id === gateway.MODELO,
       });

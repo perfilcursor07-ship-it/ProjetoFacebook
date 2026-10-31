@@ -48,6 +48,15 @@ function modeloAtual() {
   return modeloDaRequisicao.getStore() || MODELO;
 }
 
+/**
+ * Só o que o editor escolheu nesta requisição, sem cair no modelo padrão do
+ * gateway. Quem precisa decidir o PROVEDOR pelo id (um modelo do Hugging Face,
+ * por exemplo) não pode receber o default daqui como se fosse escolha.
+ */
+function modeloEscolhido() {
+  return modeloDaRequisicao.getStore() || null;
+}
+
 function provedorSelecionado() {
   return ['token-free', 'token_free', 'tokenfree'].includes(
     String(env.aiProvider || '').trim().toLowerCase()
@@ -819,6 +828,7 @@ module.exports = {
   bodyDaChamada,
   comModelo,
   modeloAtual,
+  modeloEscolhido,
   isConfigured,
   cobreTarefa,
   deepseekPeloGateway,

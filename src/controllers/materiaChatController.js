@@ -54,9 +54,14 @@ function gatewayEscreveAsMaterias() {
   return require('../services/deepseekService').usarTokenFree('conversa');
 }
 
+/** O editor pode escolher o modelo? Vale para o gateway e para o Hugging Face. */
+function podeEscolherModelo() {
+  return gatewayEscreveAsMaterias() || require('../services/hfChatService').isConfigured();
+}
+
 async function modelo(req, res, next) {
   try {
-    const gateway = gatewayEscreveAsMaterias();
+    const gateway = podeEscolherModelo();
     const opcoes = gateway ? await materiaModelos.listarHabilitados() : [];
     return res.json({
       ok: true,
@@ -235,7 +240,7 @@ async function enviar(req, res, next) {
       : 'materia';
     // Só aceita modelos liberados pelo administrador em /claude. No "ChatGPT
     // livre" quem escreve é sempre um modelo do ChatGPT.
-    const modeloEscolhido = !gatewayEscreveAsMaterias()
+    const modeloEscolhido = !podeEscolherModelo()
       ? null
       : tipoConversa === 'chatgpt'
         ? await materiaModelos.resolverModeloChatgpt(body.modelo)
