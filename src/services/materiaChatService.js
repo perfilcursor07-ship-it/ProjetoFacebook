@@ -1461,9 +1461,38 @@ function montarMateriaSeparada(bloco, indice) {
  * "## 2. Título", "**1. Título**" ou "---" entre textos completos.
  * @returns {Array<{indice:number, titulo:string, corpo:string, hashtags:string[], conteudo:string}>}
  */
+/**
+ * A resposta está falando COM o editor, em vez de entregar matéria?
+ *
+ * Quando a IA devolve opções numeradas ("1. O fato real que você quer cobrir
+ * — eu apuro e escrevo. 2. O tema fechado… Qual você prefere?"), a separação
+ * por lista virava três matérias e o sistema chegou a salvar uma pergunta
+ * como rascunho (#7535). Matéria não conversa com quem a encomendou.
+ *
+ * O sinal são as frases sobre a TAREFA, não pergunta no fim: a pauta da casa
+ * pede que a matéria termine perguntando ao leitor ("E aí, o que você acha?"),
+ * então usar "termina com ?" apagaria matéria boa.
+ */
+const FALA_COM_O_EDITOR = [
+  /\bquer(?:ia)?\s+que\s+eu\b/i,
+  /\bqual\s+(?:voc[êe]|vc)\s+prefere\b/i,
+  /\bprefere\s+que\s+eu\b/i,
+  /\bposso\s+(?:gerar|escrever|fazer|redigir|apurar)\b/i,
+  /\beu\s+(?:apuro|escrevo|redijo|disparo)\b/i,
+  /\bme\s+(?:diga|diz|manda|mande|envie)\b/i,
+  /\b(?:cole|envie|manda|mande)\s+o\s+link\b/i,
+];
+
+function pareceConversaComOEditor(texto) {
+  const t = String(texto || '');
+  return FALA_COM_O_EDITOR.some((regra) => regra.test(t));
+}
+
 function separarMaterias(conteudo) {
   const bruto = String(conteudo || '').replace(/\r\n/g, '\n').trim();
   if (!bruto) return [];
+  // Lista de opcoes oferecidas ao editor nao e lote de materias.
+  if (pareceConversaComOEditor(bruto)) return [];
 
   const porSeparador = bruto
     .split(/\n\s*(?:-{3,}|_{3,}|\*{3,})\s*\n/g)
@@ -5885,6 +5914,7 @@ async function editarConteudoDaMensagem({ userId, messageId, conteudo } = {}) {
 }
 
 module.exports = {
+  pareceConversaComOEditor,
   limparCorpoDoRascunho,
   capaEscolhidaValida,
   // Exposto para teste: a imagem que veio da conversa do ChatGPT vira capa.
