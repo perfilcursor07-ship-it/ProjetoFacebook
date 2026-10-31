@@ -14,7 +14,9 @@ const PERFIS = Object.freeze({
       process.env.HF_CHAT_ZEROGPU_FAST_SPACE || 'https://zacheus10-free-ai-chat.hf.space'
     ).replace(/\/+$/, ''),
     maxTokens: Math.min(1536, Math.max(256, Number(process.env.HF_CHAT_ZEROGPU_FAST_MAX_TOKENS) || 1024)),
-    maxPromptChars: 14_000,
+    // O Space aceita 4.096 tokens incluindo o system prompt próprio. Em
+    // português, 8.500 caracteres deixa folga para não estourar esse teto.
+    maxPromptChars: 8_500,
     thinking: null,
   },
   [MODELO_QUALIDADE]: {
@@ -66,6 +68,9 @@ function traduzirErro(texto, status = 0) {
   }
   if (/sleeping|starting|building|paused|loading/i.test(detalhe)) {
     return erro('O Space de chat ZeroGPU está iniciando. Tente novamente em 1 ou 2 minutos.', 503, 'HF_ZEROGPU_INICIANDO');
+  }
+  if (/conversation too long|context.*(?:too long|length)|input.*tokens/i.test(detalhe)) {
+    return erro('O contexto da conversa ficou grande demais para o Qwen rápido.', 413, 'HF_ZEROGPU_CONTEXTO');
   }
   return erro(`O chat ZeroGPU do Hugging Face não respondeu${detalhe ? `: ${detalhe}` : '.'}`);
 }
@@ -171,35 +176,47 @@ async function gerar(
   const perfil = perfilDoModelo(modelo);
   if (!perfil) throw erro(`O perfil ZeroGPU "${modelo}" não existe.`, 400, 'HF_ZEROGPU_MODELO');
   const inicio = Date.now();
-  const message = montarPrompt(messages, json, perfil.maxPromptChars);
-  const body = {
-    message,
-    // Perguntas simples não precisam reservar uma matéria inteira. Isso reduz
-    // bastante o tempo até o Space liberar a GPU.
-    max_new_tokens: message.length < 2_500 ? Math.min(384, perfil.maxTokens) : perfil.maxTokens,
-    temperature: Math.max(0, Math.min(1.5, Number(temperature) || 0.7)),
-  };
-  if (perfil.thinking != null) body.thinking = perfil.thinking;
-  const fila = await requisitar(`${perfil.host}/gradio_api/call/v2/generate`, {
-    method: 'POST',
-    headers: cabecalhos({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify(body),
-  }, Math.min(timeout, 60_000));
-  const textoFila = await fila.text();
-  if (!fila.ok) throw traduzirErro(textoFila, fila.status);
-  let eventoId = '';
-  try { eventoId = String(JSON.parse(textoFila)?.event_id || ''); } catch { /* tratado abaixo */ }
-  if (!eventoId) throw traduzirErro(textoFila || 'event_id ausente');
+  let limitePrompt = perfil.maxPromptChars;
 
-  const resultado = await requisitar(
-    `${perfil.host}/gradio_api/call/generate/${encodeURIComponent(eventoId)}`,
-    { headers: cabecalhos({ Accept: 'text/event-stream' }) },
-    timeout
-  );
-  if (!resultado.ok) throw traduzirErro(await resultado.text(), resultado.status);
-  const resposta = await lerSse(resultado, onDelta);
-  console.log(`[hf-zerogpu-chat] ${modelo} ${((Date.now() - inicio) / 1000).toFixed(1)}s`);
-  return resposta;
+  for (let tentativa = 0; tentativa < 2; tentativa += 1) {
+    const message = montarPrompt(messages, json, limitePrompt);
+    const body = {
+      message,
+      // Perguntas simples não precisam reservar uma matéria inteira. Isso
+      // reduz o tempo de geração e devolve a GPU mais cedo.
+      max_new_tokens: message.length < 2_500 ? Math.min(384, perfil.maxTokens) : perfil.maxTokens,
+      temperature: Math.max(0, Math.min(1.5, Number(temperature) || 0.7)),
+    };
+    if (perfil.thinking != null) body.thinking = perfil.thinking;
+
+    try {
+      const fila = await requisitar(`${perfil.host}/gradio_api/call/v2/generate`, {
+        method: 'POST',
+        headers: cabecalhos({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body),
+      }, Math.min(timeout, 60_000));
+      const textoFila = await fila.text();
+      if (!fila.ok) throw traduzirErro(textoFila, fila.status);
+      let eventoId = '';
+      try { eventoId = String(JSON.parse(textoFila)?.event_id || ''); } catch { /* tratado abaixo */ }
+      if (!eventoId) throw traduzirErro(textoFila || 'event_id ausente');
+
+      const resultado = await requisitar(
+        `${perfil.host}/gradio_api/call/generate/${encodeURIComponent(eventoId)}`,
+        { headers: cabecalhos({ Accept: 'text/event-stream' }) },
+        timeout
+      );
+      if (!resultado.ok) throw traduzirErro(await resultado.text(), resultado.status);
+      const resposta = await lerSse(resultado, onDelta);
+      console.log(`[hf-zerogpu-chat] ${modelo} ${((Date.now() - inicio) / 1000).toFixed(1)}s`);
+      return resposta;
+    } catch (err) {
+      if (err?.code !== 'HF_ZEROGPU_CONTEXTO' || tentativa > 0) throw err;
+      limitePrompt = Math.max(4_500, Math.floor(limitePrompt * 0.6));
+      console.warn(`[hf-zerogpu-chat] contexto excedeu o Space; repetindo com ${limitePrompt} caracteres`);
+    }
+  }
+  throw erro('O Qwen ZeroGPU não conseguiu reduzir o contexto da conversa.', 413, 'HF_ZEROGPU_CONTEXTO');
 }
 
 module.exports = {

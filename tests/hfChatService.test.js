@@ -7,6 +7,8 @@ let hf;
 let ultimoBody = null;
 let proximoEvento = 0;
 const eventos = new Map();
+let falhaContextoUsada = false;
+const tamanhosZeroGpu = [];
 
 before(async () => {
   servidor = http.createServer((req, res) => {
@@ -18,6 +20,12 @@ before(async () => {
     if (req.method === 'GET' && req.url.startsWith('/gradio_api/call/generate/')) {
       const id = req.url.split('/').pop();
       const saida = eventos.get(id) || 'Olá mundo';
+      if (saida === '__CONTEXTO_LONGO__') {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.write('event: error\n');
+        res.write('data: {"error":"Conversation too long (4209 tokens). Click the clear button."}\n\n');
+        return res.end();
+      }
       const parcial = saida.startsWith('Olá') ? 'Olá ' : saida;
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
       res.write(`event: generating\ndata: ${JSON.stringify([parcial])}\n\n`);
@@ -33,9 +41,14 @@ before(async () => {
 
       if (req.url === '/gradio_api/call/v2/generate') {
         const eventId = `evt-${++proximoEvento}`;
+        tamanhosZeroGpu.push(String(body.message || '').length);
         eventos.set(
           eventId,
-          /REGRA DE SAÍDA/.test(String(body.message || '')) ? '```json\n{"ok":true}\n```' : 'Olá mundo'
+          /FORCAR_CONTEXTO/.test(String(body.message || '')) && !falhaContextoUsada
+            ? (falhaContextoUsada = true, '__CONTEXTO_LONGO__')
+            : /REGRA DE SAÍDA/.test(String(body.message || ''))
+              ? '```json\n{"ok":true}\n```'
+              : 'Olá mundo'
         );
         res.setHeader('Content-Type', 'application/json');
         return res.end(JSON.stringify({ event_id: eventId }));
@@ -135,6 +148,19 @@ test('perfil rápido limita respostas simples e não envia campos do Space 27B',
   });
   assert.equal(ultimoBody.max_new_tokens, 384);
   assert.equal(Object.hasOwn(ultimoBody, 'thinking'), false);
+});
+
+test('contexto acima do limite é compactado e repetido automaticamente', async () => {
+  falhaContextoUsada = false;
+  tamanhosZeroGpu.length = 0;
+  const resposta = await hf.chatCompletionStream([
+    { role: 'system', content: `FORCAR_CONTEXTO ${'instruções '.repeat(1500)}` },
+    { role: 'user', content: 'OLA' },
+  ], { modelo: 'zerogpu/Qwen3-4B-Rapido' });
+  assert.equal(resposta, 'Olá mundo');
+  assert.equal(tamanhosZeroGpu.length, 2);
+  assert.ok(tamanhosZeroGpu[1] < tamanhosZeroGpu[0]);
+  assert.ok(tamanhosZeroGpu[0] <= 8_600);
 });
 
 test('modelo HF escolhido tem prioridade sobre o free tier e dispensa DeepSeek', async () => {
