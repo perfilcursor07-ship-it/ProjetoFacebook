@@ -80,27 +80,85 @@ class BrowserManager {
 	}
 
 	/**
+	 * viralizeai: um cookie torto derrubava a injeção inteira.
+	 *
+	 *   [BrowserManager] addCookies failed: Protocol error (Storage.setCookies):
+	 *   Invalid cookie fields
+	 *
+	 * `addCookies` é tudo ou nada: basta UM campo inválido no
+	 * auth-profiles.json e nenhum cookie entra — de nenhum provedor. O gateway
+	 * seguia sem a sessão e o erro aparecia só como uma linha de aviso.
+	 *
+	 * Aqui ficam só os campos que o Chrome aceita, com os valores normalizados.
+	 * Cookie sem nome, sem valor ou sem domínio é descartado: ele não teria
+	 * como ser aplicado mesmo.
+	 */
+	private static limparCookie(bruto: unknown): BrowserCookie | null {
+		if (!bruto || typeof bruto !== "object") return null;
+		const c = bruto as Record<string, unknown>;
+		const name = typeof c.name === "string" ? c.name.trim() : "";
+		const domain = typeof c.domain === "string" ? c.domain.trim() : "";
+		if (!name || !domain) return null;
+		if (typeof c.value !== "string") return null;
+
+		const limpo: Record<string, unknown> = {
+			name,
+			value: c.value,
+			domain,
+			path: typeof c.path === "string" && c.path.startsWith("/") ? c.path : "/",
+		};
+		if (typeof c.secure === "boolean") limpo.secure = c.secure;
+		if (typeof c.httpOnly === "boolean") limpo.httpOnly = c.httpOnly;
+		// Sessão (sem expiração) é -1; data inválida ou no passado remoto só
+		// faria o Chrome recusar o lote inteiro.
+		if (typeof c.expires === "number" && Number.isFinite(c.expires) && c.expires > 0) {
+			limpo.expires = Math.floor(c.expires);
+		}
+		const sameSite = String(c.sameSite ?? "").toLowerCase();
+		if (sameSite === "strict") limpo.sameSite = "Strict";
+		else if (sameSite === "lax") limpo.sameSite = "Lax";
+		else if (sameSite === "none") limpo.sameSite = "None";
+		return limpo as unknown as BrowserCookie;
+	}
+
+	/**
 	 * Inject cookies into the shared browser context.
 	 */
 	async addCookies(cookies: BrowserCookie[]): Promise<void> {
 		const ctx = await this.getContext();
-		if (cookies.length > 0) {
+		if (cookies.length === 0) return;
+		try {
+			// viralizeai: não sobrescreve sessão viva. O Chrome logado (pelo
+			// noVNC/webauth) é a fonte de verdade; o cookie salvo em
+			// auth-profiles.json só entra se o Chrome ainda não tiver aquele
+			// cookie. Antes, um sessionKey antigo derrubava o login do Claude.
+			const atuais = await ctx.cookies().catch(() => []);
+			const chave = (c: { name: string; domain?: string }) =>
+				`${c.name}|${String(c.domain || "").replace(/^\./, "")}`;
+			const existentes = new Set(atuais.filter((c) => c.value).map(chave));
+			const faltando = cookies
+				.filter((c) => !existentes.has(chave(c)))
+				.map((c) => BrowserManager.limparCookie(c))
+				.filter((c): c is BrowserCookie => c !== null);
+			if (!faltando.length) return;
 			try {
-				// viralizeai: não sobrescreve sessão viva. O Chrome logado (pelo
-				// noVNC/webauth) é a fonte de verdade; o cookie salvo em
-				// auth-profiles.json só entra se o Chrome ainda não tiver aquele
-				// cookie. Antes, um sessionKey antigo derrubava o login do Claude.
-				const atuais = await ctx.cookies().catch(() => []);
-				const chave = (c: { name: string; domain?: string }) =>
-					`${c.name}|${String(c.domain || "").replace(/^\./, "")}`;
-				const existentes = new Set(atuais.filter((c) => c.value).map(chave));
-				const faltando = cookies.filter((c) => !existentes.has(chave(c)));
-				if (faltando.length) await ctx.addCookies(faltando);
-			} catch (err) {
-				console.warn(
-					`[BrowserManager] addCookies failed: ${err instanceof Error ? err.message : String(err)}`,
-				);
+				await ctx.addCookies(faltando);
+			} catch {
+				// Um cookie ruim não pode levar os outros junto: na segunda
+				// tentativa cada um vai sozinho e só o culpado fica de fora.
+				const recusados: string[] = [];
+				for (const cookie of faltando) {
+					await ctx.addCookies([cookie]).catch(() => recusados.push(cookie.name));
+				}
+				if (recusados.length) {
+					// Só os NOMES: o valor do cookie é a credencial.
+					console.warn(`[BrowserManager] cookies recusados pelo Chrome: ${recusados.join(", ")}`);
+				}
 			}
+		} catch (err) {
+			console.warn(
+				`[BrowserManager] addCookies failed: ${err instanceof Error ? err.message : String(err)}`,
+			);
 		}
 	}
 
