@@ -6,12 +6,38 @@
  * O Space é configurável porque Spaces públicos podem mudar de versão/API.
  */
 
-const HOST = String(
-  process.env.HF_CHAT_ZEROGPU_SPACE || 'https://steliotel-qwen3-8-27b-chat.hf.space'
-).replace(/\/+$/, '');
-const MODELO = String(process.env.HF_CHAT_ZEROGPU_ID || 'zerogpu/Qwen3.8-27B').trim();
+const MODELO_RAPIDO = String(process.env.HF_CHAT_ZEROGPU_FAST_ID || 'zerogpu/Qwen3-4B-Rapido').trim();
+const MODELO_QUALIDADE = String(process.env.HF_CHAT_ZEROGPU_ID || 'zerogpu/Qwen3.8-27B').trim();
+const PERFIS = Object.freeze({
+  [MODELO_RAPIDO]: {
+    host: String(
+      process.env.HF_CHAT_ZEROGPU_FAST_SPACE || 'https://zacheus10-free-ai-chat.hf.space'
+    ).replace(/\/+$/, ''),
+    maxTokens: Math.min(1536, Math.max(256, Number(process.env.HF_CHAT_ZEROGPU_FAST_MAX_TOKENS) || 1024)),
+    maxPromptChars: 14_000,
+    thinking: null,
+  },
+  [MODELO_QUALIDADE]: {
+    host: String(
+      process.env.HF_CHAT_ZEROGPU_SPACE || 'https://steliotel-qwen3-8-27b-chat.hf.space'
+    ).replace(/\/+$/, ''),
+    maxTokens: Math.min(2048, Math.max(256, Number(process.env.HF_CHAT_ZEROGPU_MAX_TOKENS) || 1536)),
+    maxPromptChars: 100_000,
+    thinking: false,
+  },
+});
+// `MODELO` continua sendo o fallback padrão; agora aponta para o perfil rápido.
+const MODELO = MODELO_RAPIDO;
+const MODELOS = Object.freeze([MODELO_RAPIDO, MODELO_QUALIDADE]);
 const TIMEOUT_MS = Math.max(60_000, Number(process.env.HF_CHAT_ZEROGPU_TIMEOUT_MS) || 6 * 60_000);
-const MAX_NOVOS_TOKENS = Math.min(2048, Math.max(256, Number(process.env.HF_CHAT_ZEROGPU_MAX_TOKENS) || 1536));
+
+function perfilDoModelo(modelo) {
+  return PERFIS[String(modelo || '').trim()] || null;
+}
+
+function ehModelo(modelo) {
+  return Boolean(perfilDoModelo(modelo));
+}
 
 function token() {
   return String(process.env.HF_TOKEN || '').trim();
@@ -54,7 +80,15 @@ async function requisitar(url, opcoes = {}, timeout = TIMEOUT_MS) {
 }
 
 /** O Space recebe um campo só; serializamos sistema + histórico nesse campo. */
-function montarPrompt(messages, json = false) {
+function limitarTexto(texto, limite) {
+  const valor = String(texto || '');
+  if (valor.length <= limite) return valor;
+  const inicio = Math.floor(limite * 0.55);
+  const fim = limite - inicio;
+  return `${valor.slice(0, inicio)}\n\n[contexto intermediário reduzido para acelerar]\n\n${valor.slice(-fim)}`;
+}
+
+function montarPrompt(messages, json = false, maxChars = 100_000) {
   const lista = (Array.isArray(messages) ? messages : [])
     .filter((item) => item && String(item.content || '').trim())
     .map((item) => ({
@@ -70,8 +104,7 @@ function montarPrompt(messages, json = false) {
   }
   if (json) partes.push('REGRA DE SAÍDA: responda somente com o JSON solicitado, sem markdown nem cercas de código.');
   partes.push('Responda agora somente à última mensagem do usuário. Não repita os rótulos acima.');
-  // Mantém o fim (pedido atual) se a apuração ficar excepcionalmente grande.
-  return partes.join('\n\n---\n\n').slice(-100_000);
+  return limitarTexto(partes.join('\n\n---\n\n'), maxChars);
 }
 
 function extrairTexto(payload) {
@@ -131,15 +164,23 @@ async function lerSse(response, onDelta) {
   return completo.trim();
 }
 
-async function gerar(messages, { temperature = 0.7, json = false, onDelta = null, timeout = TIMEOUT_MS } = {}) {
+async function gerar(
+  messages,
+  { modelo = MODELO, temperature = 0.7, json = false, onDelta = null, timeout = TIMEOUT_MS } = {}
+) {
+  const perfil = perfilDoModelo(modelo);
+  if (!perfil) throw erro(`O perfil ZeroGPU "${modelo}" não existe.`, 400, 'HF_ZEROGPU_MODELO');
   const inicio = Date.now();
+  const message = montarPrompt(messages, json, perfil.maxPromptChars);
   const body = {
-    message: montarPrompt(messages, json),
-    max_new_tokens: MAX_NOVOS_TOKENS,
+    message,
+    // Perguntas simples não precisam reservar uma matéria inteira. Isso reduz
+    // bastante o tempo até o Space liberar a GPU.
+    max_new_tokens: message.length < 2_500 ? Math.min(384, perfil.maxTokens) : perfil.maxTokens,
     temperature: Math.max(0, Math.min(1.5, Number(temperature) || 0.7)),
-    thinking: false,
   };
-  const fila = await requisitar(`${HOST}/gradio_api/call/v2/generate`, {
+  if (perfil.thinking != null) body.thinking = perfil.thinking;
+  const fila = await requisitar(`${perfil.host}/gradio_api/call/v2/generate`, {
     method: 'POST',
     headers: cabecalhos({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
@@ -151,19 +192,22 @@ async function gerar(messages, { temperature = 0.7, json = false, onDelta = null
   if (!eventoId) throw traduzirErro(textoFila || 'event_id ausente');
 
   const resultado = await requisitar(
-    `${HOST}/gradio_api/call/generate/${encodeURIComponent(eventoId)}`,
+    `${perfil.host}/gradio_api/call/generate/${encodeURIComponent(eventoId)}`,
     { headers: cabecalhos({ Accept: 'text/event-stream' }) },
     timeout
   );
   if (!resultado.ok) throw traduzirErro(await resultado.text(), resultado.status);
   const resposta = await lerSse(resultado, onDelta);
-  console.log(`[hf-zerogpu-chat] ${MODELO} ${((Date.now() - inicio) / 1000).toFixed(1)}s`);
+  console.log(`[hf-zerogpu-chat] ${modelo} ${((Date.now() - inicio) / 1000).toFixed(1)}s`);
   return resposta;
 }
 
 module.exports = {
-  HOST,
   MODELO,
+  MODELOS,
+  MODELO_RAPIDO,
+  MODELO_QUALIDADE,
+  ehModelo,
   montarPrompt,
   gerar,
 };

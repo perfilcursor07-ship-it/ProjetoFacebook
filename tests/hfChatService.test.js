@@ -65,6 +65,7 @@ before(async () => {
   process.env.HF_TOKEN = 'hf_token_de_teste';
   process.env.HF_CHAT_BASE_URL = `http://127.0.0.1:${servidor.address().port}/v1`;
   process.env.HF_CHAT_ZEROGPU_SPACE = `http://127.0.0.1:${servidor.address().port}`;
+  process.env.HF_CHAT_ZEROGPU_FAST_SPACE = `http://127.0.0.1:${servidor.address().port}`;
   delete process.env.HF_CHAT_MODELS;
 
   delete require.cache[require.resolve('../src/services/hfZeroGpuChatService')];
@@ -77,11 +78,16 @@ after(async () => {
   delete process.env.HF_TOKEN;
   delete process.env.HF_CHAT_BASE_URL;
   delete process.env.HF_CHAT_ZEROGPU_SPACE;
+  delete process.env.HF_CHAT_ZEROGPU_FAST_SPACE;
   await new Promise((resolve) => servidor.close(resolve));
 });
 
 test('lista somente IDs no formato dono/modelo', async () => {
-  assert.deepEqual(await hf.listarModelos(), ['zerogpu/Qwen3.8-27B', 'openai/gpt-oss-120b']);
+  assert.deepEqual(await hf.listarModelos(), [
+    'zerogpu/Qwen3-4B-Rapido',
+    'zerogpu/Qwen3.8-27B',
+    'openai/gpt-oss-120b',
+  ]);
 });
 
 test('completa pelo router OpenAI-compatible e limpa cercas de JSON', async () => {
@@ -121,6 +127,14 @@ test('modelo ZeroGPU pode ser escolhido diretamente e mantém streaming', async 
   });
   assert.equal(resposta, 'Olá mundo');
   assert.deepEqual(partes, ['Olá ', 'mundo']);
+});
+
+test('perfil rápido limita respostas simples e não envia campos do Space 27B', async () => {
+  await hf.chatCompletionStream([{ role: 'user', content: 'olá' }], {
+    modelo: 'zerogpu/Qwen3-4B-Rapido',
+  });
+  assert.equal(ultimoBody.max_new_tokens, 384);
+  assert.equal(Object.hasOwn(ultimoBody, 'thinking'), false);
 });
 
 test('modelo HF escolhido tem prioridade sobre o free tier e dispensa DeepSeek', async () => {
