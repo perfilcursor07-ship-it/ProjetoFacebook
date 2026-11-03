@@ -347,11 +347,7 @@
     setTimeout(iniciarAtualizacao, 100);
   }
 
-  /**
-   * Seleção em lote — nas abas com matéria que ainda pode sair (Rascunhos,
-   * Prontas, Erros): publicar agora ou agendar várias de uma vez. Excluir
-   * continua só nos Rascunhos.
-   */
+  /** Seleção em lote para publicar/agendar; exclusão permitida em rascunhos e erros. */
   (function initBulk() {
     if (!['rascunho', 'pronto', 'erro'].includes(st)) return;
     const selectAll = document.getElementById('mia-select-all');
@@ -419,12 +415,12 @@
     if (bulkDelete) bulkDelete.addEventListener('click', async () => {
       const ids = selectedIds();
       if (!ids.length) return;
+      const confirmMessage =
+        st === 'erro'
+          ? 'Remover ' + ids.length + ' matéria(s) com erro selecionada(s)?\n\nEssa ação não pode ser desfeita.'
+          : 'Excluir ' + ids.length + ' rascunho(s) selecionado(s)?\n\nEssa ação não pode ser desfeita.';
       if (
-        !confirm(
-          'Excluir ' +
-            ids.length +
-            ' rascunho(s) selecionado(s)?\n\nEssa ação não pode ser desfeita.'
-        )
+        !confirm(confirmMessage)
       ) {
         return;
       }
@@ -432,9 +428,9 @@
       const old = bulkDelete.textContent;
       bulkDelete.textContent = 'Excluindo…';
       try {
-        const data = await postExcluir({ ids });
+        const data = await postExcluir({ ids, status: st });
         if (!data.deleted) {
-          alert('Nenhum rascunho foi excluído.');
+          alert(st === 'erro' ? 'Nenhuma matéria com erro foi removida.' : 'Nenhum rascunho foi excluído.');
           bulkDelete.textContent = old;
           syncBulkUi();
           return;

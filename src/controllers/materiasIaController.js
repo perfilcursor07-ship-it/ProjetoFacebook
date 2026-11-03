@@ -484,14 +484,22 @@ async function removerMateria(req, res, next) {
   }
 }
 
-/** Exclusão em lote — só rascunhos do usuário (ids ou todos os rascunhos). */
+/** Exclusão em lote — rascunhos e erros selecionados; exclusão total só de rascunhos. */
 async function removerMateriasLote(req, res, next) {
   try {
     const userId = req.session.userId;
     const body = req.body || {};
     const allDrafts = body.allDrafts === true || body.all === true;
+    const status = body.status == null ? 'rascunho' : String(body.status);
+
+    if (!['rascunho', 'erro'].includes(status)) {
+      return res.status(400).json({ error: 'Só é possível remover rascunhos ou matérias com erro' });
+    }
 
     if (allDrafts) {
+      if (status !== 'rascunho') {
+        return res.status(400).json({ error: 'A exclusão total está disponível apenas para rascunhos' });
+      }
       const deleted = await AiMatters.deleteAllByUserStatus(userId, 'rascunho');
       return res.json({ ok: true, deleted: Number(deleted) || 0, allDrafts: true });
     }
@@ -502,8 +510,32 @@ async function removerMateriasLote(req, res, next) {
     if (!ids.length) {
       return res.status(400).json({ error: 'Nenhuma matéria selecionada' });
     }
-    // Só apaga rascunhos — evita excluir publicadas por engano
-    const deleted = await AiMatters.deleteManyByUser(ids, userId, { status: 'rascunho' });
+    let idsToDelete = ids;
+    if (status === 'erro') {
+      const db = require('../config/db');
+      idsToDelete = await db(AiMatters.table)
+        .where({ user_id: userId, status: 'erro' })
+        .whereIn('id', ids)
+        .pluck('id');
+
+      if (idsToDelete.length) {
+        try {
+          await db('biblioteca_agenda')
+            .where({ user_id: userId })
+            .whereIn('matter_id', idsToDelete)
+            .whereNotIn('status', ['cancelado', 'publicado'])
+            .update({ status: 'pendente', matter_id: null, updated_at: db.fn.now() });
+          await db('ai_fila_jobs')
+            .whereIn('matter_id', idsToDelete)
+            .where({ status: 'pendente' })
+            .update({ status: 'cancelado', erro: 'Matéria removida — agenda voltou para pré-agendada' });
+        } catch (syncErr) {
+          console.warn('[materias-ia] remover lote sync agenda:', syncErr.message);
+        }
+      }
+    }
+
+    const deleted = await AiMatters.deleteManyByUser(idsToDelete, userId, { status });
     res.json({ ok: true, deleted: Number(deleted) || 0, requested: ids.length });
   } catch (err) {
     next(err);

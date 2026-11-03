@@ -278,10 +278,10 @@
               title="Trocar o título das selecionadas com IA antes de publicar ou agendar">
               Alterar título
             </button>
-            <% if (activeStatus === 'rascunho') { %>
+            <% if (['rascunho', 'erro'].includes(activeStatus)) { %>
             <button type="button" id="mia-bulk-delete" disabled
               class="d-btn d-btn--neutro d-btn--perigo disabled:cursor-not-allowed disabled:opacity-40">
-              Excluir selecionadas
+              <%= activeStatus === 'erro' ? 'Remover selecionadas' : 'Excluir selecionadas' %>
             </button>
             <% } %>
             <% if (activeStatus === 'rascunho' && pag.total > 0) { %>
@@ -619,5 +619,5 @@
     </style>
   <% } %>
 
-  <script src="/js/minhas-materias.js?v=20261024rapida"></script>
+  <script src="/js/minhas-materias.js?v=20261103excluirerros"></script>
 <%- include('partials/app-end') %>
