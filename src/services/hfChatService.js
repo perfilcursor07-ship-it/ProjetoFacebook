@@ -178,6 +178,8 @@ async function chatCompletion(
   assertConfigurado();
   const id = String(modelo || '').trim();
   if (!ehModeloHf(id)) throw erro('Nenhum modelo válido do Hugging Face foi escolhido para esta conversa.', 400);
+  // "Parar IA" geral não vale para o HF; só a pausa deste modelo.
+  await require('./iaPausaService').garantirModeloLiberado(id);
   const zeroGpu = require('./hfZeroGpuChatService');
   if (zeroGpu.ehModelo(id)) {
     const texto = await zeroGpu.gerar(messages, { modelo: id, temperature, json, timeout });
@@ -221,6 +223,8 @@ async function chatCompletionStream(
   assertConfigurado();
   const id = String(modelo || '').trim();
   if (!ehModeloHf(id)) throw erro('Nenhum modelo válido do Hugging Face foi escolhido para esta conversa.', 400);
+  // "Parar IA" geral não vale para o HF; só a pausa deste modelo.
+  await require('./iaPausaService').garantirModeloLiberado(id);
   const zeroGpu = require('./hfZeroGpuChatService');
   if (zeroGpu.ehModelo(id)) {
     return zeroGpu.gerar(messages, { modelo: id, temperature, json: false, onDelta, timeout });

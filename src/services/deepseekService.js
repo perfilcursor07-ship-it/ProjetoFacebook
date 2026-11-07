@@ -360,12 +360,10 @@ async function chatCompletion(
     conversationName = null,
   } = {}
 ) {
-  // "Parar IA" geral vale antes de qualquer provedor (inclusive o gratuito).
-  await require('./iaPausaService').garantirLiberada();
-  const tarefaResolvida = inferirTarefa(messages, tarefa);
   // A escolha explícita do editor tem prioridade sobre o free tier. Antes o
   // seletor mostrava Hugging Face, mas tarefas cobertas pelo gratuito eram
-  // respondidas por outro modelo silenciosamente.
+  // respondidas por outro modelo silenciosamente. Vem antes da pausa: o
+  // "Parar IA" geral não vale para o Hugging Face.
   const modeloHf = modeloHuggingFaceDaVez();
   if (modeloHf) {
     return require('./hfChatService').chatCompletion(messages, {
@@ -374,6 +372,9 @@ async function chatCompletion(
       json,
     });
   }
+  // "Parar IA" geral vale antes de qualquer outro provedor (inclusive o gratuito).
+  await require('./iaPausaService').garantirLiberada();
+  const tarefaResolvida = inferirTarefa(messages, tarefa);
   const gratis = await tentarFreeTier(messages, {
     temperature,
     json,
@@ -540,18 +541,19 @@ async function chatCompletionStream(
     forceDeepseek = false,
   } = {}
 ) {
-  await require('./iaPausaService').garantirLiberada();
   const tarefaResolvida = tarefa || 'conversa';
+  // Hugging Face antes da pausa: o "Parar IA" geral não vale para ele.
+  const modeloHfStream = forceDeepseek ? null : modeloHuggingFaceDaVez();
+  if (modeloHfStream) {
+    return require('./hfChatService').chatCompletionStream(messages, {
+      modelo: modeloHfStream,
+      temperature,
+      onDelta,
+      timeout,
+    });
+  }
+  await require('./iaPausaService').garantirLiberada();
   if (!forceDeepseek) {
-    const modeloHfStream = modeloHuggingFaceDaVez();
-    if (modeloHfStream) {
-      return require('./hfChatService').chatCompletionStream(messages, {
-        modelo: modeloHfStream,
-        temperature,
-        onDelta,
-        timeout,
-      });
-    }
     const gratisStream = await tentarFreeTierStream(messages, {
       temperature,
       onDelta,

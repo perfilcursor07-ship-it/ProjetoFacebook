@@ -5,6 +5,10 @@ const db = require('../config/db');
  * modelos; enquanto isso, toda chamada de IA recebe MENSAGEM em vez de gastar
  * créditos. A checagem fica nos pontos de entrada (gateway, DeepSeek, API do
  * Claude e imagem no ChatGPT), então vale para o chat, o editor e o piloto.
+ *
+ * Hugging Face (texto e o Qwen de imagem) fica fora do "Parar tudo": é a conta
+ * PRO separada que segue escrevendo quando os outros créditos acabam. Só para
+ * se o administrador pausar aquele modelo do HF na lista.
  */
 
 const TABELA = 'ia_pausa';
@@ -57,6 +61,12 @@ async function garantirLiberada(modelo = null) {
   if (geral || (modelo && modelos.includes(String(modelo)))) throw erroDePausa();
 }
 
+/** Só a pausa por modelo, ignorando o "Parar tudo" (usado pelo Hugging Face). */
+async function garantirModeloLiberado(modelo) {
+  const { modelos } = await estado();
+  if (modelo && modelos.includes(String(modelo))) throw erroDePausa();
+}
+
 async function salvar({ geral = false, modelos = [], userId = null } = {}) {
   const lista = [...new Set((Array.isArray(modelos) ? modelos : [])
     .map((m) => String(m || '').trim())
@@ -83,4 +93,4 @@ async function salvar({ geral = false, modelos = [], userId = null } = {}) {
   return estado();
 }
 
-module.exports = { MENSAGEM, estado, garantirLiberada, salvar };
+module.exports = { MENSAGEM, estado, garantirLiberada, garantirModeloLiberado, salvar };

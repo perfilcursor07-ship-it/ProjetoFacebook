@@ -239,7 +239,7 @@ async function aindaTemTexto(buffer) {
  * volta ao Qwen para mais uma limpeza (até LIMPEZAS_EXTRAS) antes de entregar.
  */
 async function gerarImagem({ sourceUrl, prompt, recoveryKey, modo = 'referencia' }) {
-  await require('./iaPausaService').garantirLiberada();
+  // Hugging Face fica fora do "Parar IA" geral (ver iaPausaService).
   const simbolica = modo === 'simbolica';
   const pedido = pedidoParaQwen({ prompt, simbolica });
   const referencia = simbolica ? null : await require('./chatgptImageService').imagemParaUpload(sourceUrl);

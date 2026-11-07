@@ -192,12 +192,25 @@
 
   async function refresh(silent) {
     try {
-      const data = await request('/status');
+      // Silencioso = polling, que usa o status guardado no servidor.
+      const data = await request(silent ? '/status' : '/status?fresco=1');
       render(data);
       if (!silent) setFeedback('Status atualizado.', 'good');
     } catch (err) {
       if (!silent) setFeedback(err.message, 'bad');
     }
+  }
+
+  // Depois de uma ação o status precisa vir novo, mas sem sobrescrever a
+  // mensagem da ação com "Status atualizado.".
+  async function refreshAposAcao() {
+    try {
+      render(await request('/status?fresco=1'));
+    } catch {
+      // O próximo polling mostra o estado.
+    }
+    // Um login recém-iniciado passa a ser acompanhado a cada 4 s.
+    agendarPoll();
   }
 
   async function runAction(action) {
@@ -245,10 +258,10 @@
       const data = await request(path, { method: 'POST', body });
       const answer = data.resposta ? `${data.message} Resposta: ${data.resposta}` : data.message;
       setFeedback(answer || 'Operação iniciada.', 'good');
-      await refresh(true);
+      await refreshAposAcao();
     } catch (err) {
       setFeedback(err.message, 'bad');
-      await refresh(true);
+      await refreshAposAcao();
     } finally {
       busy = false;
       syncButtons();
@@ -270,6 +283,37 @@
     }
   });
 
+  /**
+   * Cada consulta faz o Chrome do servidor validar as sessões do Claude e do
+   * ChatGPT. A cada 5 s (por aba, mesmo escondida) isso sobrecarregava o
+   * servidor. Agora: 60 s com a aba visível, nada com ela escondida, e 4 s só
+   * enquanto um login está em andamento (a tela acompanha o passo a passo).
+   */
+  const POLL_NORMAL_MS = 60000;
+  const POLL_LOGIN_MS = 4000;
+  let pollTimer = null;
+
+  function loginEmAndamento() {
+    return ['running', 'waiting_login', 'waiting_browser_login'].includes(currentStatus?.autorizacao?.status);
+  }
+
+  function agendarPoll() {
+    window.clearTimeout(pollTimer);
+    if (document.hidden) return;
+    pollTimer = window.setTimeout(async () => {
+      if (!busy) await refresh(true);
+      agendarPoll();
+    }, loginEmAndamento() ? POLL_LOGIN_MS : POLL_NORMAL_MS);
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      window.clearTimeout(pollTimer);
+      return;
+    }
+    refresh(true).finally(agendarPoll);
+  });
+
   render(currentStatus);
-  window.setInterval(() => refresh(true), 5000);
+  agendarPoll();
 })();

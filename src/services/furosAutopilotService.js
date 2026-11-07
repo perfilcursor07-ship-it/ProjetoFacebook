@@ -1335,7 +1335,9 @@ async function tick() {
         if (bruto.ativo && !row.ativo) usuariosAtivos.delete(Number(bruto.user_id));
         await limparVelhas(row.user_id);
         const modeloEfetivo = await modeloDoPiloto(row).catch(() => row.modelo);
-        const iaParada = pausa.geral || Boolean(modeloEfetivo && pausa.modelos.includes(String(modeloEfetivo)));
+        // Piloto escrevendo com Hugging Face não para no "Parar IA" geral.
+        const pilotoNoHf = Boolean(modeloEfetivo) && require('./hfChatService').ehModeloHf(modeloEfetivo);
+        const iaParada = (pausa.geral && !pilotoNoHf) || Boolean(modeloEfetivo && pausa.modelos.includes(String(modeloEfetivo)));
         const ultimo = row.ultimo_scan_at ? new Date(row.ultimo_scan_at).getTime() : 0;
         // Varredura só com o Automatizar ligado.
         if (!iaParada && row.ativo && Date.now() - ultimo >= SCAN_MS) void escanear(row);

@@ -170,7 +170,41 @@ async function chromeMetadata(cdpUrl) {
   }
 }
 
-async function status() {
+/**
+ * O /health do gateway abre o claude.ai e o chatgpt.com no Chrome do servidor
+ * para validar as sessões. Com o /claude perguntando a cada 5 s (e uma vez por
+ * aba aberta), o Chrome crescia sem parar e sobrecarregava o servidor. O
+ * resultado fica guardado por STATUS_CACHE_MS e chamadas simultâneas
+ * esperam a mesma leitura; só a autorização em andamento vem sempre ao vivo.
+ */
+const STATUS_CACHE_MS = 30_000;
+const statusCache = { valor: null, expiraEm: 0, emAndamento: null };
+
+function esquecerStatus() {
+  statusCache.valor = null;
+  statusCache.expiraEm = 0;
+}
+
+async function status({ fresco = false } = {}) {
+  if (!fresco && statusCache.valor && statusCache.expiraEm > Date.now()) {
+    return { ...statusCache.valor, autorizacao: authJobPublico() };
+  }
+  if (!statusCache.emAndamento) {
+    statusCache.emAndamento = lerStatus()
+      .then((valor) => {
+        statusCache.valor = valor;
+        statusCache.expiraEm = Date.now() + STATUS_CACHE_MS;
+        return valor;
+      })
+      .finally(() => {
+        statusCache.emAndamento = null;
+      });
+  }
+  const valor = await statusCache.emAndamento;
+  return { ...valor, autorizacao: authJobPublico() };
+}
+
+async function lerStatus() {
   const [auth, chatgptAuth, config, desktop] = await Promise.all([
     authMetadata('claude-web'),
     authMetadata('chatgpt-web'),
@@ -431,8 +465,10 @@ async function prepararChromeParaGateway() {
 }
 
 async function iniciar() {
+  esquecerStatus();
   const chrome = await prepararChromeParaGateway();
   await comandoGateway('start');
+  esquecerStatus();
   return {
     ok: true,
     message: chrome.chromeJaOnline
@@ -444,6 +480,7 @@ async function iniciar() {
 async function reiniciar() {
   // Reinício limpo evita que um processo parcial do gateway tente reutilizar
   // um Chrome morto e falhe novamente no timeout interno de 15 segundos.
+  esquecerStatus();
   try {
     await comandoGateway('stop');
   } catch {
@@ -451,6 +488,7 @@ async function reiniciar() {
   }
   const chrome = await prepararChromeParaGateway();
   await comandoGateway('start');
+  esquecerStatus();
   return {
     ok: true,
     message: chrome.chromeJaOnline
@@ -528,7 +566,7 @@ async function recapturarClaudeDoChrome() {
 async function recuperarClaudeAposReload() {
   if (String(process.env.TFG_AUTO_RECAPTURE || 'true').toLowerCase() === 'false') return;
   try {
-    const atual = await status();
+    const atual = await status({ fresco: true });
     if (atual.claude.valida === true || !atual.claude.autorizada) return;
     const resultado = await recapturarClaudeDoChrome();
     if (resultado.ok) console.info('[claude-reload] sessão recapturada automaticamente do Chrome.');

@@ -12,9 +12,11 @@ async function index(_req, res, next) {
   }
 }
 
-async function status(_req, res, next) {
+async function status(req, res, next) {
   try {
-    return res.json({ ok: true, ...(await tokenFreeAdminService.status()) });
+    // ?fresco=1: botão "Atualizar" e depois de uma ação; o resto usa o cache.
+    const fresco = req.query?.fresco === '1';
+    return res.json({ ok: true, ...(await tokenFreeAdminService.status({ fresco })) });
   } catch (err) {
     return next(err);
   }

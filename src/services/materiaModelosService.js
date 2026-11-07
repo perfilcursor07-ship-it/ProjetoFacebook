@@ -132,7 +132,7 @@ async function resolverModeloChatgpt(pedido) {
  * Tudo que o administrador pode marcar: modelos anunciados pelo gateway agora,
  * os conhecidos (Claude do .env e ChatGPT) e os já salvos antes.
  */
-async function listarCatalogo() {
+async function lerModelosRemotos() {
   let doGateway = [];
   let gatewayOnline = false;
   try {
@@ -146,7 +146,6 @@ async function listarCatalogo() {
 
   // Modelos de texto do Hugging Face: aparecem para o administrador marcar,
   // lado a lado com os do gateway. Sem HF_TOKEN a lista vem vazia e nada muda.
-  const huggingFaceConfigurado = require('./hfChatService').isConfigured();
   let doHuggingFace = [];
   try {
     doHuggingFace = (await require('./hfChatService').listarModelos({ timeout: 4_000 }))
@@ -154,6 +153,38 @@ async function listarCatalogo() {
   } catch {
     doHuggingFace = [];
   }
+  return { doGateway, gatewayOnline, doHuggingFace };
+}
+
+/**
+ * Abrir o /claude chamava o catálogo 3 vezes (modelos, por tarefa e pausa),
+ * cada uma baixando a lista inteira do Hugging Face e a do gateway. As listas
+ * remotas ficam guardadas por um minuto; as marcações do banco vêm sempre
+ * atualizadas.
+ */
+const REMOTOS_CACHE_MS = 60_000;
+const remotos = { valor: null, expiraEm: 0, emAndamento: null };
+
+async function modelosRemotos() {
+  if (remotos.valor && remotos.expiraEm > Date.now()) return remotos.valor;
+  if (!remotos.emAndamento) {
+    remotos.emAndamento = lerModelosRemotos()
+      .then((valor) => {
+        remotos.valor = valor;
+        // Gateway fora do ar não fica guardado: ao religar, já aparece.
+        remotos.expiraEm = Date.now() + (valor.gatewayOnline ? REMOTOS_CACHE_MS : 5_000);
+        return valor;
+      })
+      .finally(() => {
+        remotos.emAndamento = null;
+      });
+  }
+  return remotos.emAndamento;
+}
+
+async function listarCatalogo() {
+  const { doGateway, gatewayOnline, doHuggingFace } = await modelosRemotos();
+  const huggingFaceConfigurado = require('./hfChatService').isConfigured();
 
   const linhas = await lerLinhas();
   const salvos = new Map(linhas.map((linha) => [linha.modelo, linha]));
