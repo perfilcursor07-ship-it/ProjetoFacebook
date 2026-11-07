@@ -150,13 +150,34 @@ function logarUso(modelo, inicio, usage) {
   console.log(`[hf-chat] ${modelo} ${segundos}s in=${entrada} out=${saida}`);
 }
 
+/**
+ * O chat da matéria manda vários "system" (instruções e, no meio da conversa,
+ * o contexto da notícia). O template de vários modelos do HF recusa isso com
+ * "System message must be at the beginning": junta todos num só, no início,
+ * e une falas seguidas do mesmo papel (alguns templates exigem alternância).
+ */
+function normalizarMensagens(messages) {
+  const sistemas = [];
+  const dialogo = [];
+  for (const m of messages || []) {
+    const content = String(m?.content || '');
+    if (!content.trim()) continue;
+    if (m?.role === 'system') {
+      sistemas.push(content);
+      continue;
+    }
+    const role = m?.role === 'assistant' ? 'assistant' : 'user';
+    const anterior = dialogo[dialogo.length - 1];
+    if (anterior?.role === role) anterior.content = `${anterior.content}\n\n${content}`;
+    else dialogo.push({ role, content });
+  }
+  return [...(sistemas.length ? [{ role: 'system', content: sistemas.join('\n\n') }] : []), ...dialogo];
+}
+
 function corpo(messages, { modelo, temperature, json, stream }) {
   const body = {
     model: modelo,
-    messages: (messages || []).map((m) => ({
-      role: m?.role === 'assistant' ? 'assistant' : m?.role === 'system' ? 'system' : 'user',
-      content: String(m?.content || ''),
-    })),
+    messages: normalizarMensagens(messages),
     stream: Boolean(stream),
   };
   if (Number.isFinite(temperature)) body.temperature = temperature;
