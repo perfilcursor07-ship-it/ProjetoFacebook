@@ -3853,6 +3853,32 @@ Não descreva graficamente ferimentos, morte, inferno ou conteúdo sexualizado. 
  * Mantém o histórico, usa os fatos pesquisados na web e responde em texto
  * corrido (streaming), do jeito que o usuário lê na tela — sem JSON.
  */
+/**
+ * Padrão de redação para modelos do Hugging Face (Qwen etc.). Vai por último
+ * entre os "system" e por isso prevalece sobre a regra de nota curta. O
+ * exemplo é de uma matéria que o ChatGPT escreveu e o editor aprovou.
+ */
+const BLOCO_REDACAO_HF = `PADRÃO DE REDAÇÃO DESTA MATÉRIA (prevalece sobre qualquer regra anterior de "nota curta" ou "nota proporcional"):
+- Escreva uma matéria COMPLETA de 4 a 6 parágrafos, como um repórter experiente do JM Notícia, mesmo quando a fonte for um post curto de rede social.
+- 1º parágrafo (lead): o fato central — quem, o quê, quando e onde — em frases fortes e claras, com o gancho que faz o leitor continuar.
+- 2º parágrafo: os detalhes que a fonte traz — falas, números, circunstâncias. Fala forte vai entre aspas, literal, em parágrafo próprio.
+- Parágrafos seguintes: contexto que ajuda o leitor a entender — quem é a pessoa ou a instituição (cargo, papel público conhecido), como funciona o procedimento envolvido (por exemplo, quem analisa um pedido de impeachment de ministro do STF e o que acontece depois), por que o assunto importa agora e quais visões existem sobre ele.
+- Contexto só com conhecimento público consolidado e amplamente conhecido. Na dúvida sobre um detalhe (data, número, nome), deixe-o de fora.
+- Fecho: uma frase que mostre o que está em jogo ou o próximo passo, sem opinião da redação.
+- PROIBIDO inventar fatos do caso: datas, números, falas, nomes, reações de pessoas ou desdobramentos que não estejam no material.
+- PROIBIDO frase de enchimento sobre a própria fonte, como "a publicação descreve o episódio", "o registro disponível indica", "a fonte informa que", "o pedido chegou". Escreva o fato direto.
+- PROIBIDO repetir o mesmo fato com outras palavras. Cada parágrafo precisa trazer informação nova.
+- Mantenha o formato JM: título, âncora em CAIXA ALTA, corpo, Fonte, Foto, exatamente 5 hashtags e "Siga o JM Notícia.".
+
+EXEMPLO DE ESTILO (imite estrutura, ritmo e profundidade; NÃO copie fatos):
+Em plena reta de eleições, uma pregação feita em um congresso da Assembleia de Deus voltou a circular nas redes. A conferencista e escritora Michelle Tito fez um alerta direto aos líderes religiosos durante o 22º Congresso de Mulheres da Igreja Evangélica Assembleia de Deus em Abreu e Lima (IEADALPE), em Pernambuco, realizado em julho.
+
+No trecho mais compartilhado, ela afirmou que haverá prestação de contas diante de Deus para pastores que, em ano eleitoral, usam a autoridade espiritual para influenciar o voto dos membros. Segundo a pregadora, há líderes "usando a cabeça das ovelhas como cabo eleitoral", contratando assessores políticos, vendendo o púlpito por favores e transformando o povo de Deus em massa de manobra.
+
+O alerta ganha ainda mais peso neste mês, com o país em período eleitoral e a legislação proibindo propaganda política em templos.
+
+Para a tradição assembleiana, que sempre ensinou a separação entre o sagrado e o profano, a pergunta lançada por Michelle Tito incomoda e é necessária: o altar está sendo preservado para Deus ou cedido ao mundo da política?`;
+
 async function conversarMateria({
   pedido,
   historico = [],
@@ -3917,7 +3943,11 @@ ${pesquisaAmpliada ? `- A primeira janela não confirmou o fato; o sistema ampli
   const volumeFonteSocial = Math.max(0, Number(fonteSocialChars) || 0);
   const fonteSocialCurta = fonteSocial && volumeFonteSocial < 900;
   const volumeApuracao = blocoFatos.length;
-  const perfilTamanho = reescritaDireta && fonteSocialCurta
+  // Modelo do Hugging Face escrevendo: ele não pesquisa nem conhece o assunto
+  // como o ChatGPT do navegador, e com a regra de "nota curta" devolvia três
+  // frases repetidas. Recebe o padrão completo (ver blocoRedacaoHf).
+  const escritorHf = Boolean(modeloHuggingFaceDaVez());
+  const perfilTamanho = reescritaDireta && fonteSocialCurta && !escritorHf
     ? { alvo: 'nota proporcional, sem ultrapassar 2.200 caracteres no total', paragrafos: '3 a 4', minimo: 420 }
     : { alvo: 'até 2.200 caracteres no total', paragrafos: '3 a 6', minimo: 550 };
   const blocoTamanhoMateria = `TAMANHO E PROFUNDIDADE DESTA RESPOSTA (padrão JM Notícia):
@@ -4135,6 +4165,9 @@ REDAÇÃO DE JORNALISTA PROFISSIONAL (vale também para vídeo e transcrição):
     : null;
   if (blocoIdentidadeYoutube) {
     messages.push({ role: 'system', content: blocoIdentidadeYoutube });
+  }
+  if (escritorHf) {
+    messages.push({ role: 'system', content: BLOCO_REDACAO_HF });
   }
 
   for (const m of (Array.isArray(historico) ? historico : []).slice(-8)) {
