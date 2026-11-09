@@ -8,7 +8,7 @@ import type { Page } from "playwright-core";
  * ChatGPT chegou a 1,2 GB depois de 13 h parada numa conversa cheia de
  * imagens — e o servidor foi parar no swap.
  *
- * A cada `TFG_RECARREGAR_ABAS_MIN` minutos (padrão 180) cada aba volta para a
+ * A cada `TFG_RECARREGAR_ABAS_MIN` minutos (padrão 45) cada aba volta para a
  * página inicial do site, que solta essa memória. Só acontece sem nenhum
  * pedido em andamento, e um pedido que chega durante a recarga espera ela
  * terminar em vez de usar uma página no meio do carregamento.
@@ -19,7 +19,7 @@ import type { Page } from "playwright-core";
  */
 
 const minutos = Number(process.env.TFG_RECARREGAR_ABAS_MIN);
-export const RECARREGAR_MS = (Number.isFinite(minutos) && minutos > 0 ? minutos : 180) * 60_000;
+export const RECARREGAR_MS = (Number.isFinite(minutos) && minutos > 0 ? minutos : 45) * 60_000;
 const VERIFICAR_MS = 5 * 60_000;
 
 let pedidosAtivos = 0;

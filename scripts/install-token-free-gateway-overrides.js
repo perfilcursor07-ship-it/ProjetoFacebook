@@ -58,6 +58,20 @@ const patches = [
       '\t\t"--disable-backgrounding-occluded-windows",',
     ].join('\n'),
   },
+  // 13 SPAs de IA no start do Chrome (Claude, ChatGPT, DeepSeek, Doubao,
+  // Qwen, Kimi, Gemini, Grok, ChatGLM, Perplexity, AI Studio...) chegavam
+  // a 4 GB + 20% de CPU contínuos e derrubavam os outros sites da VPS.
+  {
+    file: 'src/cli/chrome.ts',
+    marca: 'PROVIDER_URLS.filter',
+    procurar: '\t\t...PROVIDER_URLS,',
+    trocar: [
+      '\t\t"--renderer-process-limit=6",',
+      '\t\t"--disk-cache-size=67108864",',
+      '\t\t"--media-cache-size=16777216",',
+      '\t\t...PROVIDER_URLS.filter((u) => /claude\\.ai|chatgpt\\.com|deepseek\\.com/.test(u)),',
+    ].join('\n'),
+  },
   // `gateway:restart` virava no-op quando o PID file sumia: o `stop` desistia
   // ("Gateway is not running"), o `start` esbarrava na porta ocupada
   // (EADDRINUSE) e o processo ANTIGO seguia servindo. No servidor isso deixou

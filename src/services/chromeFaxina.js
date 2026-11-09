@@ -15,11 +15,13 @@ const axios = require('axios');
  * A cada passada, anota as abas temporárias que vê; a que continuar aberta
  * depois de IDADE_MAXIMA_MS (uma aba temporária vive segundos) é fechada.
  * As abas das IAs e dos logins (ChatGPT, DeepSeek, Claude, Google, redes)
- * nunca são tocadas, e sempre sobra ao menos uma aba no Chrome.
+ * só fecham se o Chrome passar de MAX_ABAS. Sempre sobra ao menos uma aba.
  */
 
 const INTERVALO_MS = 5 * 60_000;
 const IDADE_MAXIMA_MS = 10 * 60_000;
+/** Teto de abas no Chrome do gateway. 13 SPAs de IA abertas juntas comiam 4 GB+. */
+const MAX_ABAS = Math.max(2, Number(process.env.CHROME_MAX_ABAS) || 6);
 /**
  * Abas abertas pelo próprio sistema (registradas em abaEmSegundoPlano): uma
  * geração de imagem leva no máximo ~6 min. Passou disso, sobrou — fecha
@@ -158,6 +160,35 @@ async function faxinar({ agora = Date.now(), http = axios } = {}) {
       if (paginas <= 1) break;
       await fechar(alvo);
     }
+
+    // 3) Teto de abas. O start do gateway abria 13 SPAs de IA de uma vez
+    //    (~4 GB). Prefere fechar temporárias e sites que o ViralizeAI não
+    //    usa; Claude/ChatGPT/DeepSeek só saem se ainda estiver acima do teto.
+    //    O gateway reabre a aba do provedor no próximo pedido.
+    for (const alvo of alvos) {
+      if (!porId.has(alvo.id) || alvo.type !== 'page') continue;
+      if (!vistas.has(alvo.id)) vistas.set(alvo.id, agora);
+    }
+    const prioridade = (alvo) => {
+      if (abaTemporaria(alvo)) return 0;
+      const url = String(alvo.url || '');
+      if (/claude\.ai|chatgpt\.com|deepseek\.com/.test(url)) return 2;
+      return 1;
+    };
+    while (paginas > MAX_ABAS) {
+      const candidatas = [...porId.values()]
+        .filter((a) => a.type === 'page')
+        .sort((a, b) => {
+          const p = prioridade(a) - prioridade(b);
+          if (p) return p;
+          return (vistas.get(a.id) || agora) - (vistas.get(b.id) || agora);
+        });
+      const alvo = candidatas[0];
+      if (!alvo) break;
+      if (!(await fechar(alvo))) break;
+      porId.delete(alvo.id);
+    }
+
     if (fechadas) console.info(`[chrome-faxina] ${fechadas} aba(s) esquecida(s) fechada(s) no Chrome do gateway`);
     return fechadas;
   } finally {
@@ -173,4 +204,4 @@ function iniciar() {
   setTimeout(() => void faxinar().catch(() => {}), 30_000).unref?.();
 }
 
-module.exports = { iniciar, faxinar, abaTemporaria, IDADE_MAXIMA_MS };
+module.exports = { iniciar, faxinar, abaTemporaria, IDADE_MAXIMA_MS, MAX_ABAS };

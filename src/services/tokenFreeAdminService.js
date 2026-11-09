@@ -404,6 +404,9 @@ async function iniciarChromeVisualServidor(startUrl = 'https://claude.ai/new') {
     '--disable-gpu',
     '--password-store=basic',
     '--remote-allow-origins=*',
+    '--renderer-process-limit=6',
+    '--disk-cache-size=67108864',
+    '--media-cache-size=16777216',
     '--window-size=1440,1000',
     startUrl,
   ];
