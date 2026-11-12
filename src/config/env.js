@@ -68,8 +68,8 @@ const env = {
       process.env.POSTPULSE_REDIRECT_URI ||
       'http://localhost:3000/api/auth/postpulse/callback',
     /**
-     * auto | ayrshare | postsyncer | postpulse | facebook
-     * auto: Ayrshare (se key) → PostSyncer (se vinculado) → PostPulse → Graph API
+     * auto | postiz | ayrshare | postsyncer | postpulse | facebook
+     * auto: Postiz (se key) → Ayrshare (se key) → PostSyncer → PostPulse → Graph API
      */
     // Defina ayrshare explicitamente quando a tela de páginas for gerenciada por esse provedor.
     publishProvider: (process.env.PUBLISH_PROVIDER || 'auto').toLowerCase(),
@@ -86,6 +86,11 @@ const env = {
     // A Ayrshare exige as credenciais próprias do app X para toda operação no X/Twitter.
     twitterApiKey: process.env.AYRSHARE_X_API_KEY || '',
     twitterApiSecret: process.env.AYRSHARE_X_API_SECRET || '',
+  },
+  /** Postiz Cloud — https://platform.postiz.com → Settings → API */
+  postiz: {
+    apiKey: process.env.POSTIZ_API_KEY || '',
+    apiBase: String(process.env.POSTIZ_API_BASE || 'https://api.postiz.com/public/v1').replace(/\/$/, ''),
   },
   /** URL pública do app (opcional; útil para mídia https) */
   appPublicUrl: String(process.env.APP_PUBLIC_URL || '').replace(/\/$/, ''),

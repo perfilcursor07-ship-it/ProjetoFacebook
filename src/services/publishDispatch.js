@@ -2,6 +2,7 @@ const facebookService = require('./facebookService');
 const postpulseService = require('./postpulseService');
 const postsyncerService = require('./postsyncerService');
 const ayrshareService = require('./ayrshareService');
+const postizService = require('./postizService');
 const PostpulseConnections = require('../models/PostpulseConnections');
 const { env } = require('../config/env');
 const fs = require('fs');
@@ -11,11 +12,23 @@ const { resolveArtworkPath } = require('./matterArtworkService');
 
 /**
  * Decide o provedor de publicação.
- * provider: auto | ayrshare | postsyncer | postpulse | facebook
+ * provider: auto | postiz | ayrshare | postsyncer | postpulse | facebook
  */
 async function resolveProvider(userId, page) {
   const mode = env.postpulse.publishProvider || 'auto';
   if (mode === 'facebook') return 'facebook';
+
+  const canPostiz = postizService.isConfigured();
+  if (mode === 'postiz') {
+    if (!canPostiz) {
+      const err = new Error(
+        'Publicação via Postiz exigida, mas POSTIZ_API_KEY não está configurada no .env.'
+      );
+      err.status = 400;
+      throw err;
+    }
+    return 'postiz';
+  }
 
   const canAyrshare = ayrshareService.isConfigured();
 
@@ -59,7 +72,8 @@ async function resolveProvider(userId, page) {
     return 'postpulse';
   }
 
-  // auto: Ayrshare → PostSyncer → PostPulse → Graph
+  // auto: Postiz → Ayrshare → PostSyncer → PostPulse → Graph
+  if (canPostiz) return 'postiz';
   if (canAyrshare) return 'ayrshare';
   if (canPostsyncer) return 'postsyncer';
   return canPostpulse ? 'postpulse' : 'facebook';
@@ -71,7 +85,8 @@ function buildFbPostUrl(page, postId) {
   if (
     id.startsWith('postpulse:') ||
     id.startsWith('postsyncer:') ||
-    id.startsWith('ayrshare:')
+    id.startsWith('ayrshare:') ||
+    id.startsWith('postiz:')
   ) {
     return null;
   }
@@ -145,6 +160,64 @@ async function publishContent({
     !localFile && imageUrl && /^https?:\/\//i.test(String(imageUrl)) && !String(imageUrl).includes('/media/')
       ? String(imageUrl)
       : null;
+
+  if (provider === 'postiz') {
+    let content = texto || '';
+    if (link && tipo !== 'foto') content = content ? `${content}\n\n${link}` : link;
+
+    if (tipo === 'foto' && !localFile && !remoteUrl) {
+      const err = new Error(
+        'Imagem da arte não encontrada no servidor. Gere a arte novamente antes de publicar.'
+      );
+      err.status = 422;
+      throw err;
+    }
+    if (tipo === 'reel' && !localFile) {
+      const err = new Error(
+        'Vídeo do Reel não encontrado para upload. Aguarde o processamento ou importe o link de novo.'
+      );
+      err.status = 422;
+      throw err;
+    }
+    if (publicarInstagram && tipo === 'texto') {
+      const err = new Error(
+        'O Instagram não aceita post só de texto. Escolha uma imagem ou desmarque o Instagram.'
+      );
+      err.status = 422;
+      throw err;
+    }
+
+    console.log('[publish] postiz', {
+      pageId: page.id,
+      page: page.page_name,
+      tipo,
+      facebook: Boolean(publicarFacebook),
+      instagram: Boolean(publicarInstagram),
+      x: Boolean(publicarX),
+    });
+
+    const result = await postizService.publishContent({
+      pageName: page.page_name,
+      content,
+      filePath: localFile || null,
+      imageUrl: localFile ? null : remoteUrl || imageUrl || null,
+      isReel: tipo === 'reel',
+      link: link || null,
+      publicarFacebook,
+      publicarInstagram,
+      publicarX,
+      textoX: textoX || null,
+    });
+    const postId = result.post_id || result.id;
+    return {
+      ...result,
+      id: postId,
+      post_id: postId,
+      fb_native_post_id: result.fb_native_post_id || null,
+      fb_post_url: null,
+      provider: 'postiz',
+    };
+  }
 
   if (provider === 'ayrshare') {
     let content = texto || '';
@@ -481,7 +554,7 @@ async function publishContent({
   // seria silenciosamente ignorado.
   if (publicarInstagram || publicarX || !publicarFacebook) {
     const err = new Error(
-      `Instagram e X.com só estão disponíveis pela Ayrshare (provedor atual: ${provider}). ` +
+      `Instagram e X.com só estão disponíveis pelo Postiz ou pela Ayrshare (provedor atual: ${provider}). ` +
         'Ajuste PUBLISH_PROVIDER ou desmarque a opção da outra rede.'
     );
     err.status = 422;

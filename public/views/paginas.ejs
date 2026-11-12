@@ -2,7 +2,8 @@
   <link rel="stylesheet" href="/css/dots.css?v=20261003e" />
 <%
   const provider = String(typeof publishProvider !== 'undefined' ? publishProvider : 'auto').toLowerCase();
-  const useAyrshare = provider === 'ayrshare' || (provider === 'auto' && Boolean(ayrshareConfigured));
+  const usePostiz = provider === 'postiz' || provider === 'ayrshare' || (provider === 'auto' && Boolean(postizConfigured));
+  const useAyrshare = !usePostiz && (provider === 'ayrshare' || (provider === 'auto' && Boolean(ayrshareConfigured)));
 %>
 
   <main class="dots-pagina pages-page mx-auto max-w-8xl px-4 py-6 sm:px-6 sm:py-10">
@@ -10,7 +11,12 @@
       <div>
         <p class="dots-etiqueta">Configurações</p>
         <h1 class="dots-titulo mt-1">Páginas do Facebook</h1>
-    <% if (useAyrshare) { %>
+    <% if (usePostiz) { %>
+        <p class="dots-sub">
+      Publicação via <strong class="font-medium text-emerald-300">Postiz</strong>.
+      A Página do Facebook fica conectada no painel do Postiz. Aqui você só escolhe a página padrão do app.
+        </p>
+    <% } else if (useAyrshare) { %>
         <p class="dots-sub">
       Publicação via <strong class="font-medium text-emerald-300">Ayrshare</strong>.
       Um User Profile na Ayrshare = uma Página Facebook (cole o <strong class="font-medium text-slate-300">Profile Key</strong> de cada um). Conta com uma Página só usa o Primary Profile, sem chave.
@@ -24,7 +30,32 @@
     <div id="alert" class="mt-4 hidden rounded-lg px-4 py-3 text-sm"></div>
     <%- include('partials/page-distribution', { mode: 'settings' }) %>
 
-    <% if (useAyrshare) { %>
+    <% if (usePostiz) { %>
+    <div class="mt-6 rounded-xl border border-emerald-800/50 bg-emerald-950/20 px-5 py-4">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0 flex-1">
+          <h2 class="text-sm font-semibold text-white">Postiz</h2>
+          <p class="mt-1 text-sm text-slate-300">
+            Não precisa colar chave nem Profile Key nesta tela. O canal do Facebook é o que está conectado em
+            <a href="https://platform.postiz.com/settings" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">platform.postiz.com</a>.
+          </p>
+          <p class="mt-2 text-sm text-emerald-200/90">
+            As páginas cadastradas abaixo continuam valendo. Nada de Profile Key nesta tela.
+          </p>
+        </div>
+        <a href="https://platform.postiz.com/settings" target="_blank" rel="noopener"
+          class="rounded-lg border border-emerald-700/60 px-3 py-1.5 text-sm text-emerald-200 hover:border-emerald-400">
+          Abrir Postiz
+        </a>
+      </div>
+    </div>
+
+    <div id="content" class="mt-8">
+      <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-10 text-center">
+        <p class="text-slate-300">Carregando…</p>
+      </div>
+    </div>
+    <% } else if (useAyrshare) { %>
     <div class="mt-6 rounded-xl border border-emerald-800/50 bg-emerald-950/20 px-5 py-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0 flex-1">
@@ -112,7 +143,6 @@
   <script>
     const alertEl = document.getElementById('alert');
     const contentEl = document.getElementById('content');
-    const useAyrshare = <%= useAyrshare ? 'true' : 'false' %>;
 
     function escapeHtml(text) {
       return String(text || '')
@@ -131,7 +161,66 @@
           : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200');
     }
 
-    <% if (useAyrshare) { %>
+    <% if (usePostiz) { %>
+    async function loadPostiz() {
+      try {
+        const res = await fetch('/api/facebook/pages');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Falha ao carregar');
+        const pages = data.pages || [];
+        if (!data.conectado || !pages.length) {
+          contentEl.innerHTML = `
+            <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-8 text-center">
+              <p class="text-slate-300">Nenhuma página listada no app ainda.</p>
+              <p class="mt-2 text-sm text-slate-500">A publicação usa o canal já conectado no Postiz. A página padrão daqui só define o destino das matérias.</p>
+            </div>`;
+          return;
+        }
+        const pagesHtml = pages.map((p) => {
+          const isDefault = Boolean(p.is_default);
+          const defaultBtn = isDefault
+            ? `<span class="rounded-full bg-violet-500/20 px-2.5 py-0.5 text-xs font-semibold text-violet-200">página padrão</span>`
+            : `<button type="button" data-set-default="${p.id}" class="pz-default-btn rounded-lg border border-violet-500/40 px-2.5 py-1 text-xs text-violet-200 hover:bg-violet-500/15">Usar como padrão</button>`;
+          return `
+          <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 ${isDefault ? 'ring-1 ring-violet-500/40' : ''}">
+            <div>
+              <p class="text-white">${escapeHtml(p.page_name)}</p>
+              <p class="text-xs text-slate-500">Destino das matérias neste app</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">${defaultBtn}</div>
+          </div>`;
+        }).join('');
+        contentEl.innerHTML = `
+          <p class="text-xs text-slate-500 mb-4">
+            A <strong class="font-medium text-slate-400">página padrão</strong> define para onde vão as matérias.
+            O post em si sai pelo Facebook conectado no Postiz.
+          </p>
+          <div class="space-y-3">${pagesHtml}</div>`;
+        contentEl.querySelectorAll('.pz-default-btn').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            try {
+              const r = await fetch('/api/facebook/pages/default', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ facebook_page_id: Number(btn.dataset.setDefault) }),
+              });
+              const j = await r.json();
+              if (!r.ok) throw new Error(j.error || 'Falha ao definir padrão');
+              showAlert('Página padrão: ' + (j.page?.page_name || 'ok'));
+              loadPostiz();
+            } catch (err) {
+              showAlert(err.message, true);
+              btn.disabled = false;
+            }
+          });
+        });
+      } catch (err) {
+        contentEl.innerHTML = `<p class="text-rose-300">${escapeHtml(err.message)}</p>`;
+      }
+    }
+    loadPostiz();
+    <% } else if (useAyrshare) { %>
     let selectedRefId = '';
     let profileCursor = null;
     document.getElementById('ay-clear-selection').addEventListener('click', () => {

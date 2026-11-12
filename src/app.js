@@ -131,6 +131,7 @@ app.get('/paginas', requireAuth, (_req, res) => {
   return renderPage(res, 'paginas', 'Páginas', {
     cache: false,
     publishProvider: env.postpulse.publishProvider || 'auto',
+    postizConfigured: Boolean(env.postiz?.apiKey),
     ayrshareConfigured: Boolean(env.ayrshare?.apiKey),
     ayrshareKeyFinal: require('./services/ayrshareService').finalDaApiKey(),
   });
