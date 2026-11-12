@@ -110,7 +110,7 @@ app.post('/login', async (req, res, next) => {
   }
 });
 
-app.get('/materia-manual', requireAuth, (_req, res) => renderPage(res, 'materia-manual', 'Matéria manual'));
+app.get('/materia-manual', requireAuth, (_req, res) => renderPage(res, 'materia-manual', 'Estúdio de criação'));
 app.get('/piloto-automatico', requireAuth, (_req, res) => renderPage(res, 'piloto-automatico', 'Piloto automático'));
 app.get('/furos', requireAuth, (_req, res) => renderPage(res, 'furos', 'Furos do dia'));
 app.get('/dots', requireAuth, (_req, res) => renderPage(res, 'dots', 'Dots'));

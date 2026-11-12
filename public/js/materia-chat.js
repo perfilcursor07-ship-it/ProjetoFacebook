@@ -3680,7 +3680,7 @@
     // A aba ChatGPT livre tem cara de ChatGPT: a conversa acontece de fato no
     // chatgpt.com do servidor (a mesma que aparece no VNC).
     el.raiz?.classList.toggle('is-chatgpt', chatgptLivre);
-    if (el.headerRotulo) el.headerRotulo.textContent = chatgptLivre ? 'ChatGPT' : 'ViralizeAI · Escrita';
+    if (el.headerRotulo) el.headerRotulo.textContent = chatgptLivre ? 'ChatGPT' : 'ViralizeAI · Estúdio';
     garantirVazioChatgpt();
     el.tipoBtns?.forEach((btn) => {
       const ativo = btn.dataset.chatTipo === state.tipoConversa;

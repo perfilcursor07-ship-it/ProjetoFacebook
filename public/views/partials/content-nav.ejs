@@ -6,6 +6,10 @@
     { key: 'production', href: '/fila', label: 'Produção', hint: 'Cortar e publicar' },
   ];
 %>
+<%# Estilo inline: evita depender de classes novas no app.css compilado. %>
+<a href="/materia-manual" style="display:inline-flex;align-items:center;gap:.4rem;margin-bottom:.6rem;font-size:.75rem;color:#6ee7b7;text-decoration:none">
+  <span aria-hidden="true">←</span> Estúdio de criação
+</a>
 <section class="mb-5 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40" aria-label="Área de criação de conteúdo">
   <nav class="grid grid-cols-1 gap-1.5 p-2 sm:grid-cols-3 sm:gap-2 sm:p-2.5" aria-label="Etapas da criação">
     <% contentTabs.forEach((tab) => { const active = selectedContentTab === tab.key; %>

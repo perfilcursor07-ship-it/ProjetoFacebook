@@ -5,6 +5,7 @@
   <link rel="stylesheet" href="/css/feed-sugerido.css?v=20260927feed4" />
   <link rel="stylesheet" href="/css/materia-publicar.css?v=20261007pub1" />
   <link rel="stylesheet" href="/css/banco-imagens.css?v=20261007banco2" />
+  <link rel="stylesheet" href="/css/estudio.css?v=20261112estudio1" />
 
   <main class="mia-chat mia-manual-claude manual-dots-page" data-recolher-menu>
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
@@ -13,7 +14,7 @@
       <!-- Sidebar de conversas (drawer no mobile) -->
       <aside id="chat-sidebar" class="mia-chat-sidebar">
         <div class="mia-chat-sidebar-head">
-          <p class="mia-chat-sidebar-head-title">Seu espaço de escrita</p>
+          <p class="mia-chat-sidebar-head-title">Estúdio de criação</p>
           <button type="button" id="chat-drawer-close" class="mia-chat-icon-btn mia-chat-mobile-only" aria-label="Fechar conversas">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12"/>
@@ -57,6 +58,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v18M3 12h18"/></svg>
             Pautas com IA
           </a>
+          <a href="/fila" class="mia-chat-foot-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/></svg>
+            Vídeos e cortes
+          </a>
         </div>
       </aside>
 
@@ -69,7 +74,7 @@
             </svg>
           </button>
           <div class="mia-chat-header-title">
-            <span>ViralizeAI · Escrita</span>
+            <span>ViralizeAI · Estúdio</span>
             <p id="chat-titulo" class="truncate">Nova conversa</p>
           </div>
           <div class="mia-chat-header-actions">
@@ -87,36 +92,117 @@
 
         <div id="chat-mensagens" class="mia-chat-messages">
           <div id="chat-vazio" class="mia-chat-empty">
-            <div class="mia-chat-empty-copy">
-              <span class="mia-chat-empty-mark" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9Z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8Z"/></svg>
-              </span>
-              <span class="mia-chat-empty-eyebrow">Redação com IA</span>
-              <h1 class="mia-chat-empty-title">Sua próxima matéria <em>começa aqui.</em></h1>
-              <p class="mia-chat-empty-sub">Cole um link, conte uma ideia ou envie um arquivo. A IA ajuda a pesquisar, escrever e revisar.</p>
+            <div class="mia-chat-empty-copy estudio-hero">
+              <span class="mia-chat-empty-eyebrow">Estúdio de criação</span>
+              <h1 class="mia-chat-empty-title">O que vamos <em>criar hoje?</em></h1>
+              <p class="mia-chat-empty-sub">Escreva matérias, descubra pautas e produza cortes de vídeo — tudo a partir daqui.</p>
             </div>
-            <div class="mia-start-actions" aria-label="Como começar sua matéria">
-              <button type="button" data-start-matter="link">
-                <span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></span>
-                <strong>Criar de um link</strong><small>Transforme uma notícia em matéria</small>
-              </button>
-              <button type="button" data-start-matter="tema">
-                <span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></span>
-                <strong>Escrever sobre um tema</strong><small>Comece com uma ideia ou fatos</small>
-              </button>
-              <button type="button" data-start-matter="video">
-                <span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="m10 9 5 3-5 3Z"/></svg></span>
-                <strong>Usar um vídeo</strong><small>Cole o link para extrair o conteúdo</small>
-              </button>
-              <button type="button" data-start-matter="pautas" aria-controls="chat-radar-options" aria-expanded="false">
-                <span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-9"/><path d="M15 6h6v6"/></svg></span>
-                <strong>Descobrir pautas</strong><small>Encontre seu próximo assunto</small>
-              </button>
-              <button type="button" class="mia-start-feed" data-feed-sugerido-open hidden>
-                <span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="m10.5 9.5 4 2.5-4 2.5Z"/></svg></span>
-                <strong>Vídeos sugeridos</strong><small>Reels, Shorts e vídeos que as redes sugerem viram matérias</small>
-              </button>
+
+            <%
+              const estudioModulos = typeof modulosPermitidos !== 'undefined' && Array.isArray(modulosPermitidos) ? modulosPermitidos : null;
+              const estudioPode = (id) => !estudioModulos || estudioModulos.includes(id);
+              const icoSeta = '<svg class="estudio-go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>';
+            %>
+            <div class="estudio" aria-label="Como você quer criar">
+              <!-- Escrever: cada opção prepara o campo de mensagem abaixo -->
+              <section class="estudio-col estudio-col--escrever" aria-labelledby="estudio-escrever">
+                <header class="estudio-col-head">
+                  <span class="estudio-col-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></span>
+                  <div><h2 id="estudio-escrever">Escrever</h2><p>Matérias prontas com IA</p></div>
+                </header>
+                <div class="estudio-list">
+                  <button type="button" class="estudio-item" data-start-matter="link">
+                    <span class="estudio-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></span>
+                    <span class="estudio-item-text"><strong>De um link</strong><small>Transforme uma notícia em matéria</small></span>
+                  </button>
+                  <button type="button" class="estudio-item" data-start-matter="tema">
+                    <span class="estudio-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2Z"/></svg></span>
+                    <span class="estudio-item-text"><strong>Sobre um tema</strong><small>Comece com uma ideia ou fatos</small></span>
+                  </button>
+                  <button type="button" class="estudio-item" data-start-matter="video">
+                    <span class="estudio-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="m10 9 5 3-5 3Z"/></svg></span>
+                    <span class="estudio-item-text"><strong>De um vídeo</strong><small>A IA ouve o áudio e escreve</small></span>
+                  </button>
+                  <button type="button" class="estudio-item chat-varios-links">
+                    <span class="estudio-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg></span>
+                    <span class="estudio-item-text"><strong>Vários links de uma vez</strong><small>Até 12 links, uma matéria por link</small></span>
+                  </button>
+                  <button type="button" class="estudio-item" data-abrir-manual>
+                    <span class="estudio-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg></span>
+                    <span class="estudio-item-text"><strong>Escrever manualmente</strong><small>Cole seu próprio texto, sem IA</small></span>
+                  </button>
+                </div>
+              </section>
+
+              <!-- Descobrir: de onde sai o próximo assunto -->
+              <section class="estudio-col estudio-col--descobrir" aria-labelledby="estudio-descobrir">
+                <header class="estudio-col-head">
+                  <span class="estudio-col-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5Z"/></svg></span>
+                  <div><h2 id="estudio-descobrir">Descobrir</h2><p>Encontre o próximo assunto</p></div>
+                </header>
+                <div class="estudio-list">
+                  <button type="button" class="estudio-item" data-start-matter="pautas" aria-controls="chat-radar-options" aria-expanded="false">
+                    <span class="estudio-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-9"/><path d="M15 6h6v6"/></svg></span>
+                    <span class="estudio-item-text"><strong>Radar de pautas</strong><small>O que está em alta no Google e nas redes</small></span>
+                  </button>
+                  <button type="button" class="estudio-item" data-feed-sugerido-open hidden>
+                    <span class="estudio-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="m10.5 9.5 4 2.5-4 2.5Z"/></svg></span>
+                    <span class="estudio-item-text"><strong>Feed sugerido</strong><small>Reels, Shorts e vídeos viram matérias</small></span>
+                  </button>
+                  <% if (estudioPode('materias-salvas')) { %>
+                  <a class="estudio-item" href="/materias-ia">
+                    <span class="estudio-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9Z"/></svg></span>
+                    <span class="estudio-item-text"><strong>Pautas com IA</strong><small>Pesquise um tema e gere em lote</small></span>
+                    <%- icoSeta %>
+                  </a>
+                  <% } %>
+                  <% if (estudioPode('descobrir-pautas')) { %>
+                  <a class="estudio-item" href="/configuracoes/descobrir-pautas">
+                    <span class="estudio-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span>
+                    <span class="estudio-item-text"><strong>Fontes de pauta</strong><small>Sites que o radar acompanha</small></span>
+                    <%- icoSeta %>
+                  </a>
+                  <% } %>
+                </div>
+              </section>
+
+              <!-- Vídeo e cortes: buscar → cortar → publicar -->
+              <section class="estudio-col estudio-col--video" aria-labelledby="estudio-video">
+                <header class="estudio-col-head">
+                  <span class="estudio-col-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/></svg></span>
+                  <div><h2 id="estudio-video">Vídeo e cortes</h2><p>Buscar, cortar e publicar</p></div>
+                </header>
+                <div class="estudio-list">
+                  <button type="button" class="estudio-item" data-abrir-corte>
+                    <span class="estudio-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></span>
+                    <span class="estudio-item-text"><strong>Cortar um vídeo</strong><small>Cole o link e a IA sugere os melhores momentos</small></span>
+                  </button>
+                  <a class="estudio-item" href="/busca">
+                    <span class="estudio-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/><path d="m9.5 8.5 4 2.5-4 2.5Z"/></svg></span>
+                    <span class="estudio-item-text"><strong>Buscar vídeos</strong><small>YouTube por palavra-chave ou upload</small></span>
+                    <%- icoSeta %>
+                  </a>
+                  <a class="estudio-item" href="/fila">
+                    <span class="estudio-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18M3 15h18M8 4v16M16 4v16"/></svg></span>
+                    <span class="estudio-item-text"><strong>Produção de cortes</strong><small>Fila: baixar, cortar, revisar e publicar</small></span>
+                    <%- icoSeta %>
+                  </a>
+                  <a class="estudio-item" href="/biblioteca">
+                    <span class="estudio-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>
+                    <span class="estudio-item-text"><strong>Biblioteca</strong><small>Perfis e posts salvos para reaproveitar</small></span>
+                    <%- icoSeta %>
+                  </a>
+                </div>
+              </section>
             </div>
+
+            <nav class="estudio-atalhos" aria-label="Automação e acervo">
+              <span class="estudio-atalhos-label">Também no estúdio</span>
+              <% if (estudioPode('materias-salvas')) { %><a href="/minhas-materias">Matérias salvas</a><% } %>
+              <% if (estudioPode('dots')) { %><a href="/dots">Agentes Dots</a><% } %>
+              <% if (estudioPode('piloto')) { %><a href="/piloto-automatico">Piloto automático</a><% } %>
+              <a href="/minha-marca">Minha marca</a>
+            </nav>
             <section id="chat-radar-options" class="mia-chat-radar-start" aria-labelledby="chat-radar-start-title" hidden>
               <div class="mia-chat-radar-start-head">
                 <div>
@@ -369,6 +455,20 @@
           <p id="chat-manual-status"></p>
         </form>
 
+        <!-- Cortar um vídeo: manda o link para a fila de produção (/fila) sem sair daqui -->
+        <div id="estudio-corte-backdrop" class="mia-manual-backdrop hidden" hidden></div>
+        <form id="estudio-corte-form" class="mia-manual-draft estudio-corte hidden" aria-modal="true" role="dialog" aria-labelledby="estudio-corte-titulo">
+          <div class="mia-manual-draft-head">
+            <p id="estudio-corte-titulo">Cortar um vídeo</p>
+            <button type="button" id="estudio-corte-fechar" aria-label="Fechar">×</button>
+          </div>
+          <p class="estudio-corte-ajuda">Cole o link de um vídeo do YouTube, Facebook ou Instagram. Ele entra na produção, a IA sugere os melhores momentos e você revisa os cortes antes de publicar.</p>
+          <input id="estudio-corte-url" type="url" required placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" />
+          <button type="submit">Enviar para a produção</button>
+          <p id="estudio-corte-status" class="estudio-corte-status" aria-live="polite"></p>
+          <p class="estudio-corte-aviso">Conteúdo de terceiros pode gerar copyright e afetar a monetização — use só o que for seu ou licenciado.</p>
+        </form>
+
         <!-- Furos do dia virou módulo próprio: /furos -->
 
         <div id="feed-sugerido-backdrop" class="mia-manual-backdrop hidden" hidden></div>
@@ -501,10 +601,72 @@
         chatMain?.classList.toggle('is-manual-open', open);
         if (!open) setManualStatus('');
       }
-      openBtn?.addEventListener('click', () => {
+      function abrirManual() {
         fecharMenusMais();
         setManualOpen(true);
         tituloEl?.focus();
+      }
+      openBtn?.addEventListener('click', abrirManual);
+      document.querySelectorAll('[data-abrir-manual]').forEach((btn) => btn.addEventListener('click', abrirManual));
+
+      // —— Cortar um vídeo: importa o link para a fila de produção ——
+      const corteForm = document.getElementById('estudio-corte-form');
+      const corteBackdrop = document.getElementById('estudio-corte-backdrop');
+      const corteUrl = document.getElementById('estudio-corte-url');
+      const corteStatus = document.getElementById('estudio-corte-status');
+      function setCorteStatus(texto, erro) {
+        if (!corteStatus) return;
+        corteStatus.textContent = texto || '';
+        corteStatus.classList.toggle('is-erro', Boolean(erro));
+      }
+      function setCorteOpen(open) {
+        corteForm?.classList.toggle('hidden', !open);
+        corteBackdrop?.classList.toggle('hidden', !open);
+        if (corteBackdrop) corteBackdrop.hidden = !open;
+        if (open) corteUrl?.focus();
+        else setCorteStatus('');
+      }
+      document.querySelectorAll('[data-abrir-corte]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          fecharMenusMais();
+          setCorteOpen(true);
+        });
+      });
+      document.getElementById('estudio-corte-fechar')?.addEventListener('click', () => setCorteOpen(false));
+      corteBackdrop?.addEventListener('click', () => setCorteOpen(false));
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && corteForm && !corteForm.classList.contains('hidden')) setCorteOpen(false);
+      });
+      corteForm?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const url = String(corteUrl?.value || '').trim();
+        if (!/^https?:\/\//i.test(url)) {
+          setCorteStatus('Cole um link válido (http/https).', true);
+          corteUrl?.focus();
+          return;
+        }
+        const btn = corteForm.querySelector('button[type="submit"]');
+        if (btn) btn.disabled = true;
+        setCorteStatus('Enviando para a produção…');
+        try {
+          const res = await fetch('/api/videos/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ url, fonte: 'youtube' }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || 'Não foi possível importar o vídeo.');
+          setCorteStatus(data.created === false ? 'Esse vídeo já estava na produção. ' : 'Vídeo enviado. ');
+          const link = document.createElement('a');
+          link.href = '/fila';
+          link.textContent = 'Abrir a produção de cortes →';
+          corteStatus.appendChild(link);
+          corteUrl.value = '';
+        } catch (err) {
+          setCorteStatus(err.message, true);
+        } finally {
+          if (btn) btn.disabled = false;
+        }
       });
       closeBtn?.addEventListener('click', () => setManualOpen(false));
       backdrop?.addEventListener('click', () => setManualOpen(false));
@@ -576,7 +738,7 @@
     })();
   </script>
   <script src="/js/banco-imagens.js?v=20261007banco2"></script>
-  <script src="/js/materia-chat.js?v=20261030hfchat1"></script>
+  <script src="/js/materia-chat.js?v=20261112estudio1"></script>
   <script src="/js/materia-chat-extras.js?v=20261001publicar1"></script>
   <script src="/js/feed-sugerido.js?v=20260928feedModelo1"></script>
 <%- include('partials/app-end') %>
