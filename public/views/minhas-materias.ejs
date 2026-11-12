@@ -126,8 +126,9 @@
     if (/^https?:\/\//i.test(fonte) || fonte.startsWith('/')) return fonte;
     return '';
   }
-  // Abas com matéria que ainda pode sair: dá para escolher várias e agendar ou publicar.
-  const selecionavel = ['rascunho', 'pronto', 'erro'].includes(activeStatus);
+  // Abas com matéria que ainda pode sair: dá para escolher várias e agendar, publicar ou excluir.
+  const selecionavel = ['rascunho', 'pronto', 'erro', 'agendado'].includes(activeStatus);
+  const soExcluir = activeStatus === 'agendado';
   const pages = pageWindow(pag.page, pag.totalPages, 5);
   const fromItem = pag.total === 0 ? 0 : (pag.page - 1) * pag.perPage + 1;
   const toItem = Math.min(pag.page * pag.perPage, pag.total);
@@ -260,11 +261,14 @@
             <span>Selecionar todas nesta página</span>
           </label>
           <span id="mia-selected-count" class="d-stat">0 selecionada(s)</span>
+          <% if (!soExcluir) { %>
           <button type="button" id="mia-ver-agendadas" class="d-btn d-btn--fantasma"
             title="Lista resumida do que já está agendado">
             Ver agendadas (<%= counts.agendado || 0 %>)
           </button>
+          <% } %>
           <div class="ml-auto flex flex-wrap items-center gap-1.5">
+            <% if (!soExcluir) { %>
             <button type="button" id="mia-bulk-publicar" disabled
               class="d-btn d-btn--principal disabled:cursor-not-allowed disabled:opacity-40">
               Publicar agora
@@ -278,17 +282,18 @@
               title="Trocar o título das selecionadas com IA antes de publicar ou agendar">
               Alterar título
             </button>
-            <% if (['rascunho', 'erro'].includes(activeStatus)) { %>
+            <% } %>
+            <% if (['rascunho', 'erro', 'agendado'].includes(activeStatus)) { %>
             <button type="button" id="mia-bulk-delete" disabled
               class="d-btn d-btn--neutro d-btn--perigo disabled:cursor-not-allowed disabled:opacity-40">
               <%= activeStatus === 'erro' ? 'Remover selecionadas' : 'Excluir selecionadas' %>
             </button>
             <% } %>
-            <% if (activeStatus === 'rascunho' && pag.total > 0) { %>
+            <% if ((activeStatus === 'rascunho' || activeStatus === 'agendado') && pag.total > 0) { %>
               <button type="button" id="mia-bulk-delete-all"
                 class="d-btn d-btn--fantasma d-btn--perigo"
                 data-total="<%= pag.total %>"
-                title="Apaga todos os rascunhos, inclusive das outras páginas">
+                title="<%= activeStatus === 'agendado' ? 'Apaga todas as agendadas, inclusive das outras páginas, e tira da fila' : 'Apaga todos os rascunhos, inclusive das outras páginas' %>">
                 Excluir todos (<%= pag.total %>)
               </button>
             <% } %>
@@ -619,5 +624,5 @@
     </style>
   <% } %>
 
-  <script src="/js/minhas-materias.js?v=20261103excluirerros"></script>
+  <script src="/js/minhas-materias.js?v=20261112agendado"></script>
 <%- include('partials/app-end') %>

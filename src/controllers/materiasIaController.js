@@ -484,7 +484,23 @@ async function removerMateria(req, res, next) {
   }
 }
 
-/** Exclusão em lote — rascunhos e erros selecionados; exclusão total só de rascunhos. */
+/** Tira a matéria da fila e devolve o item da biblioteca para pré-agendado. */
+async function soltarAgendaDasMaterias(userId, ids, motivo) {
+  const db = require('../config/db');
+  const lista = (Array.isArray(ids) ? ids : []).filter((id) => Number(id) > 0);
+  if (!lista.length) return;
+  await db('biblioteca_agenda')
+    .where({ user_id: userId })
+    .whereIn('matter_id', lista)
+    .whereNotIn('status', ['cancelado', 'publicado'])
+    .update({ status: 'pendente', matter_id: null, updated_at: db.fn.now() });
+  await db('ai_fila_jobs')
+    .whereIn('matter_id', lista)
+    .where({ status: 'pendente' })
+    .update({ status: 'cancelado', erro: motivo });
+}
+
+/** Exclusão em lote — rascunhos, erros e agendadas; exclusão total de rascunhos ou agendadas. */
 async function removerMateriasLote(req, res, next) {
   try {
     const userId = req.session.userId;
@@ -492,16 +508,30 @@ async function removerMateriasLote(req, res, next) {
     const allDrafts = body.allDrafts === true || body.all === true;
     const status = body.status == null ? 'rascunho' : String(body.status);
 
-    if (!['rascunho', 'erro'].includes(status)) {
-      return res.status(400).json({ error: 'Só é possível remover rascunhos ou matérias com erro' });
+    if (!['rascunho', 'erro', 'agendado'].includes(status)) {
+      return res.status(400).json({ error: 'Só é possível remover rascunhos, matérias com erro ou agendadas' });
     }
 
-    if (allDrafts) {
-      if (status !== 'rascunho') {
-        return res.status(400).json({ error: 'A exclusão total está disponível apenas para rascunhos' });
+    if (allDrafts || body.todos === true) {
+      if (allDrafts) {
+        if (status !== 'rascunho') {
+          return res.status(400).json({ error: 'A exclusão total está disponível apenas para rascunhos' });
+        }
+        const deleted = await AiMatters.deleteAllByUserStatus(userId, 'rascunho');
+        return res.json({ ok: true, deleted: Number(deleted) || 0, allDrafts: true });
       }
-      const deleted = await AiMatters.deleteAllByUserStatus(userId, 'rascunho');
-      return res.json({ ok: true, deleted: Number(deleted) || 0, allDrafts: true });
+      if (status !== 'agendado') {
+        return res.status(400).json({ error: 'A exclusão total deste status não está disponível' });
+      }
+      const db = require('../config/db');
+      const idsAgenda = await db(AiMatters.table).where({ user_id: userId, status: 'agendado' }).pluck('id');
+      try {
+        await soltarAgendaDasMaterias(userId, idsAgenda, 'Matéria agendada excluída — saiu da fila');
+      } catch (syncErr) {
+        console.warn('[materias-ia] remover todas agendadas sync agenda:', syncErr.message);
+      }
+      const deleted = await AiMatters.deleteAllByUserStatus(userId, 'agendado');
+      return res.json({ ok: true, deleted: Number(deleted) || 0, todos: true });
     }
 
     const ids = (Array.isArray(body.ids) ? body.ids : [])
@@ -511,24 +541,22 @@ async function removerMateriasLote(req, res, next) {
       return res.status(400).json({ error: 'Nenhuma matéria selecionada' });
     }
     let idsToDelete = ids;
-    if (status === 'erro') {
+    if (status === 'erro' || status === 'agendado') {
       const db = require('../config/db');
       idsToDelete = await db(AiMatters.table)
-        .where({ user_id: userId, status: 'erro' })
+        .where({ user_id: userId, status })
         .whereIn('id', ids)
         .pluck('id');
 
       if (idsToDelete.length) {
         try {
-          await db('biblioteca_agenda')
-            .where({ user_id: userId })
-            .whereIn('matter_id', idsToDelete)
-            .whereNotIn('status', ['cancelado', 'publicado'])
-            .update({ status: 'pendente', matter_id: null, updated_at: db.fn.now() });
-          await db('ai_fila_jobs')
-            .whereIn('matter_id', idsToDelete)
-            .where({ status: 'pendente' })
-            .update({ status: 'cancelado', erro: 'Matéria removida — agenda voltou para pré-agendada' });
+          await soltarAgendaDasMaterias(
+            userId,
+            idsToDelete,
+            status === 'agendado'
+              ? 'Matéria agendada excluída — saiu da fila'
+              : 'Matéria removida — agenda voltou para pré-agendada'
+          );
         } catch (syncErr) {
           console.warn('[materias-ia] remover lote sync agenda:', syncErr.message);
         }

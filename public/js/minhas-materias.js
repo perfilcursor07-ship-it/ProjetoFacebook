@@ -347,9 +347,9 @@
     setTimeout(iniciarAtualizacao, 100);
   }
 
-  /** Seleção em lote para publicar/agendar; exclusão permitida em rascunhos e erros. */
+  /** Seleção em lote para publicar/agendar; exclusão em rascunhos, erros e agendadas. */
   (function initBulk() {
-    if (!['rascunho', 'pronto', 'erro'].includes(st)) return;
+    if (!['rascunho', 'pronto', 'erro', 'agendado'].includes(st)) return;
     const selectAll = document.getElementById('mia-select-all');
     const bulkDelete = document.getElementById('mia-bulk-delete');
     const bulkDeleteAll = document.getElementById('mia-bulk-delete-all');
@@ -418,7 +418,9 @@
       const confirmMessage =
         st === 'erro'
           ? 'Remover ' + ids.length + ' matéria(s) com erro selecionada(s)?\n\nEssa ação não pode ser desfeita.'
-          : 'Excluir ' + ids.length + ' rascunho(s) selecionado(s)?\n\nEssa ação não pode ser desfeita.';
+          : st === 'agendado'
+            ? 'Excluir ' + ids.length + ' matéria(s) agendada(s)?\n\nO horário sai da fila. Essa ação não pode ser desfeita.'
+            : 'Excluir ' + ids.length + ' rascunho(s) selecionado(s)?\n\nEssa ação não pode ser desfeita.';
       if (
         !confirm(confirmMessage)
       ) {
@@ -430,7 +432,13 @@
       try {
         const data = await postExcluir({ ids, status: st });
         if (!data.deleted) {
-          alert(st === 'erro' ? 'Nenhuma matéria com erro foi removida.' : 'Nenhum rascunho foi excluído.');
+          alert(
+            st === 'erro'
+              ? 'Nenhuma matéria com erro foi removida.'
+              : st === 'agendado'
+                ? 'Nenhuma matéria agendada foi excluída.'
+                : 'Nenhum rascunho foi excluído.'
+          );
           bulkDelete.textContent = old;
           syncBulkUi();
           return;
@@ -446,22 +454,25 @@
     if (bulkDeleteAll) {
       bulkDeleteAll.addEventListener('click', async () => {
         const total = Number(bulkDeleteAll.dataset.total) || 0;
+        const rotulo = st === 'agendado' ? 'agendadas' : 'rascunhos';
         if (
           !confirm(
-            'Excluir TODOS os ' +
+            'Excluir TODAS as ' +
               total +
-              ' rascunhos?\n\nInclui as outras páginas. Essa ação não pode ser desfeita.'
+              ' ' +
+              rotulo +
+              '?\n\nInclui as outras páginas. Essa ação não pode ser desfeita.'
           )
         ) {
           return;
         }
-        if (!confirm('Confirma mesmo? Todos os rascunhos serão apagados.')) return;
+        if (!confirm('Confirma mesmo? Todas as ' + rotulo + ' serão apagadas.')) return;
         bulkDeleteAll.disabled = true;
         const old = bulkDeleteAll.textContent;
         bulkDeleteAll.textContent = 'Excluindo…';
         try {
-          await postExcluir({ allDrafts: true });
-          window.location.href = '/minhas-materias?status=rascunho';
+          await postExcluir(st === 'agendado' ? { todos: true, status: 'agendado' } : { allDrafts: true });
+          window.location.href = '/minhas-materias?status=' + (st === 'agendado' ? 'agendado' : 'rascunho');
         } catch (err) {
           alert(err.message || 'Erro ao excluir');
           bulkDeleteAll.disabled = false;
