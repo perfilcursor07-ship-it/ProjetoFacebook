@@ -90,6 +90,66 @@ const patches = [
   // formato (algorithm + salt + challenge), onde quer que ele esteja. E se
   // mesmo assim não houver nenhum, a resposta inteira vai para o log: sem ela
   // o próximo conserto seria palpite outra vez.
+  // O /health validava a sessão de TODOS os provedores a cada chamada: um
+  // fetch dentro da aba do claude.ai, outro na do chatgpt.com, outro na do
+  // DeepSeek. O vigia do site chama /health uma vez por minuto (1.440 por
+  // dia) e o /claude a cada 30 s — o Chrome nunca ficava parado e as contas
+  // recebiam milhares de consultas inúteis por dia, inclusive no meio de uma
+  // matéria sendo escrita.
+  //
+  // Agora o resultado vale por TFG_HEALTH_SESSOES_MIN minutos (padrão 5) e
+  // chamadas simultâneas dividem a mesma leitura. `/health?fresh=1` confere
+  // na hora (botão "Testar" e logo depois de autorizar).
+  {
+    file: 'src/server.ts',
+    marca: 'searchParams.has("fresh")',
+    procurar: '\t\treturn withCors(await handleHealthRoute());',
+    trocar: '\t\treturn withCors(await handleHealthRoute(new URL(req.url).searchParams.has("fresh")));',
+  },
+  {
+    file: 'src/server.ts',
+    marca: 'sessoesEmCache',
+    procurar: [
+      'async function handleHealthRoute(): Promise<Response> {',
+      '\tconst authorized = listAuthorizedProviders();',
+      '\tconst browserHealthy = await BrowserManager.getInstance().isHealthy();',
+      '\tconst sessions = await checkAllSessions();',
+    ].join('\n'),
+    trocar: [
+      '// viralizeai: validade das sessões guardada por alguns minutos.',
+      'const SESSOES_MIN = Number(process.env.TFG_HEALTH_SESSOES_MIN);',
+      'const SESSOES_MS = (Number.isFinite(SESSOES_MIN) && SESSOES_MIN >= 0 ? SESSOES_MIN : 5) * 60_000;',
+      'type Sessoes = Awaited<ReturnType<typeof checkAllSessions>>;',
+      'const sessoesEmCache: { valor: Sessoes | null; expiraEm: number; lendo: Promise<Sessoes> | null } = {',
+      '\tvalor: null,',
+      '\texpiraEm: 0,',
+      '\tlendo: null,',
+      '};',
+      '',
+      'async function sessoesDosProvedores(fresco: boolean): Promise<Sessoes> {',
+      '\tif (!fresco && sessoesEmCache.valor && sessoesEmCache.expiraEm > Date.now()) {',
+      '\t\treturn sessoesEmCache.valor;',
+      '\t}',
+      '\tif (!sessoesEmCache.lendo) {',
+      '\t\tsessoesEmCache.lendo = checkAllSessions()',
+      '\t\t\t.then((valor) => {',
+      '\t\t\t\tsessoesEmCache.valor = valor;',
+      '\t\t\t\tsessoesEmCache.expiraEm = Date.now() + SESSOES_MS;',
+      '\t\t\t\treturn valor;',
+      '\t\t\t})',
+      '\t\t\t.finally(() => {',
+      '\t\t\t\tsessoesEmCache.lendo = null;',
+      '\t\t\t});',
+      '\t}',
+      '\treturn sessoesEmCache.lendo;',
+      '}',
+      '',
+      'async function handleHealthRoute(fresco = false): Promise<Response> {',
+      '\tconst authorized = listAuthorizedProviders();',
+      '\tconst browserHealthy = await BrowserManager.getInstance().isHealthy();',
+      '\tconst sessions = await sessoesDosProvedores(fresco);',
+    ].join('\n'),
+  },
   {
     file: 'src/cli/daemon.ts',
     marca: 'pidDoGatewayServindo',

@@ -178,11 +178,14 @@ async function chromeMetadata(cdpUrl) {
  * esperam a mesma leitura; só a autorização em andamento vem sempre ao vivo.
  */
 const STATUS_CACHE_MS = 30_000;
-const statusCache = { valor: null, expiraEm: 0, emAndamento: null };
+const statusCache = { valor: null, expiraEm: 0, emAndamento: null, conferirSessoes: false };
 
 function esquecerStatus() {
   statusCache.valor = null;
   statusCache.expiraEm = 0;
+  // Algo mudou (autorização, reinício): a próxima leitura confere as sessões
+  // de verdade em vez de aceitar a leitura guardada pelo gateway.
+  statusCache.conferirSessoes = true;
 }
 
 async function status({ fresco = false } = {}) {
@@ -190,7 +193,9 @@ async function status({ fresco = false } = {}) {
     return { ...statusCache.valor, autorizacao: authJobPublico() };
   }
   if (!statusCache.emAndamento) {
-    statusCache.emAndamento = lerStatus()
+    const conferir = fresco || statusCache.conferirSessoes;
+    statusCache.conferirSessoes = false;
+    statusCache.emAndamento = lerStatus({ fresco: conferir })
       .then((valor) => {
         statusCache.valor = valor;
         statusCache.expiraEm = Date.now() + STATUS_CACHE_MS;
@@ -204,7 +209,7 @@ async function status({ fresco = false } = {}) {
   return { ...valor, autorizacao: authJobPublico() };
 }
 
-async function lerStatus() {
+async function lerStatus({ fresco = false } = {}) {
   const [auth, chatgptAuth, config, desktop] = await Promise.all([
     authMetadata('claude-web'),
     authMetadata('chatgpt-web'),
@@ -217,7 +222,8 @@ async function lerStatus() {
   let modelos = [];
 
   try {
-    health = await gatewayClient.verificarSaude({ timeout: 3_500 });
+    // Conferir as sessões abre requisições nas abas do Chrome: dá mais tempo.
+    health = await gatewayClient.verificarSaude({ timeout: fresco ? 12_000 : 3_500, fresco });
     try {
       modelos = await gatewayClient.listarModelos({ timeout: 3_500 });
     } catch {

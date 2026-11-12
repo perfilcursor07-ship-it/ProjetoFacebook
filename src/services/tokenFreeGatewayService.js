@@ -771,11 +771,16 @@ async function chatCompletionStream(
   }
 }
 
-async function verificarSaude({ timeout = 8_000 } = {}) {
+/**
+ * `fresco`: confere as sessões na hora. Sem ele o gateway devolve a última
+ * leitura (guardada por alguns minutos), que não acorda o Chrome — é o que o
+ * vigia de 1 em 1 minuto precisa: saber se o gateway está de pé.
+ */
+async function verificarSaude({ timeout = 8_000, fresco = false } = {}) {
   try {
     const url = new URL(BASE_URL);
     url.pathname = '/health';
-    url.search = '';
+    url.search = fresco ? '?fresh=1' : '';
     const { data } = await axios.get(url.toString(), { timeout });
     return data;
   } catch (err) {
@@ -793,6 +798,91 @@ async function listarModelos({ timeout = 8_000 } = {}) {
   } catch (err) {
     throw normalizarErro(err);
   }
+}
+
+/**
+ * Fila por provedor, com prioridade para quem está esperando na tela.
+ *
+ * Todos os provedores dividem UM Chrome no servidor. Dots, Biblioteca, Feed
+ * sugerido e Piloto rodam em lote e disparavam vários pedidos ao mesmo tempo;
+ * somados, eram oito, dez respostas sendo geradas juntas nas mesmas abas. O
+ * Chrome ia a 100% de CPU, tudo ficava lento junto — inclusive a matéria que
+ * o editor estava vendo ser escrita — e a conta tomava limite (429) mais cedo.
+ *
+ * Aqui cada provedor atende no máximo TOKEN_FREE_GATEWAY_CONCORRENCIA pedidos
+ * por vez (padrão 3). O que passar disso espera a vez. Pedido com alguém
+ * olhando (streaming do chat) entra na frente dos trabalhos de fundo.
+ */
+const CONCORRENCIA = Math.max(1, Math.floor(Number(process.env.TOKEN_FREE_GATEWAY_CONCORRENCIA)) || 3);
+const filas = new Map();
+
+/** Cada site tem a própria aba e o próprio limite de uso: uma fila para cada. */
+function provedorDoModelo(modelo = modeloAtual()) {
+  const id = String(modelo || '').toLowerCase();
+  if (/claude/.test(id)) return 'claude';
+  if (/deepseek/.test(id)) return 'deepseek';
+  if (/gpt|chatgpt|^o\d/.test(id)) return 'chatgpt';
+  return id || 'outro';
+}
+
+function pegarVaga(provedor, prioritario) {
+  let fila = filas.get(provedor);
+  if (!fila) {
+    fila = { ativos: 0, espera: [] };
+    filas.set(provedor, fila);
+  }
+  let liberado = false;
+  const liberar = () => {
+    if (liberado) return;
+    liberado = true;
+    const proximo = fila.espera.shift();
+    // A vaga passa direto para o próximo: `ativos` não muda.
+    if (proximo) proximo();
+    else fila.ativos -= 1;
+  };
+  if (fila.ativos < CONCORRENCIA) {
+    fila.ativos += 1;
+    return Promise.resolve(liberar);
+  }
+  return new Promise((resolve) => {
+    const entrar = () => resolve(liberar);
+    if (prioritario) {
+      // Na frente dos trabalhos de fundo, mas atrás de outro editor que já espera.
+      const indice = fila.espera.findIndex((item) => !item.prioritario);
+      entrar.prioritario = true;
+      if (indice < 0) fila.espera.push(entrar);
+      else fila.espera.splice(indice, 0, entrar);
+    } else {
+      fila.espera.push(entrar);
+    }
+  });
+}
+
+/** `prioritario(opcoes)`: há alguém vendo esta resposta chegar? */
+function comVaga(fn, prioritario) {
+  return async (messages, opcoes = {}) => {
+    const provedor = provedorDoModelo();
+    const inicio = Date.now();
+    const liberar = await pegarVaga(provedor, Boolean(prioritario(opcoes)));
+    const espera = Date.now() - inicio;
+    if (espera >= 2_000) {
+      console.log(`[token-free] ${provedor}: pedido esperou ${(espera / 1000).toFixed(1)}s na fila`);
+    }
+    try {
+      return await fn(messages, opcoes);
+    } finally {
+      liberar();
+    }
+  };
+}
+
+/** Só para o /claude e para teste: quantos atendendo e quantos esperando. */
+function estadoDasFilas() {
+  const estado = {};
+  for (const [provedor, fila] of filas) {
+    estado[provedor] = { ativos: fila.ativos, esperando: fila.espera.length };
+  }
+  return { limite: CONCORRENCIA, provedores: estado };
 }
 
 /**
@@ -819,8 +909,14 @@ function pedidosEmAndamento() {
 module.exports = {
   criarLeitorSse,
   _disjuntor: { assertDisjuntor, registrarFalha, registrarSucesso, disjuntores, DISJUNTOR_FALHAS },
-  chatCompletion: contandoPedido(chatCompletion),
-  chatCompletionStream: contandoPedido(chatCompletionStream),
+  // A contagem fica por fora da fila: pedido esperando a vez também conta
+  // como "em andamento" e segura o reinício do gateway pelo vigia.
+  chatCompletion: contandoPedido(comVaga(chatCompletion, () => false)),
+  chatCompletionStream: contandoPedido(
+    comVaga(chatCompletionStream, (opcoes) => typeof opcoes?.onDelta === 'function')
+  ),
+  estadoDasFilas,
+  _fila: { pegarVaga, provedorDoModelo, filas, CONCORRENCIA },
   pedidosEmAndamento,
   buscasDeImagemNoTexto,
   verificarSaude,

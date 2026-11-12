@@ -41,9 +41,15 @@ type NativeToolTemplate = {
 	personalizedStyles: unknown[];
 };
 
-/** `streamed`: a página está repassando o corpo por CHUNK_BINDING. */
+/** Quantas conversas já confirmadas o cliente lembra (veja `conversasConhecidas`). */
+const CONVERSAS_CONHECIDAS_MAX = 500;
+
+/**
+ * `streamed`: a página está repassando o corpo por CHUNK_BINDING.
+ * `conv`: a conversa do claude.ai em que a resposta ficou.
+ */
 type CompletionResult =
-	| { ok: true; data: string; streamed: boolean }
+	| { ok: true; data: string; streamed: boolean; conv?: string }
 	| { ok: false; status: number; error: string };
 
 // A função exposta pertence à aba e sobrevive à recriação do cliente (evict
@@ -114,6 +120,15 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 	private cookie: string;
 	private nativeToolTemplate: { value: NativeToolTemplate; expiresAt: number } | null = null;
 	private nativeToolTemplatePromise: Promise<NativeToolTemplate> | null = null;
+	/**
+	 * viralizeai: conversas que o claude.ai já confirmou (UUID estável → UUID
+	 * real). Cada mensagem numa conversa existente fazia DUAS idas ao claude.ai
+	 * antes de pedir a resposta: um POST de criação, que falhava porque a
+	 * conversa já existia, e um GET para confirmar. Lembrando a conversa, o
+	 * pedido vai direto para a resposta; se ela tiver sido apagada (404), o
+	 * caminho antigo recria.
+	 */
+	private readonly conversasConhecidas = new Map<string, string>();
 
 	constructor(auth: ClaudeWebAuth) {
 		super(auth);
@@ -271,6 +286,10 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 			}
 		}
 		if (params.signal?.aborted) throw new Error("Claude request cancelled");
+		// Só conversa com chave própria: sem chave o UUID é novo a cada pedido.
+		const conversaConhecida = params.conversationId
+			? (this.conversasConhecidas.get(conversationUuid) ?? null)
+			: null;
 
 		const evaluatePromise = page.evaluate(
 			async ({
@@ -284,6 +303,7 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 				nativeTools: native,
 				requestId: reqId,
 				binding,
+				knownConv,
 			}): Promise<CompletionResult> => {
 				const w = window as unknown as Record<string, any>;
 				const aborts: Map<string, AbortController> = (w.__tfgClaudeAborts ??= new Map());
@@ -302,58 +322,76 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 							body: JSON.stringify({ name: convName, uuid }),
 							signal: ctrl.signal,
 						});
-					const createRes = await createConversation(convUuid);
+					const completar = (uuid: string) =>
+						fetch(
+							org
+								? `${apiBase}/organizations/${org}/chat_conversations/${uuid}/completion`
+								: `${apiBase}/chat_conversations/${uuid}/completion`,
+							{
+								method: "POST",
+								headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+								credentials: "include",
+								signal: ctrl.signal,
+								body: JSON.stringify({
+									prompt: msg,
+									parent_message_uuid: "00000000-0000-4000-8000-000000000000",
+									model: mdl,
+									timezone: tz,
+									rendering_mode: "messages",
+									attachments: [],
+									files: [],
+									locale: "en-US",
+									personalized_styles: native?.personalizedStyles || [],
+									sync_sources: [],
+									tools: native?.tools || [],
+									...(native?.toolStates ? { tool_states: native.toolStates } : {}),
+								}),
+							},
+						);
 					let conv: { uuid: string } = { uuid: convUuid };
-					if (!createRes.ok) {
-						const text = await createRes.text();
-						// UUID estável já existe: reutiliza a conversa em vez de criar outra.
-						const existingRes = await fetch(`${createUrl}/${convUuid}`, {
-							credentials: "include",
-							signal: ctrl.signal,
-						});
-						if (!existingRes.ok) {
-							// Conversas apagadas ou UUIDs antigos podem ficar inválidos na API.
-							// Recupera a chamada com um UUID v4 novo em vez de falhar a pesquisa.
-							const replacementUuid = crypto.randomUUID();
-							const replacementRes = await createConversation(replacementUuid);
-							if (!replacementRes.ok) {
-								const replacementText = await replacementRes.text();
-								return {
-									ok: false as const,
-									status: replacementRes.status,
-									error: `[create_conversation_retry] ${replacementRes.status} ${replacementText.slice(0, 500)}; original=${createRes.status} ${text.slice(0, 240)}`,
-								};
-							}
-							const replacement = (await replacementRes.json()) as { uuid?: string };
-							conv = { uuid: replacement.uuid || replacementUuid };
+					let completionRes: Response | null = null;
+					// Conversa já confirmada: pede a resposta direto, sem recriar.
+					if (knownConv) {
+						const direto = await completar(knownConv);
+						if (direto.status === 404) {
+							// Apagada no claude.ai: segue pelo caminho de criação abaixo.
+							await direto.body?.cancel().catch(() => {});
+						} else {
+							completionRes = direto;
+							conv = { uuid: knownConv };
 						}
-					} else {
-						const created = (await createRes.json()) as { uuid?: string };
-						conv = { uuid: created.uuid || convUuid };
 					}
-					const completionUrl = org
-						? `${apiBase}/organizations/${org}/chat_conversations/${conv.uuid}/completion`
-						: `${apiBase}/chat_conversations/${conv.uuid}/completion`;
-					const completionRes = await fetch(completionUrl, {
-						method: "POST",
-						headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-						credentials: "include",
-						signal: ctrl.signal,
-						body: JSON.stringify({
-							prompt: msg,
-							parent_message_uuid: "00000000-0000-4000-8000-000000000000",
-							model: mdl,
-							timezone: tz,
-							rendering_mode: "messages",
-							attachments: [],
-							files: [],
-							locale: "en-US",
-							personalized_styles: native?.personalizedStyles || [],
-							sync_sources: [],
-							tools: native?.tools || [],
-							...(native?.toolStates ? { tool_states: native.toolStates } : {}),
-						}),
-					});
+					if (!completionRes) {
+						const createRes = await createConversation(convUuid);
+						if (!createRes.ok) {
+							const text = await createRes.text();
+							// UUID estável já existe: reutiliza a conversa em vez de criar outra.
+							const existingRes = await fetch(`${createUrl}/${convUuid}`, {
+								credentials: "include",
+								signal: ctrl.signal,
+							});
+							if (!existingRes.ok) {
+								// Conversas apagadas ou UUIDs antigos podem ficar inválidos na API.
+								// Recupera a chamada com um UUID v4 novo em vez de falhar a pesquisa.
+								const replacementUuid = crypto.randomUUID();
+								const replacementRes = await createConversation(replacementUuid);
+								if (!replacementRes.ok) {
+									const replacementText = await replacementRes.text();
+									return {
+										ok: false as const,
+										status: replacementRes.status,
+										error: `[create_conversation_retry] ${replacementRes.status} ${replacementText.slice(0, 500)}; original=${createRes.status} ${text.slice(0, 240)}`,
+									};
+								}
+								const replacement = (await replacementRes.json()) as { uuid?: string };
+								conv = { uuid: replacement.uuid || replacementUuid };
+							}
+						} else {
+							const created = (await createRes.json()) as { uuid?: string };
+							conv = { uuid: created.uuid || convUuid };
+						}
+						completionRes = await completar(conv.uuid);
+					}
 					if (!completionRes.ok) {
 						const text = await completionRes.text();
 						return {
@@ -389,7 +427,7 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 								aborts.delete(reqId);
 							}
 						})();
-						return { ok: true as const, data: "", streamed: true };
+						return { ok: true as const, data: "", streamed: true, conv: conv.uuid };
 					}
 
 					const decoder = new TextDecoder();
@@ -399,7 +437,7 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 						if (done) break;
 						fullText += decoder.decode(value, { stream: true });
 					}
-					return { ok: true as const, data: fullText, streamed: false };
+					return { ok: true as const, data: fullText, streamed: false, conv: conv.uuid };
 				} finally {
 					if (!handedOff) aborts.delete(reqId);
 				}
@@ -415,13 +453,30 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 				nativeTools,
 				requestId,
 				binding: stream ? CHUNK_BINDING : null,
+				knownConv: conversaConhecida,
 			},
 		);
 		try {
-			return await withTimeout(evaluatePromise, SEND_TIMEOUT_MS, "Claude request");
+			const result = await withTimeout(evaluatePromise, SEND_TIMEOUT_MS, "Claude request");
+			if (params.conversationId) {
+				if (result.ok && result.conv) this.lembrarConversa(conversationUuid, result.conv);
+				// Falhou numa conversa lembrada: da próxima vez confere de novo.
+				else if (!result.ok) this.conversasConhecidas.delete(conversationUuid);
+			}
+			return result;
 		} catch (err) {
 			await abortInPage(page, requestId);
 			throw err;
+		}
+	}
+
+	private lembrarConversa(chave: string, real: string): void {
+		// Reinsere para ficar como a mais recente; a mais antiga sai primeiro.
+		this.conversasConhecidas.delete(chave);
+		this.conversasConhecidas.set(chave, real);
+		if (this.conversasConhecidas.size > CONVERSAS_CONHECIDAS_MAX) {
+			const maisAntiga = this.conversasConhecidas.keys().next().value;
+			if (maisAntiga !== undefined) this.conversasConhecidas.delete(maisAntiga);
 		}
 	}
 
