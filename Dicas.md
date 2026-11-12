@@ -38,3 +38,7 @@ limpar servidor
 cd /home/viralizeai/htdocs/www.viralizeai.online
 node scripts/fechar-abas-chrome.js --listar
 node scripts/fechar-abas-chrome.js
+
+
+reiniciar o gate
+npm run pm2:reload-with-gateway
