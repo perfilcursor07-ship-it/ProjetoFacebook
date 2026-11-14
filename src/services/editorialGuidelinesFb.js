@@ -225,6 +225,7 @@ function blocoCriteriosMateriaManual({ pesquisa = false, comModelo = true } = {}
 - Escreva somente com fatos presentes na apuração; nunca use a memória para completar lacunas.
 - Reescreva com estrutura e palavras próprias, sem copiar frases longas nem a organização das fontes.
 - Não basta trocar sinônimos: crie uma manchete própria, escolha um lead factual e reorganize os fatos por relevância. Não reproduza a sequência de parágrafos da fonte.
+- TÍTULO DO EDITOR: se o material enviado já começa com um título (primeira linha curta, separada do texto), use esse título exatamente como veio, palavra por palavra, sem trocar, encurtar, corrigir ou “melhorar”. Só crie título próprio quando o editor não trouxer um.
 - Preserve nomes, números, datas e o sentido das informações. Citação direta deve ser curta, literal e atribuída; mantenha o crédito da apuração original.
 ${regraFonte}
 - Produza de 3 a 6 parágrafos conforme a quantidade de fatos. Não aumente o texto com repetição ou enrolação.
@@ -262,6 +263,7 @@ ${regraApuracao}
 REGRAS DE TEXTO
 - Extraia os fatos e reescreva 100% com palavras próprias. Nunca copie frases longas nem a estrutura da fonte.
 - Não faça uma troca de sinônimos frase a frase. Crie título e lead próprios e organize os fatos por relevância, sem seguir a sequência de parágrafos da fonte.
+- TÍTULO DO EDITOR: se o material enviado já começa com um título (primeira linha curta, separada do texto), use esse título exatamente como veio, palavra por palavra, sem trocar, encurtar, corrigir ou “melhorar”. Só crie título próprio quando o editor não trouxer um.
 - Antes de entregar, compare o título e a abertura com o material fornecido: reescreva trechos de prosa copiados, preservando nomes, números, datas e citações literais curtas atribuídas.
 - Escreva como reportagem nossa, não como resenha do site de origem.
 - Número, data, cargo, local, igreja, pastor e declaração só entram se estiverem na apuração.
@@ -283,7 +285,7 @@ ESTRUTURA
 - Cubra quem, o quê, onde, contexto, números e os lados envolvidos somente quando estiverem documentados.
 - ${REGRA_FECHAMENTO_VIRAL}
 - Com veículo e URL reais: **Fonte:** nome — URL. Nunca invente URL.
-- Sem publicação original ou URL: escreva exatamente **Fonte:** Rede Social - Instagram/Facebook. Proibido “Relato fornecido no material enviado à redação”, “sem identificação de publicação original” e qualquer frase no lugar da fonte.
+- Sem publicação original ou URL: escreva exatamente **Fonte:** Rede Social - Instagram/Facebook. Proibido “Relato fornecido no material enviado à redação”, “Relato fornecido pelo editor”, “sem identificação de publicação original” e qualquer frase no lugar da fonte.
 - Foto em outra linha: **Foto:** crédito real; se não existir, **Foto:** Reprodução Internet.
 - Exatamente 5 hashtags pertinentes; a quinta e última é #JMNotícia.
 - Última linha: **Siga o JM Notícia.**
@@ -902,6 +904,55 @@ function montarFonteCredito({
 const CREDITO_IMAGEM_FALLBACK = 'Reprodução/Internet';
 const FONTE_REDE_SOCIAL = 'Rede Social - Instagram/Facebook';
 const FOTO_REDE_SOCIAL = 'Reprodução Internet';
+
+/**
+ * Título que o editor já trouxe junto do texto colado no chat.
+ *
+ * O editor cola a matéria com a manchete na primeira linha e a IA devolvia
+ * outra manchete “melhorada”. Pedir no prompt ajuda, mas não garante — então
+ * o sistema reconhece o título aqui e o devolve à resposta (veja
+ * manterTituloDoEditor). Reconhece assim: uma linha curta, sem ponto final,
+ * seguida de linha em branco e de um texto de verdade. Linhas de recado antes
+ * dela (“não altere o título”, “só faça a matéria”) são puladas.
+ */
+const RECADO_AO_REDATOR =
+  /^(?:n[ãa]o\s|fa[çc]a\s|fazer\s|crie\s|criar\s|escreva\s|reescreva\s|grave\s|guarde\s|lembre\s|use\s|quero\s|preciso\s|s[óo]\s|por favor|olha\s|segue\s|mantenha\s|manter\s|mesm[ao]\s)/i;
+
+function tituloFornecidoPeloEditor(texto) {
+  const linhas = String(texto || '').replace(/\r\n/g, '\n').split('\n');
+  let vistas = 0;
+  for (let i = 0; i < linhas.length && vistas < 6; i += 1) {
+    const linha = linhas[i].replace(/^[#*\s]+|[*\s]+$/g, '').trim();
+    if (!linha) continue;
+    vistas += 1;
+    if (RECADO_AO_REDATOR.test(linha)) continue;
+    // Primeira linha que não é recado: ou é o título, ou não há título.
+    if (linha.length < 15 || linha.length > 200) return null;
+    if (/https?:\/\//i.test(linha) || /[.;,:]$/.test(linha)) return null;
+    if (String(linhas[i + 1] || '').trim()) return null;
+    const resto = linhas.slice(i + 1).join('\n').trim();
+    if (resto.length < 300 || resto.split(/\n\s*\n/).length < 2) return null;
+    return linha;
+  }
+  return null;
+}
+
+/** Devolve a matéria com o título do editor no lugar do que a IA escreveu. */
+function manterTituloDoEditor(materia, tituloEditor) {
+  const titulo = String(tituloEditor || '').trim();
+  const original = String(materia || '');
+  if (!titulo || !original.trim()) return original;
+  const linhas = original.replace(/\r\n/g, '\n').split('\n');
+  const idx = linhas.findIndex((linha) => linha.trim());
+  if (idx < 0) return original;
+  const atual = linhas[idx].replace(/^[#*\s]+|[*\s]+$/g, '').trim();
+  if (atual === titulo) return original;
+  // Preserva a marcação da linha (negrito, #) que o resto do sistema espera.
+  const abre = (linhas[idx].match(/^\s*(?:#{1,6}\s*)?\*{0,2}/) || [''])[0];
+  const fecha = (linhas[idx].match(/\*{0,2}\s*$/) || [''])[0];
+  linhas[idx] = abre + titulo + fecha;
+  return linhas.join('\n');
+}
 
 /** Crédito que a IA escreve quando não há veículo nem URL. */
 function fonteEhRelatoSemPublicacao(valor) {
@@ -1593,6 +1644,8 @@ module.exports = {
   removerSecaoTitulosAlternativos,
   detectarCitacoesInventadas,
   titulosParecidos,
+  tituloFornecidoPeloEditor,
+  manterTituloDoEditor,
   mesmaNoticiaEstrita,
   mesmoAssuntoNoticia,
   tokensAssunto,

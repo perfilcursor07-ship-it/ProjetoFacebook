@@ -3623,6 +3623,8 @@ async function responder({
     const {
       removerComentariosEditoriaisIa,
       aplicarFonteRedeSocialSemPublicacao,
+      tituloFornecidoPeloEditor,
+      manterTituloDoEditor,
     } = require('./editorialGuidelinesFb');
     respostaFinal = aplicarFonteRedeSocialSemPublicacao(respostaFinal);
     let info = interpretarResposta(respostaFinal);
@@ -3630,6 +3632,9 @@ async function responder({
       respostaFinal = aplicarFonteRedeSocialSemPublicacao(
         removerComentariosEditoriaisIa(respostaFinal)
       );
+      // Regra do editor: título que ele colou junto do texto não é alterado.
+      const tituloDoEditor = tituloFornecidoPeloEditor(texto);
+      if (tituloDoEditor) respostaFinal = manterTituloDoEditor(respostaFinal, tituloDoEditor);
       info = interpretarResposta(respostaFinal);
     }
 

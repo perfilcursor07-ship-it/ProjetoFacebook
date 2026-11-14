@@ -231,3 +231,25 @@ Siga o JM Notícia.`;
   assert.match(mensagem.content, /Fonte: Rede Social - Instagram\/Facebook/);
   assert.doesNotMatch(mensagem.content, /Relato fornecido/);
 });
+
+test('título colado pelo editor é reconhecido e mantido na matéria', () => {
+  const { tituloFornecidoPeloEditor, manterTituloDoEditor } = require('../src/services/editorialGuidelinesFb');
+  const titulo = 'Pastor interrompe Santa Ceia ao descobrir que casal não era casado no civil: "Aqui temos princípios"';
+  const corpo = [
+    'Um casal foi impedido de participar da Santa Ceia após o pastor descobrir que os dois viviam juntos havia oito anos, mas não eram oficialmente casados. A decisão provocou constrangimento.',
+    'O casal frequentava a congregação havia aproximadamente dois anos. Eles tinham dois filhos e viviam juntos, mas nunca haviam oficializado a união no cartório.',
+  ].join('\n\n');
+  const pedido = 'não altere o titulo e nao pesquise, so faça a materia.\ngrave isso para as proximas\n' + titulo + '\n\n' + corpo;
+
+  assert.equal(tituloFornecidoPeloEditor(pedido), titulo);
+  assert.equal(tituloFornecidoPeloEditor(titulo + '\n\n' + corpo), titulo);
+  // Sem título: link solto, pedido curto ou texto que começa direto no parágrafo.
+  assert.equal(tituloFornecidoPeloEditor('https://exemplo.com/noticia'), null);
+  assert.equal(tituloFornecidoPeloEditor('deixe a matéria mais curta'), null);
+  assert.equal(tituloFornecidoPeloEditor(corpo), null);
+
+  const daIa = '**Casal é barrado na Ceia por pastor**\n\n**ÂNCORA**\n\nTexto.';
+  assert.equal(manterTituloDoEditor(daIa, titulo), '**' + titulo + '**\n\n**ÂNCORA**\n\nTexto.');
+  assert.equal(manterTituloDoEditor(titulo + '\n\nTexto.', titulo), titulo + '\n\nTexto.');
+  assert.match(blocoEstiloJmNoticia({ pesquisa: false }), /TÍTULO DO EDITOR/);
+});
