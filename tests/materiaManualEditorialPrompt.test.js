@@ -8,6 +8,7 @@ const {
   blocoEstiloJmNoticia,
   montarRodapeMateriaComFontes,
   removerComentariosEditoriaisIa,
+  aplicarFonteRedeSocialSemPublicacao,
 } = require('../src/services/editorialGuidelinesFb');
 const { priorizarFontesIndependentes } = require('../src/services/materiaIaService');
 const { serializarMensagem } = require('../src/services/materiaChatService');
@@ -31,7 +32,9 @@ test('prompt preserva rodapé, hashtags e chamada do JM com o fechamento da mat�
   assert.match(prompt, /Exatamente 5 hashtags pertinentes/i);
   assert.match(prompt, /quinta e última é #JMNotícia/i);
   assert.match(prompt, /Siga o JM Notícia/i);
-  assert.match(prompt, /Fonte:\*\* nome — URL real/i);
+  assert.match(prompt, /Fonte:\*\* nome — URL/i);
+  assert.match(prompt, /Rede Social - Instagram\/Facebook/);
+  assert.match(prompt, /Relato fornecido no material enviado/i);
   assert.match(prompt, /Foto:\*\* crédito real/i);
   // Fechamento igual ao da matéria que viralizou: frase curta de impacto,
   // nunca oração, lição de moral ou pergunta de engajamento.
@@ -183,4 +186,48 @@ Títulos alternativos:
   });
   assert.doesNotMatch(mensagemAntiga.content, /Títulos alternativos/i);
   assert.doesNotMatch(mensagemAntiga.content, /quem nomeia o problema/i);
+});
+
+test('matéria sem publicação troca o relato genérico pelo crédito de rede social', () => {
+  const texto = `**Pastor comenta o culto de domingo**
+
+**O VÍDEO CIRCULOU SEM INDICAÇÃO DE VEÍCULO**
+
+O relato descreve um culto realizado no domingo, com fala atribuída ao pastor.
+
+Fonte: Relato fornecido no material enviado à redação, sem identificação de publicação original ou URL.
+
+Foto: Reprodução
+
+#Culto #Igreja #Fé #Notícia #JMNotícia
+
+Siga o JM Notícia.`;
+
+  const resultado = aplicarFonteRedeSocialSemPublicacao(texto);
+  assert.match(resultado, /Fonte: Rede Social - Instagram\/Facebook/);
+  assert.match(resultado, /Foto: Reprodução Internet/);
+  assert.match(resultado, /Siga o JM Notícia/);
+  assert.doesNotMatch(resultado, /Relato fornecido/);
+
+  const rodape = montarRodapeMateriaComFontes({
+    materia: 'O culto aconteceu no domingo e o vídeo circulou sem veículo identificado.',
+    fontes: [],
+    creditoImagem: null,
+    hashtags: ['Culto', 'Igreja', 'JMNotícia'],
+    limitarLegenda: false,
+  });
+  assert.match(rodape.materia, /Fonte: Rede Social - Instagram\/Facebook/);
+  assert.match(rodape.materia, /Foto: Reprodução Internet/);
+
+  const mensagem = serializarMensagem({
+    id: 2,
+    role: 'assistant',
+    content: texto,
+    hashtags: '[]',
+    fontes: '[]',
+    passos: '[]',
+    titulos_alternativos: '[]',
+  });
+  assert.match(mensagem.content, /Fonte: Rede Social - Instagram\/Facebook/);
+  assert.doesNotMatch(mensagem.content, /Relato fornecido/);
 });

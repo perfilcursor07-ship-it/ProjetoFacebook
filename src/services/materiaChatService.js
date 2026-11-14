@@ -1862,10 +1862,14 @@ function serializarMensagem(row) {
   const conteudoBruto = require('./chatgptMarkup').removerBlocosDoClaude(String(row.content || ''));
   // Também limpa mensagens antigas já gravadas no banco, para o bloco não
   // reaparecer ao recarregar uma conversa criada antes desta correção.
-  const conteudo =
+  const conteudoBase =
     row.role === 'assistant'
       ? removerSecaoTitulosAlternativos(conteudoBruto)
       : conteudoBruto;
+  const conteudo =
+    row.role === 'assistant'
+      ? require('./editorialGuidelinesFb').aplicarFonteRedeSocialSemPublicacao(conteudoBase)
+      : conteudoBase;
   const info = row.role === 'assistant' ? interpretarResposta(conteudo) : null;
   const infoLivre = row.role === 'assistant' && ehConversaLivre(row.chat_modo)
     ? interpretarRespostaLivreParaRascunho(conteudo)
@@ -3616,8 +3620,13 @@ async function responder({
     }
     let info = interpretarResposta(respostaFinal);
     if (info.ehMateria && !temLote) {
-      const { removerComentariosEditoriaisIa } = require('./editorialGuidelinesFb');
-      respostaFinal = removerComentariosEditoriaisIa(respostaFinal);
+      const {
+        removerComentariosEditoriaisIa,
+        aplicarFonteRedeSocialSemPublicacao,
+      } = require('./editorialGuidelinesFb');
+      respostaFinal = aplicarFonteRedeSocialSemPublicacao(
+        removerComentariosEditoriaisIa(respostaFinal)
+      );
       info = interpretarResposta(respostaFinal);
     }
 
@@ -5379,9 +5388,12 @@ async function salvarMateriaDoChat({
   titulo: tituloEscolhido = null,
   tituloProprio = false,
 }) {
-  const { montarRodapeMateriaComFontes, pareceFormatoJmNoticia } = require('./editorialGuidelinesFb');
   const materiaIaService = require('./materiaIaService');
-
+  const {
+    montarRodapeMateriaComFontes,
+    pareceFormatoJmNoticia,
+    aplicarFonteRedeSocialSemPublicacao,
+  } = require('./editorialGuidelinesFb');
   const row = await AiChatMessages.findByIdWithChat(messageId);
   if (!row || Number(row.chat_user_id) !== Number(userId)) {
     throw erro('Mensagem não encontrada', 404);
@@ -5433,7 +5445,9 @@ async function salvarMateriaDoChat({
   if (conversaLivre && !escolhida && !respostaLivrePodeVirarMateria(info, { sempreEditorial: row.chat_modo === 'chatgpt' })) {
     throw erro('Esta é uma devolutiva de apuração, não uma matéria pronta para salvar.', 400);
   }
-  const corpo = String(info.corpo || (escolhida ? escolhida.conteudo : row.content) || '').trim();
+  const corpo = aplicarFonteRedeSocialSemPublicacao(
+    String(info.corpo || (escolhida ? escolhida.conteudo : row.content) || '').trim()
+  );
   if (corpo.length < 120) throw erro('Essa resposta é curta demais para virar matéria', 400);
 
   const fontes = parseJson(row.fontes, []);

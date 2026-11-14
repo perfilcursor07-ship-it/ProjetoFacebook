@@ -793,6 +793,7 @@ async function showMatter(req, res, next) {
       fundirParagrafosIncompletos,
       extrairHashtagsDoTexto,
       normalizarCreditosImagemDuplicados,
+      aplicarFonteRedeSocialSemPublicacao,
     } = require('../services/editorialGuidelinesFb');
     if (Array.isArray(hashtags) && hashtags.length) {
       matter.materia = anexarHashtagsAoFinal(matter.materia || '', hashtags);
@@ -810,13 +811,16 @@ async function showMatter(req, res, next) {
       materiaLimpa = anexarHashtagsAoFinal(corpo, tags.length ? tags : hashtags);
     }
     materiaLimpa = normalizarCreditosImagemDuplicados(materiaLimpa) || materiaLimpa;
+    materiaLimpa = aplicarFonteRedeSocialSemPublicacao(materiaLimpa);
     if (materiaLimpa !== String(matter.materia || '').trim()) {
       matter.materia = materiaLimpa;
       if (['rascunho', 'pronto', 'erro', 'agendado'].includes(matter.status)) {
         patchShow.materia = materiaLimpa;
       }
     }
-    const fonteCreditoLimpa = normalizarCreditosImagemDuplicados(matter.fonte_credito);
+    const fonteCreditoLimpa = aplicarFonteRedeSocialSemPublicacao(
+      normalizarCreditosImagemDuplicados(matter.fonte_credito) || ''
+    ) || null;
     if (fonteCreditoLimpa !== (String(matter.fonte_credito || '').trim() || null)) {
       matter.fonte_credito = fonteCreditoLimpa;
       if (['rascunho', 'pronto', 'erro', 'agendado'].includes(matter.status)) {

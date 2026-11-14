@@ -4033,7 +4033,7 @@ ${blocoPlanejamentoDaResposta}
   · 2ª linha (depois de uma linha em branco) = **ÂNCORA EM CAIXA ALTA** (frase factual; não repetir o título).
   · Depois, 3 a 6 parágrafos conforme a densidade do fato. Não repita mecanicamente a mesma quantidade.
   · Feche com a frase curta de impacto do padrão (parágrafo próprio, sem fato novo); não inclua pergunta artificial para comentários, oração nem lição de moral.
-  · **Fonte:** nome — URL real. Depois **Foto:** em outra linha.
+  · Com URL real: **Fonte:** nome — URL. Sem publicação ou URL: **Fonte:** Rede Social - Instagram/Facebook e **Foto:** Reprodução Internet. Nunca escreva “Relato fornecido no material enviado à redação”.
   · EXATAMENTE 5 hashtags, a última #JMNotícia. Depois **Siga o JM Notícia.**
   · É UMA matéria só: comece direto pelo título. NUNCA escreva "### MATERIA 1".
   · NUNCA acrescente títulos alternativos (o sistema gera 3 títulos à parte), sugestão de arte ou comentário depois da chamada.

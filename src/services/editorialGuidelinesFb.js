@@ -282,7 +282,8 @@ ESTRUTURA
 - Corpo com 3 a 6 parágrafos, variando conforme a densidade do fato: lead, um parágrafo por personagem/desdobramento e a frase de impacto.
 - Cubra quem, o quê, onde, contexto, números e os lados envolvidos somente quando estiverem documentados.
 - ${REGRA_FECHAMENTO_VIRAL}
-- Fonte em linha separada: **Fonte:** nome — URL real. Nunca invente URL.
+- Com veículo e URL reais: **Fonte:** nome — URL. Nunca invente URL.
+- Sem publicação original ou URL: escreva exatamente **Fonte:** Rede Social - Instagram/Facebook. Proibido “Relato fornecido no material enviado à redação”, “sem identificação de publicação original” e qualquer frase no lugar da fonte.
 - Foto em outra linha: **Foto:** crédito real; se não existir, **Foto:** Reprodução Internet.
 - Exatamente 5 hashtags pertinentes; a quinta e última é #JMNotícia.
 - Última linha: **Siga o JM Notícia.**
@@ -309,8 +310,10 @@ FORMATO VISUAL MANTIDO PELO SISTEMA:
 [lead com os nomes + 1 parágrafo por personagem/desdobramento + frase curta de impacto]
 
 **Fonte:** Nome — URL
+(sem URL: Fonte: Rede Social - Instagram/Facebook)
 
 **Foto:** Crédito
+(sem crédito: Foto: Reprodução Internet)
 
 #Tag1 #Tag2 #Tag3 #Tag4 #JMNotícia
 
@@ -897,6 +900,50 @@ function montarFonteCredito({
 
 /** Crédito padrão quando a imagem interna não traz autor identificável. */
 const CREDITO_IMAGEM_FALLBACK = 'Reprodução/Internet';
+const FONTE_REDE_SOCIAL = 'Rede Social - Instagram/Facebook';
+const FOTO_REDE_SOCIAL = 'Reprodução Internet';
+
+/** Crédito que a IA escreve quando não há veículo nem URL. */
+function fonteEhRelatoSemPublicacao(valor) {
+  const t = String(valor || '')
+    .replace(/\*+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!t || /https?:\/\//i.test(t)) return false;
+  return /relato fornecido|material enviado|sem identifica|publica[cç][aã]o original|sem\s+url|origem n[aã]o informada|n[aã]o foi poss[ií]vel identificar/i.test(
+    t
+  );
+}
+
+/**
+ * Troca o crédito genérico (“Relato fornecido…”) pelo rodapé de rede social.
+ * Matéria com veículo ou URL real não é alterada.
+ */
+function aplicarFonteRedeSocialSemPublicacao(texto) {
+  const original = String(texto || '').replace(/\r\n/g, '\n');
+  const match = original.match(/^[ \t]*\*{0,2}\s*Fonte:\s*\*{0,2}\s*(.+)$/im);
+  if (!match || !fonteEhRelatoSemPublicacao(match[1])) return original;
+
+  let saida = original.replace(
+    /^[ \t]*\*{0,2}\s*Fonte:\s*\*{0,2}\s*.+$/im,
+    `Fonte: ${FONTE_REDE_SOCIAL}`
+  );
+  if (/^[ \t]*\*{0,2}\s*Foto:/im.test(saida)) {
+    saida = saida.replace(
+      /^[ \t]*\*{0,2}\s*Foto:\s*\*{0,2}\s*.+$/im,
+      `Foto: ${FOTO_REDE_SOCIAL}`
+    );
+  } else {
+    saida = saida.replace(
+      `Fonte: ${FONTE_REDE_SOCIAL}`,
+      `Fonte: ${FONTE_REDE_SOCIAL}\n\nFoto: ${FOTO_REDE_SOCIAL}`
+    );
+  }
+  if (!/Siga o JM Not[ií]cia/i.test(saida)) {
+    saida = `${saida.trim()}\n\nSiga o JM Notícia.`;
+  }
+  return saida;
+}
 
 /**
  * Extrai nome de autor/fotógrafo dos metadados da imagem interna (heurística).
@@ -1195,8 +1242,10 @@ function montarRodapeMateriaComFontes({
   if (cleanBody) parts.push(cleanBody);
   if (nomes.length) {
     parts.push(`Fonte: ${nomes.join(', ')}`);
+  } else {
+    parts.push(`Fonte: ${FONTE_REDE_SOCIAL}`);
   }
-  parts.push(`Foto: ${foto}`);
+  parts.push(`Foto: ${nomes.length ? foto : FOTO_REDE_SOCIAL}`);
 
   const tagLine = formatHashtagsLine(
     Array.isArray(hashtags) && hashtags.length ? hashtags : tags
@@ -1210,8 +1259,10 @@ function montarRodapeMateriaComFontes({
   const fonteCreditoParts = [];
   if (linhasCredito.length) {
     fonteCreditoParts.push(`Fonte:\n${linhasCredito.join('\n')}`);
+  } else {
+    fonteCreditoParts.push(`Fonte: ${FONTE_REDE_SOCIAL}`);
   }
-  fonteCreditoParts.push(`(Foto: ${foto})`);
+  fonteCreditoParts.push(`(Foto: ${nomes.length ? foto : FOTO_REDE_SOCIAL})`);
 
   return {
     materia: sanitizeFacebookMentions(materiaFinal),
@@ -1555,6 +1606,10 @@ module.exports = {
   anexarHashtagsAoFinal,
   anexarCreditosFontes,
   montarRodapeMateriaComFontes,
+  aplicarFonteRedeSocialSemPublicacao,
+  fonteEhRelatoSemPublicacao,
+  FONTE_REDE_SOCIAL,
+  FOTO_REDE_SOCIAL,
   converterCreditosParaJm,
   garantirFonteNoConteudo,
   atualizarFonteCreditoDaImagem,
