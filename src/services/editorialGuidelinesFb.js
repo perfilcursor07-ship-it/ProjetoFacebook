@@ -921,13 +921,26 @@ function fonteEhRelatoSemPublicacao(valor) {
  */
 function aplicarFonteRedeSocialSemPublicacao(texto) {
   const original = String(texto || '').replace(/\r\n/g, '\n');
-  const match = original.match(/^[ \t]*\*{0,2}\s*Fonte:\s*\*{0,2}\s*(.+)$/im);
-  if (!match || !fonteEhRelatoSemPublicacao(match[1])) return original;
-
+  let trocou = false;
   let saida = original.replace(
-    /^[ \t]*\*{0,2}\s*Fonte:\s*\*{0,2}\s*.+$/im,
-    `Fonte: ${FONTE_REDE_SOCIAL}`
+    /^([ \t>*_-]*)\*{0,2}\s*Fonte:\s*\*{0,2}\s*(.+)$/gim,
+    (linha, prefixo, valor) => {
+      if (!fonteEhRelatoSemPublicacao(valor)) return linha;
+      trocou = true;
+      return `${prefixo}Fonte: ${FONTE_REDE_SOCIAL}`;
+    }
   );
+  if (!trocou) {
+    saida = saida.replace(
+      /Fonte:\s*\*{0,2}\s*Relato fornecido no material enviado[^\n]*/gi,
+      () => {
+        trocou = true;
+        return `Fonte: ${FONTE_REDE_SOCIAL}`;
+      }
+    );
+  }
+  if (!trocou) return original;
+
   if (/^[ \t]*\*{0,2}\s*Foto:/im.test(saida)) {
     saida = saida.replace(
       /^[ \t]*\*{0,2}\s*Foto:\s*\*{0,2}\s*.+$/im,

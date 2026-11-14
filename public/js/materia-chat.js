@@ -952,9 +952,16 @@
     return box;
   }
 
+  function trocarFonteSemPublicacao(texto) {
+    return String(texto || '').replace(
+      /^([ \t>*_-]*)\*{0,2}\s*Fonte:\s*\*{0,2}\s*Relato fornecido[^\n]*/gim,
+      '$1Fonte: Rede Social - Instagram/Facebook'
+    );
+  }
+
   function renderTexto(container, conteudo) {
     container.replaceChildren();
-    const bruto = String(conteudo || '');
+    const bruto = trocarFonteSemPublicacao(conteudo);
     const linhas = bruto.split('\n');
     // Só matéria tem 1ª linha de título; resposta curta é texto normal
     const podeTerTitulo = bruto.trim().length > 500;

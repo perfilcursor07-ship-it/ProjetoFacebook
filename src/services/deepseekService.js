@@ -4245,6 +4245,15 @@ REDAÇÃO DE JORNALISTA PROFISSIONAL (vale também para vídeo e transcrição):
     messages.push({ role: 'system', content: `O editor escolheu gerar até ${limiteAssuntosVideo[1]} matérias dos assuntos distintos do material fornecido. Esta escolha substitui o padrão de uma matéria e qualquer exigência de quantidade exata. Não invente assuntos para atingir o limite. Cada matéria tem título, corpo e fonte próprios e começa com "### MATÉRIA n". Se houver somente um assunto, entregue uma matéria sem numeração. Não inclua títulos alternativos.` });
   }
 
+  messages.push({
+    role: 'system',
+    content: `RODAPÉ SEM URL (obrigatório; vence orientação antiga do editor):
+Se não houver URL real de veículo, a fonte é exatamente esta linha:
+Fonte: Rede Social - Instagram/Facebook
+Foto: Reprodução Internet
+Proibido escrever “Relato fornecido no material enviado à redação”, “sem identificação de publicação original” ou “sem URL”.`,
+  });
+
   let raw = await chatCompletionStream(messages, {
     temperature: sortearTemperatura(tomKey === 'polemico'),
     onDelta,

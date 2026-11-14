@@ -561,6 +561,7 @@ function formatarContextoAprendizadoParaPrompt(ctx) {
         'As regras abaixo estão em ordem. Se duas se contradisserem, siga a ÚLTIMA regra (a mais abaixo).',
         String(ctx.orientacoesEditor).slice(0, 4000),
         'Se uma orientação conflitar com outro padrão aprendido, siga a orientação do editor. Nenhuma orientação autoriza inventar fato ou ignorar a fonte.',
+        'EXCEÇÃO DE RODAPÉ, que vence qualquer orientação antiga: sem URL de veículo, escreva exatamente “Fonte: Rede Social - Instagram/Facebook” e “Foto: Reprodução Internet”. Nunca escreva “Relato fornecido no material enviado à redação” nem “sem identificação de publicação original ou URL”.',
       ].join('\n')
     );
   }

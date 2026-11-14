@@ -2959,7 +2959,8 @@ async function responder({
 
   /** Chat comum: salva texto e fontes sem interpretar como matéria editorial. */
   const finalizarLivre = async (resposta, { fontesUsadas = [], usouWeb = false } = {}) => {
-    let respostaLimpa = limparArtefatosDeTextoLivre(resposta);
+    const { aplicarFonteRedeSocialSemPublicacao, removerComentariosEditoriaisIa } = require('./editorialGuidelinesFb');
+    let respostaLimpa = aplicarFonteRedeSocialSemPublicacao(limparArtefatosDeTextoLivre(resposta));
     let infoLivre = interpretarRespostaLivreParaRascunho(respostaLimpa);
     let podeSalvarRascunho = respostaLivrePodeVirarMateria(infoLivre, { pedido, sempreEditorial: chat.modo === 'chatgpt' });
     let materiasSeparadas = separarMaterias(respostaLimpa);
@@ -2967,8 +2968,9 @@ async function responder({
       podeSalvarRascunho = false;
     }
     if (podeSalvarRascunho) {
-      const { removerComentariosEditoriaisIa } = require('./editorialGuidelinesFb');
-      respostaLimpa = removerComentariosEditoriaisIa(respostaLimpa);
+      respostaLimpa = aplicarFonteRedeSocialSemPublicacao(
+        removerComentariosEditoriaisIa(respostaLimpa)
+      );
       infoLivre = interpretarRespostaLivreParaRascunho(respostaLimpa);
       podeSalvarRascunho = respostaLivrePodeVirarMateria(infoLivre, { pedido, sempreEditorial: chat.modo === 'chatgpt' });
       materiasSeparadas = separarMaterias(respostaLimpa);
@@ -3618,12 +3620,13 @@ async function responder({
         `### MATÉRIA ${indice + 1}\n${removerComentariosEditoriaisIa(materia.conteudo)}`
       ).join('\n\n');
     }
+    const {
+      removerComentariosEditoriaisIa,
+      aplicarFonteRedeSocialSemPublicacao,
+    } = require('./editorialGuidelinesFb');
+    respostaFinal = aplicarFonteRedeSocialSemPublicacao(respostaFinal);
     let info = interpretarResposta(respostaFinal);
     if (info.ehMateria && !temLote) {
-      const {
-        removerComentariosEditoriaisIa,
-        aplicarFonteRedeSocialSemPublicacao,
-      } = require('./editorialGuidelinesFb');
       respostaFinal = aplicarFonteRedeSocialSemPublicacao(
         removerComentariosEditoriaisIa(respostaFinal)
       );
