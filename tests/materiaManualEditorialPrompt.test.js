@@ -253,3 +253,23 @@ test('título colado pelo editor é reconhecido e mantido na matéria', () => {
   assert.equal(manterTituloDoEditor(titulo + '\n\nTexto.', titulo), titulo + '\n\nTexto.');
   assert.match(blocoEstiloJmNoticia({ pesquisa: false }), /TÍTULO DO EDITOR/);
 });
+
+test('crédito que descreve a origem do material vira o rodapé de rede social', () => {
+  const corpo = 'Título\n\nTexto da matéria.\n\n';
+  const genericas = [
+    'Fonte: Material original — dramatização fictícia fornecida pelo editor.',
+    'Fonte: Relato fornecido pelo editor.',
+    '**Fonte:** Texto enviado pela redação',
+    'Fonte: Narrativa fictícia',
+  ];
+  for (const linha of genericas) {
+    const saida = aplicarFonteRedeSocialSemPublicacao(corpo + linha + '\n\nFoto: Reprodução Internet');
+    assert.match(saida, /Fonte: Rede Social - Instagram\/Facebook/, linha);
+    assert.doesNotMatch(saida, /editor|dramatiza|reda[cç][aã]o|Narrativa/i, linha);
+  }
+  // Veículo de verdade, com ou sem URL, não é tocado.
+  for (const linha of ['Fonte: G1 — https://g1.globo.com/x', 'Fonte: Folha de S.Paulo', 'Fonte: Pleno.News']) {
+    const texto = corpo + linha + '\n\nFoto: Reprodução Internet';
+    assert.equal(aplicarFonteRedeSocialSemPublicacao(texto), texto);
+  }
+});

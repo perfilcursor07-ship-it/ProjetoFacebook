@@ -285,7 +285,7 @@ ESTRUTURA
 - Cubra quem, o quê, onde, contexto, números e os lados envolvidos somente quando estiverem documentados.
 - ${REGRA_FECHAMENTO_VIRAL}
 - Com veículo e URL reais: **Fonte:** nome — URL. Nunca invente URL.
-- Sem publicação original ou URL: escreva exatamente **Fonte:** Rede Social - Instagram/Facebook. Proibido “Relato fornecido no material enviado à redação”, “Relato fornecido pelo editor”, “sem identificação de publicação original” e qualquer frase no lugar da fonte.
+- Sem publicação original ou URL: escreva exatamente **Fonte:** Rede Social - Instagram/Facebook. Proibido “Relato fornecido no material enviado à redação”, “Relato fornecido pelo editor”, “Material original”, “sem identificação de publicação original” e qualquer frase no lugar da fonte. A linha Fonte nunca descreve de onde o material veio (editor, relato, texto enviado, dramatização, narrativa): ou é um veículo com URL, ou é exatamente Rede Social - Instagram/Facebook.
 - Foto em outra linha: **Foto:** crédito real; se não existir, **Foto:** Reprodução Internet.
 - Exatamente 5 hashtags pertinentes; a quinta e última é #JMNotícia.
 - Última linha: **Siga o JM Notícia.**
@@ -961,7 +961,11 @@ function fonteEhRelatoSemPublicacao(valor) {
     .replace(/\s+/g, ' ')
     .trim();
   if (!t || /https?:\/\//i.test(t)) return false;
-  return /relato fornecido|material enviado|sem identifica|publica[cç][aã]o original|sem\s+url|origem n[aã]o informada|n[aã]o foi poss[ií]vel identificar/i.test(
+  // A IA inventa uma frase nova a cada vez para dizer "veio do editor":
+  // "Relato fornecido pelo editor", "Material original — dramatização fictícia
+  // fornecida pelo editor"… Em vez de listar frase por frase, vale qualquer
+  // crédito que descreva a ORIGEM do material em vez de citar um veículo.
+  return /\brelato\b|fornecid[oa]s?\b|\benviad[oa]s?\b|material (?:original|pr[óo]prio|do editor)|\beditor(?:a|es)?\b|reda[cç][aã]o\b|dramatiza|fict[ií]ci|fic[cç][aã]o\b|\bnarrativa\b|sem identifica|publica[cç][aã]o original|sem\s+url|origem n[aã]o informada|n[aã]o (?:foi poss[ií]vel identificar|informad[oa]|identificad[oa])/i.test(
     t
   );
 }
